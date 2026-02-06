@@ -236,14 +236,15 @@ def get_verification_status(benchmark_id: int, db: Session = Depends(get_db)):
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
 
-    from sqlalchemy import func
-    total = db.query(func.count(RuleCommand.id)).join(Rule).filter(Rule.benchmark_id == benchmark_id).scalar() or 0
-    passed = db.query(func.count(RuleCommand.id)).join(Rule).filter(
-        Rule.benchmark_id == benchmark_id, RuleCommand.status == "verified"
-    ).scalar() or 0
-    failed = db.query(func.count(RuleCommand.id)).join(Rule).filter(
-        Rule.benchmark_id == benchmark_id, RuleCommand.status == "flagged"
-    ).scalar() or 0
+    from sqlalchemy import case, func
+    row = db.query(
+        func.count(RuleCommand.id).label("total"),
+        func.sum(case((RuleCommand.status == "verified", 1), else_=0)).label("passed"),
+        func.sum(case((RuleCommand.status == "flagged", 1), else_=0)).label("failed"),
+    ).join(Rule).filter(Rule.benchmark_id == benchmark_id).one()
+    total = row.total or 0
+    passed = int(row.passed or 0)
+    failed = int(row.failed or 0)
 
     return VerifyStatusResponse(
         status=benchmark.verification_status or "pending",
