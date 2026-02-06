@@ -347,14 +347,13 @@ async def bulk_regenerate_commands(
                     except (json.JSONDecodeError, TypeError):
                         history = []
 
+                from datetime import datetime, timezone
                 history.append({
                     "audit_command": cmd.audit_command,
                     "expected_output_regex": cmd.expected_output_regex,
                     "flag_reason": cmd.flag_reason,
                     "source": cmd.source,
-                    "timestamp": __import__("datetime").datetime.now(
-                        __import__("datetime").timezone.utc
-                    ).isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
 
                 try:
@@ -375,7 +374,6 @@ async def bulk_regenerate_commands(
                 except Exception:
                     continue
 
-                from datetime import datetime, timezone
                 now = datetime.now(timezone.utc)
                 cmd.audit_command = result.get("audit_command", cmd.audit_command)
                 cmd.expected_output_regex = result.get("expected_output_regex", cmd.expected_output_regex)
