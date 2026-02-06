@@ -4,6 +4,8 @@ import Dashboard from './pages/Dashboard';
 import Clients from './pages/Clients';
 import ClientDetail from './pages/ClientDetail';
 import Settings from './pages/Settings';
+import Benchmarks from './pages/Benchmarks';
+import BenchmarkDetail from './pages/BenchmarkDetail';
 
 function App() {
   return (
@@ -13,6 +15,8 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="clients" element={<Clients />} />
           <Route path="clients/:id" element={<ClientDetail />} />
+          <Route path="benchmarks" element={<Benchmarks />} />
+          <Route path="benchmarks/:id" element={<BenchmarkDetail />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

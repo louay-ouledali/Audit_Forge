@@ -40,3 +40,81 @@ export interface Target {
 export interface Settings {
   [key: string]: string;
 }
+
+export interface Benchmark {
+  id: number;
+  name: string;
+  version: string;
+  platform: string;
+  platform_family: string;
+  import_date: string | null;
+  pdf_filename: string | null;
+  total_rules: number;
+  phase1_status: string;
+  phase2_status: string;
+  verification_status: string;
+  is_ready: boolean;
+  status: string;
+  notes: string | null;
+}
+
+export interface BenchmarkStatus {
+  id: number;
+  phase1_status: string;
+  phase2_status: string;
+  verification_status: string;
+  is_ready: boolean;
+  total_rules: number;
+}
+
+export interface EnrichStatus {
+  total: number;
+  processed: number;
+  status: string;
+}
+
+export interface VerifyStatus {
+  status: string;
+  total: number;
+  passed: number;
+  failed: number;
+}
+
+export interface Rule {
+  id: number;
+  benchmark_id: number;
+  section_number: string;
+  title: string;
+  description: string | null;
+  severity: string;
+  assessment_type: string | null;
+  enabled: boolean;
+  tags: RuleTag[];
+}
+
+export interface RuleTag {
+  id: number;
+  tag_id: string;
+  source: string;
+}
+
+export interface RuleCommand {
+  id: number;
+  rule_id: number;
+  audit_command: string | null;
+  expected_output_regex: string | null;
+  expected_output_description: string | null;
+  remediation_command: string | null;
+  remediation_description: string | null;
+  status: string;
+  source: string;
+  is_protected: boolean;
+  flag_reason: string | null;
+}
+
+export interface LLMStatus {
+  available: boolean;
+  mode: string;
+  model: string;
+  error: string | null;
+}
