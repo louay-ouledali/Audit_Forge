@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -144,6 +144,28 @@ export async function getVerificationStatus(benchmarkId: number): Promise<Verify
   return data;
 }
 
+export async function getVerificationResults(
+  benchmarkId: number,
+  params?: { level?: string; result?: string },
+): Promise<{ data: VerificationReport[]; total: number }> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/verify/results`, { params });
+  return data;
+}
+
+export async function bulkAcceptCommands(benchmarkId: number): Promise<{ message: string; count: number }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/verify/bulk-accept`);
+  return data;
+}
+
+export async function overrideVerification(benchmarkId: number): Promise<void> {
+  await api.post(`/benchmarks/${benchmarkId}/verify/override`);
+}
+
+export async function bulkRegenerateCommands(benchmarkId: number): Promise<{ message: string; count: number }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/commands/bulk-regenerate`);
+  return data;
+}
+
 // Rules
 export async function getRule(id: number): Promise<Rule> {
   const { data } = await api.get(`/rules/${id}`);
@@ -152,6 +174,48 @@ export async function getRule(id: number): Promise<Rule> {
 
 export async function getRuleCommand(ruleId: number): Promise<RuleCommand | null> {
   const { data } = await api.get(`/rules/${ruleId}/command`);
+  return data.data;
+}
+
+export async function flagCommand(ruleId: number, reason: string, errorOutput?: string): Promise<RuleCommand> {
+  const { data } = await api.post(`/rules/${ruleId}/command/flag`, {
+    reason,
+    error_output: errorOutput,
+  });
+  return data.data;
+}
+
+export async function regenerateCommand(ruleId: number, systemInfo?: string): Promise<RuleCommand> {
+  const { data } = await api.post(`/rules/${ruleId}/command/regenerate`, {
+    system_info: systemInfo,
+  });
+  return data.data;
+}
+
+export async function protectCommand(ruleId: number, reason?: string): Promise<RuleCommand> {
+  const { data } = await api.post(`/rules/${ruleId}/command/protect`, {
+    reason: reason || 'Manually protected by auditor',
+  });
+  return data.data;
+}
+
+export async function unlockCommand(ruleId: number, reason: string): Promise<RuleCommand> {
+  const { data } = await api.post(`/rules/${ruleId}/command/unlock`, { reason });
+  return data.data;
+}
+
+export async function getCommandHistory(ruleId: number): Promise<CommandHistoryEntry[]> {
+  const { data } = await api.get(`/rules/${ruleId}/command/history`);
+  return data.data;
+}
+
+export async function verifySingleCommand(ruleId: number): Promise<RuleCommand> {
+  const { data } = await api.post(`/rules/${ruleId}/command/verify`);
+  return data.data;
+}
+
+export async function getCommandVerificationReports(ruleId: number): Promise<VerificationReport[]> {
+  const { data } = await api.get(`/rules/${ruleId}/command/verification-reports`);
   return data.data;
 }
 

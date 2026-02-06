@@ -8,6 +8,7 @@ from typing import Any
 
 from backend.ai.llm_manager import llm_manager
 from backend.ai.prompts import (
+    COMMAND_REGENERATION,
     PHASE1_CATEGORY_INSTRUCTION,
     PHASE1_CATEGORY_INSTRUCTION_DISABLED,
     PHASE1_METADATA_DETECTION,
@@ -66,3 +67,58 @@ async def generate_commands_for_batch(
     if isinstance(result, list):
         return result
     return []
+
+
+async def regenerate_command(
+    *,
+    section_number: str,
+    title: str,
+    platform: str,
+    platform_family: str,
+    assessment_type: str | None,
+    audit_description_raw: str | None,
+    remediation_description_raw: str | None,
+    current_audit_command: str | None,
+    current_expected_output_regex: str | None,
+    flag_reason: str,
+    flag_error_output: str | None = None,
+    system_info: str | None = None,
+    previous_commands: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Use LLM to regenerate a failed audit command with context."""
+    error_section = ""
+    if flag_error_output:
+        error_section = f"ERROR OUTPUT FROM EXECUTION:\n{flag_error_output}"
+
+    system_info_section = ""
+    if system_info:
+        system_info_section = f"TARGET SYSTEM INFO:\n{system_info}"
+
+    history_section = ""
+    if previous_commands:
+        history_lines = []
+        for i, prev in enumerate(previous_commands, 1):
+            cmd = prev.get("audit_command", "N/A")
+            reason = prev.get("flag_reason", "N/A")
+            history_lines.append(f"Attempt {i}: {cmd}\n  Failure: {reason}")
+        history_section = "PREVIOUS FAILED ATTEMPTS:\n" + "\n".join(history_lines)
+
+    prompt = COMMAND_REGENERATION.format(
+        section_number=section_number,
+        title=title,
+        platform=platform,
+        platform_family=platform_family,
+        assessment_type=assessment_type or "automated",
+        audit_description_raw=audit_description_raw or "N/A",
+        remediation_description_raw=remediation_description_raw or "N/A",
+        current_audit_command=current_audit_command or "N/A",
+        current_expected_output_regex=current_expected_output_regex or "N/A",
+        flag_reason=flag_reason,
+        error_section=error_section,
+        system_info_section=system_info_section,
+        history_section=history_section,
+    )
+    result = await llm_manager.invoke_json(prompt, timeout=300.0)
+    if isinstance(result, dict):
+        return result
+    return {}
