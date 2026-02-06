@@ -107,6 +107,9 @@ PLATFORM_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "network": DANGEROUS_NETWORK,
 }
 
+# Patterns that indicate a command still contains unresolved placeholders
+PLACEHOLDER_PATTERNS = [r'\{.*?\}', r'<.*?>', r'\[REPLACE\]', r'TODO', r'FIXME']
+
 
 def verify_single_command(audit_command: str | None, platform_family: str) -> dict:
     """Verify a single audit command. Returns {passed: bool, issues: [...]}."""
@@ -121,8 +124,7 @@ def verify_single_command(audit_command: str | None, platform_family: str) -> di
         issues.append({"type": "syntax", "message": "Command is too short to be valid"})
 
     # Check for common placeholder patterns
-    placeholder_patterns = [r'\{.*?\}', r'<.*?>', r'\[REPLACE\]', r'TODO', r'FIXME']
-    for pattern in placeholder_patterns:
+    for pattern in PLACEHOLDER_PATTERNS:
         if re.search(pattern, stripped):
             issues.append({"type": "syntax", "message": f"Command contains placeholder: {pattern}"})
             break

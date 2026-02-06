@@ -49,8 +49,13 @@ async def import_benchmark(
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
 
-    # Save to temp location then move
-    pdf_path = BENCHMARKS_DIR / file.filename
+    # Sanitize filename to prevent path traversal
+    safe_filename = Path(file.filename).name
+    if not safe_filename or safe_filename.startswith(".") or "/" in file.filename or "\\" in file.filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Save to benchmarks directory
+    pdf_path = BENCHMARKS_DIR / safe_filename
     with open(pdf_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
@@ -66,11 +71,11 @@ async def import_benchmark(
 
     # Create benchmark record
     benchmark = Benchmark(
-        name=file.filename.replace(".pdf", ""),
+        name=safe_filename.replace(".pdf", ""),
         version="unknown",
         platform="unknown",
         platform_family="other",
-        pdf_filename=file.filename,
+        pdf_filename=safe_filename,
         pdf_hash=pdf_hash,
         phase1_status="pending",
     )

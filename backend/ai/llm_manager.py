@@ -14,6 +14,10 @@ from backend.models.app_settings import AppSettings
 
 logger = logging.getLogger("auditforge.llm")
 
+# LLM generation parameters — low temperature for deterministic structured output
+LLM_TEMPERATURE = 0.1
+LLM_MAX_TOKENS = 8192
+
 
 class LLMManager:
     """Single interface for all LLM operations."""
@@ -104,7 +108,7 @@ class LLMManager:
             "model": config["offline_model"],
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.1, "num_predict": 8192},
+            "options": {"temperature": LLM_TEMPERATURE, "num_predict": LLM_MAX_TOKENS},
         }
         if system_prompt:
             payload["system"] = system_prompt
@@ -132,8 +136,8 @@ class LLMManager:
         payload = {
             "model": config["online_model"],
             "messages": messages,
-            "temperature": 0.1,
-            "max_tokens": 8192,
+            "temperature": LLM_TEMPERATURE,
+            "max_tokens": LLM_MAX_TOKENS,
         }
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)

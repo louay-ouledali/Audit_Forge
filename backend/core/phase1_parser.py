@@ -20,6 +20,10 @@ from backend.models.rule_tag import RuleTag
 
 logger = logging.getLogger("auditforge.phase1")
 
+# Maximum text size per section chunk sent to the LLM (~3-4 pages of PDF text).
+# Sized to fit comfortably within a typical LLM context window.
+MAX_SECTION_CHUNK_SIZE = 12000
+
 
 def compute_pdf_hash(pdf_path: Path) -> str:
     """Compute SHA-256 hash of a PDF file."""
@@ -76,7 +80,7 @@ def split_into_sections(pages: list[dict[str, Any]]) -> list[str]:
                 sections.append(chunk)
         # If sections are too large, split them further
         result: list[str] = []
-        max_chunk_size = 12000  # ~3-4 pages worth of text
+        max_chunk_size = MAX_SECTION_CHUNK_SIZE
         for section in sections:
             if len(section) > max_chunk_size:
                 # Split large sections into smaller chunks
