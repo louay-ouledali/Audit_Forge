@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Shield, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Shield, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2 } from 'lucide-react';
 import type { Benchmark, Rule, EnrichStatus, VerifyStatus, RuleCommand } from '@/types';
 import * as api from '@/services/api';
 
@@ -285,9 +285,7 @@ export default function BenchmarkDetail() {
           <div className="divide-y divide-gray-100">
             {rules.length === 0 ? (
               <div className="p-8 text-center text-gray-500">
-                {benchmark.phase1_status === 'processing' ? (
-                  <><Loader2 className="mx-auto h-8 w-8 animate-spin text-blue-500" /><p className="mt-2">Parsing rules from PDF…</p></>
-                ) : 'No rules found matching your criteria.'}
+                No rules found matching your criteria.
               </div>
             ) : (
               rules.map((rule) => (
