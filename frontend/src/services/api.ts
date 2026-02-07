@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -298,5 +298,19 @@ export async function importWithNewScan(targetId: number, benchmarkId: number, f
   const { data } = await api.post('/scans/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+  return data;
+}
+
+// ── Module 11: Report Generation ─────────────────────────────
+
+export async function generateReport(payload: ReportGenerateRequest): Promise<Blob> {
+  const { data } = await api.post('/reports/generate', payload, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function generateAISummary(payload: AISummaryRequest): Promise<AISummaryResponse> {
+  const { data } = await api.post('/reports/ai-summary', payload);
   return data;
 }

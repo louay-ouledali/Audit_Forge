@@ -9,6 +9,7 @@ import BenchmarkDetail from './pages/BenchmarkDetail';
 import Scans from './pages/Scans';
 import Findings from './pages/Findings';
 import FindingDetail from './pages/FindingDetail';
+import Reports from './pages/Reports';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <Route path="scans" element={<Scans />} />
           <Route path="findings" element={<Findings />} />
           <Route path="findings/:id" element={<FindingDetail />} />
+          <Route path="reports" element={<Reports />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

@@ -227,3 +227,24 @@ export interface ImportResultsResponse {
   compliance_percentage: number;
   scan_id?: number;
 }
+
+// ── Module 11: Report Generation types ───────────────────────
+
+export interface ReportGenerateRequest {
+  scope: 'scan' | 'target' | 'mission' | 'custom';
+  scope_id?: number;
+  scan_ids?: number[];
+  format: 'pdf' | 'excel' | 'csv' | 'html';
+  include_ai_summary: boolean;
+  include_passed_rules: boolean;
+  title?: string;
+}
+
+export interface AISummaryRequest {
+  scope: 'scan' | 'target' | 'mission';
+  scope_id: number;
+}
+
+export interface AISummaryResponse {
+  summary: string;
+}
