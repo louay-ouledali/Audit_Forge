@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -222,5 +222,21 @@ export async function getCommandVerificationReports(ruleId: number): Promise<Ver
 // LLM
 export async function getLLMStatus(): Promise<LLMStatus> {
   const { data } = await api.get('/llm/status');
+  return data;
+}
+
+// Network Scans
+export async function startNetworkScan(payload: NetworkScanRequest): Promise<NetworkScanResponse> {
+  const { data } = await api.post('/scans/network', payload);
+  return data;
+}
+
+export async function getScanStatus(scanId: number): Promise<ScanStatus> {
+  const { data } = await api.get(`/scans/${scanId}/status`);
+  return data;
+}
+
+export async function cancelScan(scanId: number): Promise<ScanCancelResponse> {
+  const { data } = await api.post(`/scans/${scanId}/cancel`);
   return data;
 }

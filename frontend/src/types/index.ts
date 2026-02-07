@@ -144,3 +144,38 @@ export interface LLMStatus {
   model: string;
   error: string | null;
 }
+
+// ── Network Scan types ───────────────────────────────────────
+
+export interface NetworkScanRequest {
+  target_id: number;
+  benchmark_id: number;
+  preset_id?: number | null;
+  selected_rule_ids?: number[] | null;
+  category_filter?: string[] | null;
+  severity_filter?: string[] | null;
+  profile_filter?: string | null;
+}
+
+export interface NetworkScanResponse {
+  scan_id: number;
+  status: string;
+}
+
+export interface ScanStatus {
+  scan_id: number;
+  status: string;
+  progress: number;
+  total: number;
+  current_rule: string;
+  passed: number;
+  failed: number;
+  errors: number;
+  compliance_percentage: number;
+}
+
+export interface ScanCancelResponse {
+  scan_id: number;
+  status: string;
+  message: string;
+}

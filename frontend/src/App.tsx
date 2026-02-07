@@ -6,6 +6,7 @@ import ClientDetail from './pages/ClientDetail';
 import Settings from './pages/Settings';
 import Benchmarks from './pages/Benchmarks';
 import BenchmarkDetail from './pages/BenchmarkDetail';
+import Scans from './pages/Scans';
 
 function App() {
   return (
@@ -17,6 +18,7 @@ function App() {
           <Route path="clients/:id" element={<ClientDetail />} />
           <Route path="benchmarks" element={<Benchmarks />} />
           <Route path="benchmarks/:id" element={<BenchmarkDetail />} />
+          <Route path="scans" element={<Scans />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
