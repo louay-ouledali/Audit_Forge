@@ -25,7 +25,7 @@ logger = logging.getLogger("auditforge.reports")
 
 TEMPLATES_DIR = str(__import__("pathlib").Path(__file__).resolve().parent.parent / "templates")
 
-# Excel colour fills
+# Excel color fills
 FILL_CRITICAL = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
 FILL_HIGH = PatternFill(start_color="FF8C00", end_color="FF8C00", fill_type="solid")
 FILL_MEDIUM = PatternFill(start_color="FFD700", end_color="FFD700", fill_type="solid")
@@ -332,11 +332,11 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
             f["expected_output"],
             f["remediation"],
         ])
-        # Colour-code severity
+        # Color-code severity
         sev_fill = SEVERITY_FILLS.get(f["severity"])
         if sev_fill:
             ws2.cell(row=row_idx, column=6).fill = sev_fill
-        # Colour-code status
+        # Color-code status
         if f["status"] == "PASS":
             ws2.cell(row=row_idx, column=7).fill = FILL_PASS
         elif f["status"] == "FAIL":
@@ -433,17 +433,17 @@ def generate_html_report(data: dict, include_passed: bool) -> str:
     # Build findings table rows
     finding_rows = ""
     for idx, f in enumerate(findings):
-        sev_class = f["severity"]
-        status_class = f["status"].lower()
+        sev_class = _esc(f["severity"])
+        status_class = _esc(f["status"].lower())
         finding_rows += f"""
-        <tr class="finding-row" data-severity="{f['severity']}" data-status="{f['status']}">
+        <tr class="finding-row" data-severity="{_esc(f['severity'])}" data-status="{_esc(f['status'])}">
             <td>{f['scan_id']}</td>
             <td>{_esc(f['target_hostname'])}</td>
             <td>{_esc(f['benchmark_name'])}</td>
             <td>{_esc(f['section_number'])}</td>
             <td>{_esc(f['rule_title'])}</td>
-            <td><span class="badge sev-{sev_class}">{f['severity'].upper()}</span></td>
-            <td><span class="badge st-{status_class}">{f['status']}</span></td>
+            <td><span class="badge sev-{sev_class}">{_esc(f['severity'].upper())}</span></td>
+            <td><span class="badge st-{status_class}">{_esc(f['status'])}</span></td>
             <td><button class="toggle-btn" onclick="toggleDetail('detail-{idx}')">&#9660;</button></td>
         </tr>
         <tr id="detail-{idx}" class="detail-row" style="display:none">
@@ -581,7 +581,7 @@ function sortTable(col){{
 
 
 def _esc(text: str | None) -> str:
-    """Minimal HTML escaping."""
+    """HTML escaping for safe output in element content and attribute values."""
     if not text:
         return ""
     return (
@@ -590,6 +590,7 @@ def _esc(text: str | None) -> str:
         .replace("<", "&lt;")
         .replace(">", "&gt;")
         .replace('"', "&quot;")
+        .replace("'", "&#39;")
     )
 
 
