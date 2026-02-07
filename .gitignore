@@ -13,3 +13,4 @@ frontend/dist/
 benchmarks/*.pdf
 benchmarks/*.json
 .pytest_cache/
+tmp/
