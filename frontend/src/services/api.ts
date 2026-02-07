@@ -10,6 +10,11 @@ export async function getHealth() {
   return data;
 }
 
+export async function getDashboardStats(): Promise<{ clients: number; active_missions: number; benchmarks: number; scans: number }> {
+  const { data } = await api.get('/stats');
+  return data;
+}
+
 // Clients
 export async function getClients(): Promise<Client[]> {
   const { data } = await api.get('/clients');
