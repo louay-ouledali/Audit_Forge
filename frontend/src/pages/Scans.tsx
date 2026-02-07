@@ -8,8 +8,9 @@ import {
   AlertTriangle,
   Wifi,
   Server,
+  Upload,
 } from 'lucide-react';
-import type { Benchmark, Target, Mission, Client, ScanStatus } from '@/types';
+import type { Benchmark, Target, Mission, Client, ScanStatus, ImportResultsResponse } from '@/types';
 import * as api from '@/services/api';
 
 function statusBadge(status: string) {
@@ -50,6 +51,11 @@ export default function Scans() {
   const [activeScanId, setActiveScanId] = useState<number | null>(null);
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Import state
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResultsResponse | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -154,6 +160,27 @@ export default function Scans() {
       await api.cancelScan(activeScanId);
     } catch {
       // ignore
+    }
+  }
+
+  async function handleImport() {
+    if (!selectedTargetId || !selectedBenchmarkId || !importFile) return;
+    setImporting(true);
+    setError('');
+    try {
+      const result = await api.importWithNewScan(
+        selectedTargetId as number,
+        selectedBenchmarkId as number,
+        importFile,
+      );
+      setImportResult(result);
+    } catch (err: unknown) {
+      const message = err instanceof Error && 'response' in err
+        ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+        : undefined;
+      setError(message || 'Failed to import results');
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -383,6 +410,42 @@ export default function Scans() {
           </p>
         </div>
       )}
+
+      {/* Result Import Section */}
+      <div className="rounded-lg border border-gray-200 bg-white p-6">
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">Import Results</h2>
+        <p className="mb-4 text-sm text-gray-500">
+          Import scan results from offline/USB execution (audit_results.json or marker-based output)
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">
+              Results File (JSON, TXT, or ZIP)
+            </label>
+            <input
+              type="file"
+              accept=".json,.txt,.zip"
+              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+            />
+          </div>
+          <button
+            onClick={handleImport}
+            disabled={!selectedTargetId || !selectedBenchmarkId || !importFile || importing}
+            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {importing ? 'Importing...' : 'Import Results'}
+          </button>
+          {importResult && (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+              <p className="font-medium">Import successful!</p>
+              <p>Findings created: {importResult.findings_created} | Passed: {importResult.passed} | Failed: {importResult.failed} | Errors: {importResult.errors}</p>
+              <p>Compliance: {importResult.compliance_percentage}%</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

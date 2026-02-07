@@ -179,3 +179,51 @@ export interface ScanCancelResponse {
   status: string;
   message: string;
 }
+
+// ── Module 8: Findings & Import types ────────────────────────
+
+export interface ScanDetail {
+  id: number;
+  target_id: number;
+  benchmark_id: number;
+  scan_mode: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+  results_imported_at: string | null;
+  total_rules_checked: number;
+  passed: number;
+  failed: number;
+  errors: number;
+  not_applicable: number;
+  manual_review: number;
+  compliance_percentage: number | null;
+  notes: string | null;
+  created_at: string | null;
+}
+
+export interface Finding {
+  id: number;
+  scan_id: number;
+  rule_id: number;
+  status: string;
+  actual_output: string | null;
+  expected_output: string | null;
+  severity: string | null;
+  ai_advice: string | null;
+  ai_advice_generated_at: string | null;
+  auditor_notes: string | null;
+  auditor_override: string | null;
+  created_at: string | null;
+  section_number: string | null;
+  rule_title: string | null;
+}
+
+export interface ImportResultsResponse {
+  findings_created: number;
+  passed: number;
+  failed: number;
+  errors: number;
+  compliance_percentage: number;
+  scan_id?: number;
+}
