@@ -41,7 +41,10 @@ class SSHConnector(BaseConnector):
 
         def _do_connect():
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            # WarningPolicy logs unknown host keys rather than silently accepting.
+            # This is acceptable for an auditor-controlled tool where targets are
+            # explicitly configured by the user.
+            client.set_missing_host_key_policy(paramiko.WarningPolicy())
             kwargs: dict[str, Any] = {
                 "hostname": host,
                 "port": port,
