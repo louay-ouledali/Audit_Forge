@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from backend.ai.benchmark_ai import generate_commands_for_batch
+from backend.core.exceptions import LLMTimeoutError, LLMUnavailableError
 from backend.database import SessionLocal
 from backend.models.benchmark import Benchmark
 from backend.models.rule import Rule
@@ -20,6 +21,9 @@ logger = logging.getLogger("auditforge.phase2")
 _pause_requests: dict[int, bool] = {}
 
 BATCH_SIZE = 10
+
+# Maximum consecutive batch failures before stopping enrichment
+MAX_CONSECUTIVE_FAILURES = 5
 
 
 def request_pause(benchmark_id: int) -> None:
@@ -64,7 +68,17 @@ async def run_phase2(benchmark_id: int) -> None:
 
         total_to_process = len(rules_without_commands)
         processed = 0
+        consecutive_failures = 0
         logger.info("Phase 2: %d rules to enrich for benchmark %d", total_to_process, benchmark_id)
+
+        # Handle empty benchmark case
+        if total_to_process == 0:
+            benchmark.phase2_status = "completed"
+            benchmark.enrichment_stats = json.dumps({"total": 0, "processed": 0})
+            benchmark.notes = "No rules require enrichment"
+            db.commit()
+            logger.info("Phase 2: No rules to enrich for benchmark %d", benchmark_id)
+            return
 
         # Process in batches
         for batch_start in range(0, total_to_process, BATCH_SIZE):
@@ -90,7 +104,40 @@ async def run_phase2(benchmark_id: int) -> None:
 
             try:
                 results = await generate_commands_for_batch(rules_for_llm, platform, platform_family)
+                consecutive_failures = 0  # Reset on success
+            except (LLMTimeoutError, LLMUnavailableError) as exc:
+                consecutive_failures += 1
+                logger.warning(
+                    "LLM failure at batch %d (consecutive: %d/%d): %s",
+                    batch_start, consecutive_failures, MAX_CONSECUTIVE_FAILURES, exc,
+                )
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    logger.error(
+                        "Phase 2 stopped for benchmark %d: %d consecutive LLM failures",
+                        benchmark_id, consecutive_failures,
+                    )
+                    benchmark.phase2_status = "failed"
+                    benchmark.notes = (
+                        f"Stopped after {consecutive_failures} consecutive LLM failures. "
+                        f"Last error: {exc}"
+                    )
+                    benchmark.enrichment_stats = json.dumps({"total": total_to_process, "processed": processed})
+                    db.commit()
+                    return
+                # Mark batch as failed and continue
+                for rule in batch_rules:
+                    if not rule.commands:
+                        cmd = RuleCommand(
+                            rule_id=rule.id,
+                            status="failed",
+                            source="llm_generated",
+                        )
+                        db.add(cmd)
+                processed += len(batch_rules)
+                db.commit()
+                continue
             except Exception as exc:
+                consecutive_failures += 1
                 logger.warning("Batch starting at %d failed: %s", batch_start, exc)
                 # Mark these rules with empty commands so we can retry later
                 for rule in batch_rules:

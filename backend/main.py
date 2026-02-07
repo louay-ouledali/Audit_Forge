@@ -22,6 +22,15 @@ from backend.api.reports import router as reports_router
 from backend.api.targets import router as targets_router
 from backend.api.analyses import router as analyses_router
 from backend.config import settings
+from backend.core.exceptions import (
+    AuditForgeError,
+    BackupError,
+    BenchmarkError,
+    ConnectionFailedError,
+    ConnectionTimeoutError,
+    LLMError,
+    ScanError,
+)
 from backend.database import init_db
 
 logger = logging.getLogger("auditforge")
@@ -61,6 +70,31 @@ app.include_router(findings_router, prefix="/api")
 app.include_router(llm_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(analyses_router, prefix="/api")
+
+
+@app.exception_handler(AuditForgeError)
+async def auditforge_error_handler(request: Request, exc: AuditForgeError) -> JSONResponse:
+    """Handle structured AditForge errors with appropriate status codes."""
+    status_map: dict[type, int] = {
+        ConnectionFailedError: 502,
+        ConnectionTimeoutError: 504,
+        LLMError: 503,
+        BenchmarkError: 422,
+        ScanError: 500,
+        BackupError: 500,
+    }
+    # Walk up the MRO to find the most specific matching status code
+    status_code = 500
+    for cls in type(exc).__mro__:
+        if cls in status_map:
+            status_code = status_map[cls]
+            break
+
+    logger.error("%s: %s", type(exc).__name__, exc.message)
+    payload: dict = {"detail": exc.message, "error_type": type(exc).__name__}
+    if exc.detail:
+        payload["error_detail"] = exc.detail
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @app.exception_handler(Exception)

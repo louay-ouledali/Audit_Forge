@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.ai.benchmark_ai import detect_benchmark_metadata, extract_rules_from_section
+from backend.core.exceptions import BenchmarkTooLargeError, EmptyBenchmarkError, PDFParseError
 from backend.core.rule_categorizer import TAG_KEYWORDS, auto_tag_rule
 from backend.database import SessionLocal
 from backend.models.benchmark import Benchmark
@@ -24,6 +25,12 @@ logger = logging.getLogger("auditforge.phase1")
 # Sized to fit comfortably within a typical LLM context window.
 MAX_SECTION_CHUNK_SIZE = 12000
 
+# Maximum PDF file size in bytes (200 MB)
+MAX_PDF_SIZE_BYTES = 200 * 1024 * 1024
+
+# Maximum number of pages to process
+MAX_PDF_PAGES = 5000
+
 
 def compute_pdf_hash(pdf_path: Path) -> str:
     """Compute SHA-256 hash of a PDF file."""
@@ -34,17 +41,65 @@ def compute_pdf_hash(pdf_path: Path) -> str:
     return sha256.hexdigest()
 
 
+def validate_pdf_file(pdf_path: Path) -> None:
+    """Validate PDF file before processing.
+
+    Raises:
+        PDFParseError: If the file does not exist or is not a valid PDF.
+        BenchmarkTooLargeError: If the file exceeds the maximum allowed size.
+    """
+    if not pdf_path.exists():
+        raise PDFParseError(f"PDF file not found: {pdf_path}")
+    if not pdf_path.is_file():
+        raise PDFParseError(f"Path is not a file: {pdf_path}")
+
+    file_size = pdf_path.stat().st_size
+    if file_size == 0:
+        raise PDFParseError("PDF file is empty (0 bytes)")
+    if file_size > MAX_PDF_SIZE_BYTES:
+        raise BenchmarkTooLargeError(
+            f"PDF file is too large ({file_size / 1024 / 1024:.1f} MB). "
+            f"Maximum allowed: {MAX_PDF_SIZE_BYTES / 1024 / 1024:.0f} MB"
+        )
+
+
 def extract_text_from_pdf(pdf_path: Path) -> list[dict[str, Any]]:
-    """Extract text from PDF, returning list of {page_number, text} dicts."""
+    """Extract text from PDF, returning list of {page_number, text} dicts.
+
+    Raises:
+        PDFParseError: If the PDF cannot be opened or parsed.
+        BenchmarkTooLargeError: If the PDF exceeds page limits.
+    """
     import fitz  # PyMuPDF
 
-    pages: list[dict[str, Any]] = []
-    doc = fitz.open(str(pdf_path))
+    validate_pdf_file(pdf_path)
+
     try:
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            text = page.get_text("text")
-            pages.append({"page_number": page_num + 1, "text": text})
+        doc = fitz.open(str(pdf_path))
+    except Exception as exc:
+        raise PDFParseError(
+            f"Failed to open PDF: {exc}",
+            detail=str(exc),
+        ) from exc
+
+    pages: list[dict[str, Any]] = []
+    try:
+        total_pages = len(doc)
+        if total_pages > MAX_PDF_PAGES:
+            raise BenchmarkTooLargeError(
+                f"PDF has {total_pages} pages, exceeding the limit of {MAX_PDF_PAGES}"
+            )
+        if total_pages == 0:
+            raise PDFParseError("PDF contains no pages")
+
+        for page_num in range(total_pages):
+            try:
+                page = doc.load_page(page_num)
+                text = page.get_text("text")
+                pages.append({"page_number": page_num + 1, "text": text})
+            except Exception as exc:
+                logger.warning("Failed to extract page %d: %s", page_num + 1, exc)
+                pages.append({"page_number": page_num + 1, "text": ""})
     finally:
         doc.close()
     return pages
@@ -139,10 +194,27 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
 
         # Step 1: Extract text from PDF
         logger.info("Phase 1: Extracting text from PDF for benchmark %d", benchmark_id)
-        pages = extract_text_from_pdf(pdf_path)
+        try:
+            pages = extract_text_from_pdf(pdf_path)
+        except (PDFParseError, BenchmarkTooLargeError) as exc:
+            benchmark.phase1_status = "failed"
+            benchmark.notes = str(exc)
+            db.commit()
+            return
         if not pages:
             benchmark.phase1_status = "failed"
             benchmark.notes = "Failed to extract text from PDF"
+            db.commit()
+            return
+
+        # Check for empty content (pages exist but contain no text)
+        total_text = sum(len(p.get("text", "")) for p in pages)
+        if total_text < 100:
+            benchmark.phase1_status = "failed"
+            benchmark.notes = (
+                "PDF appears to contain no extractable text. "
+                "It may be a scanned image PDF that requires OCR."
+            )
             db.commit()
             return
 
@@ -188,6 +260,19 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
         # Step 6: Deduplicate rules
         all_rules = _deduplicate_rules(all_rules)
         logger.info("Phase 1: Extracted %d unique rules for benchmark %d", len(all_rules), benchmark_id)
+
+        # Check for empty benchmark (no rules extracted)
+        if not all_rules:
+            benchmark.phase1_status = "completed"
+            benchmark.total_rules = 0
+            benchmark.notes = (
+                "No auditable rules were extracted from this benchmark. "
+                "The PDF may not contain CIS-formatted rules, or the content "
+                "structure may not be recognized."
+            )
+            db.commit()
+            logger.warning("Phase 1: Zero rules extracted for benchmark %d", benchmark_id)
+            return
 
         # Step 7: Save rules and tags to database
         for rule_data in all_rules:

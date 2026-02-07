@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from backend.config import settings
 from backend.connectors import get_connector
 from backend.connectors.base import BaseConnector, CommandResult
+from backend.core.exceptions import ConnectionFailedError, ScanCancelledError
 from backend.models.finding import Finding
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
@@ -40,6 +41,9 @@ _scan_progress: dict[int, dict[str, Any]] = {}
 
 # Set of scan IDs that have been cancelled
 _cancelled_scans: set[int] = set()
+
+# Maximum consecutive command execution errors before aborting
+MAX_CONSECUTIVE_ERRORS = 20
 
 
 def get_scan_progress(scan_id: int) -> dict[str, Any] | None:
@@ -200,6 +204,7 @@ async def execute_network_scan(
         }
 
         passed = failed = errors = 0
+        consecutive_errors = 0
 
         # 9. Execute each rule
         for idx, rule in enumerate(rules):
@@ -223,15 +228,19 @@ async def execute_network_scan(
             # Execute
             try:
                 result = await connector.execute(cmd.audit_command, timeout=30)
+                if result.exit_code == 0 or result.stdout.strip():
+                    consecutive_errors = 0  # Reset on success
             except Exception as exc:
                 result = CommandResult(
                     stdout="", stderr=str(exc), exit_code=-1, execution_time_ms=0
                 )
+                consecutive_errors += 1
 
             # Evaluate
             status = _evaluate_result(result, cmd.expected_output_regex)
             if status == "PASS":
                 passed += 1
+                consecutive_errors = 0
             elif status == "FAIL":
                 failed += 1
             else:
@@ -261,8 +270,21 @@ async def execute_network_scan(
                 }
             )
 
+            # Abort if too many consecutive errors (likely connection issue)
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                scan.status = "failed"
+                scan.notes = (
+                    f"Aborted after {consecutive_errors} consecutive errors "
+                    f"at rule {idx + 1}/{total}. Possible connection issue."
+                )
+                logger.error(
+                    "Scan %s aborted: %d consecutive errors",
+                    scan_id, consecutive_errors,
+                )
+                break
+
         # 10. Finalize scan
-        if scan.status != "cancelled":
+        if scan.status not in ("cancelled", "failed"):
             scan.status = "completed"
         scan.completed_at = datetime.now(timezone.utc)
         scan.total_rules_checked = passed + failed + errors
