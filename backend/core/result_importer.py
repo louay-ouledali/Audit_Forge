@@ -17,6 +17,8 @@ from backend.models.scan import Scan
 
 logger = logging.getLogger("auditforge.result_importer")
 
+# Truncate captured output to avoid storing excessively large blobs.
+# 4000 chars is sufficient context for auditor review while keeping the DB lean.
 MAX_OUTPUT_LENGTH = 4000
 
 
@@ -99,16 +101,7 @@ def parse_json_results(raw: str, scan_id: int, benchmark_id: int, db: Session) -
             errors += 1
 
     db.flush()
-    total = passed + failed + errors
-    compliance_pct = round(passed / total * 100, 1) if total > 0 else 0.0
-
-    return {
-        "findings_created": findings_created,
-        "passed": passed,
-        "failed": failed,
-        "errors": errors,
-        "compliance_percentage": compliance_pct,
-    }
+    return _build_stats(findings_created, passed, failed, errors)
 
 
 def parse_marker_results(raw_text: str, scan_id: int, benchmark_id: int, db: Session) -> dict[str, Any]:
@@ -190,9 +183,13 @@ def parse_marker_results(raw_text: str, scan_id: int, benchmark_id: int, db: Ses
             current_output.append(line)
 
     db.flush()
+    return _build_stats(findings_created, passed, failed, errors)
+
+
+def _build_stats(findings_created: int, passed: int, failed: int, errors: int) -> dict[str, Any]:
+    """Build the standard stats dict returned by import functions."""
     total = passed + failed + errors
     compliance_pct = round(passed / total * 100, 1) if total > 0 else 0.0
-
     return {
         "findings_created": findings_created,
         "passed": passed,

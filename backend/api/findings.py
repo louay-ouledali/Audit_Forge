@@ -21,6 +21,8 @@ from backend.schemas.finding import (
 
 router = APIRouter(prefix="/findings", tags=["findings"])
 
+VALID_OVERRIDES = {"confirmed", "false_positive", "accepted_risk", ""}
+
 
 def _finding_to_response(finding: Finding, db: Session) -> dict:
     """Convert a Finding ORM object to a response dict with joined rule info."""
@@ -66,7 +68,7 @@ def update_finding(
     if payload.auditor_notes is not None:
         finding.auditor_notes = payload.auditor_notes
     if payload.auditor_override is not None:
-        valid_overrides = {"confirmed", "false_positive", "accepted_risk", ""}
+        valid_overrides = VALID_OVERRIDES
         if payload.auditor_override not in valid_overrides:
             raise HTTPException(
                 status_code=400,
