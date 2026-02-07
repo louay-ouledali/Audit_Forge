@@ -7,6 +7,8 @@ import Settings from './pages/Settings';
 import Benchmarks from './pages/Benchmarks';
 import BenchmarkDetail from './pages/BenchmarkDetail';
 import Scans from './pages/Scans';
+import Findings from './pages/Findings';
+import FindingDetail from './pages/FindingDetail';
 
 function App() {
   return (
@@ -19,6 +21,8 @@ function App() {
           <Route path="benchmarks" element={<Benchmarks />} />
           <Route path="benchmarks/:id" element={<BenchmarkDetail />} />
           <Route path="scans" element={<Scans />} />
+          <Route path="findings" element={<Findings />} />
+          <Route path="findings/:id" element={<FindingDetail />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

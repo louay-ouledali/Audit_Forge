@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -238,5 +238,65 @@ export async function getScanStatus(scanId: number): Promise<ScanStatus> {
 
 export async function cancelScan(scanId: number): Promise<ScanCancelResponse> {
   const { data } = await api.post(`/scans/${scanId}/cancel`);
+  return data;
+}
+
+// ── Module 8: Scans CRUD ─────────────────────────────────────
+
+export async function getScans(params?: { mission_id?: number; target_id?: number; status?: string }): Promise<{ data: ScanDetail[]; total: number }> {
+  const { data } = await api.get('/scans', { params });
+  return data;
+}
+
+export async function getScan(id: number): Promise<ScanDetail> {
+  const { data } = await api.get(`/scans/${id}`);
+  return data.data;
+}
+
+export async function deleteScan(id: number): Promise<void> {
+  await api.delete(`/scans/${id}`);
+}
+
+// ── Module 8: Findings ───────────────────────────────────────
+
+export async function getScanFindings(scanId: number, params?: { status?: string; severity?: string }): Promise<{ data: Finding[]; total: number }> {
+  const { data } = await api.get(`/scans/${scanId}/findings`, { params });
+  return data;
+}
+
+export async function getFinding(id: number): Promise<Finding> {
+  const { data } = await api.get(`/findings/${id}`);
+  return data;
+}
+
+export async function updateFinding(id: number, payload: { auditor_notes?: string; auditor_override?: string }): Promise<Finding> {
+  const { data } = await api.put(`/findings/${id}`, payload);
+  return data;
+}
+
+export async function generateAIAdvice(findingId: number): Promise<{ advice: string; generated_at: string }> {
+  const { data } = await api.post(`/findings/${findingId}/ai-advice`);
+  return data;
+}
+
+// ── Module 8: Result Import ──────────────────────────────────
+
+export async function importResults(scanId: number, file: File): Promise<ImportResultsResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post(`/scans/${scanId}/import-results`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function importWithNewScan(targetId: number, benchmarkId: number, file: File): Promise<ImportResultsResponse> {
+  const formData = new FormData();
+  formData.append('target_id', targetId.toString());
+  formData.append('benchmark_id', benchmarkId.toString());
+  formData.append('file', file);
+  const { data } = await api.post('/scans/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return data;
 }

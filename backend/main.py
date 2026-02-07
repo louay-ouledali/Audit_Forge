@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.api.benchmarks import router as benchmarks_router
+from backend.api.findings import router as findings_router
 from backend.api.clients import router as clients_router
 from backend.api.health import router as health_router
 from backend.api.llm import router as llm_router
@@ -44,6 +45,7 @@ app.include_router(settings_router, prefix="/api")
 app.include_router(benchmarks_router, prefix="/api")
 app.include_router(rules_router, prefix="/api")
 app.include_router(scans_router, prefix="/api")
+app.include_router(findings_router, prefix="/api")
 app.include_router(llm_router, prefix="/api")
 
 
