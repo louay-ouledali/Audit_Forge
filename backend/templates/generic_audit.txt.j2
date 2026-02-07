@@ -1,0 +1,24 @@
+══════════════════════════════════════════════════════════════
+AditForge — {{ benchmark.name }} {{ benchmark.version }}
+Audit Commands
+Generated: {{ generation_date }}
+Scan ID: {{ scan_id }}
+Rules: {{ rules|length }} enabled rules
+══════════════════════════════════════════════════════════════
+
+INSTRUCTIONS:
+Execute each command below on the target system and record the output.
+Save all outputs and import back into AditForge for analysis.
+
+══════════════════════════════════════════════════════════════
+
+{% for rule in rules %}
+── Rule {{ rule.section_number }}: {{ rule.title }} ──
+Severity: {{ rule.severity }}
+Command:
+{{ rule.audit_command }}
+
+Expected output pattern: {{ rule.expected_output_regex }}
+---
+
+{% endfor %}

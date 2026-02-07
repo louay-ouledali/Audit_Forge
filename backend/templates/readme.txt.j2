@@ -1,0 +1,78 @@
+══════════════════════════════════════════════════════════════
+AditForge — Audit Script Package
+══════════════════════════════════════════════════════════════
+
+Benchmark:  {{ benchmark.name }}
+Version:    {{ benchmark.version }}
+Platform:   {{ benchmark.platform }} ({{ benchmark.platform_family }})
+Generated:  {{ generation_date }}
+Scan ID:    {{ scan_id }}
+Rules:      {{ rules|length }} enabled rules
+
+══════════════════════════════════════════════════════════════
+HOW TO USE
+══════════════════════════════════════════════════════════════
+{% if benchmark.platform_family == "linux" %}
+1. Copy this entire folder to the target Linux machine
+2. Open a terminal with root/sudo privileges
+3. Run: sudo bash {{ script_filename }}
+4. Wait for the audit to complete
+5. Collect the results/ directory
+6. Import results/audit_results.json back into AditForge
+{% elif benchmark.platform_family == "windows" %}
+1. Copy this entire folder to the target Windows machine
+2. Open PowerShell as Administrator
+3. Run: powershell -ExecutionPolicy Bypass -File {{ script_filename }}
+4. Wait for the audit to complete
+5. Collect the results\ directory
+6. Import results\audit_results.json back into AditForge
+{% elif benchmark.platform_family == "database" %}
+1. Copy this entire folder to a machine with database client tools
+2. Connect to the target database server
+3. Execute the SQL script:
+{% if "postgresql" in benchmark.platform|lower %}
+   psql -U postgres -f {{ script_filename }} -o results/audit_output.txt
+{% elif "oracle" in benchmark.platform|lower %}
+   sqlplus / as sysdba @{{ script_filename }}
+{% elif "mssql" in benchmark.platform|lower or "sql server" in benchmark.platform|lower %}
+   sqlcmd -S server -i {{ script_filename }} -o results\audit_output.txt
+{% else %}
+   Use your database client to execute {{ script_filename }}
+{% endif %}
+4. Collect the results/ directory
+5. Import the output back into AditForge
+{% elif benchmark.platform_family == "network" %}
+1. SSH into the target network device
+2. Enter privileged EXEC mode (e.g., enable)
+3. Set terminal length to 0
+4. Start logging your terminal session
+5. Paste the commands from {{ script_filename }} into the session
+6. Save the terminal log as results/audit_output.txt
+7. Import the output back into AditForge
+{% else %}
+1. Review the commands in {{ script_filename }}
+2. Execute each command on the target system
+3. Record all outputs
+4. Import results back into AditForge
+{% endif %}
+
+══════════════════════════════════════════════════════════════
+PACKAGE CONTENTS
+══════════════════════════════════════════════════════════════
+
+{{ script_filename }}     — Main audit script/commands
+rules_reference.json      — JSON list of rules being checked
+README.txt                — This file
+results/                  — Directory for audit results (created during execution)
+
+══════════════════════════════════════════════════════════════
+IMPORTANT NOTES
+══════════════════════════════════════════════════════════════
+
+- This script is READ-ONLY: it will NOT modify the target system
+- Each command's output is saved as evidence in results/raw_outputs/
+- If a command fails, the script continues with the next rule
+- Running the script multiple times produces the same results
+- Results are saved in machine-readable JSON format
+
+══════════════════════════════════════════════════════════════

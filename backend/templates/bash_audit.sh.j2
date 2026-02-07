@@ -1,0 +1,150 @@
+#!/bin/bash
+# ══════════════════════════════════════════════════════════════
+# AditForge — Automated Configuration Review
+# Benchmark: {{ benchmark.name }} {{ benchmark.version }}
+# Generated: {{ generation_date }}
+# Rules: {{ rules|length }} enabled rules
+# Scan ID: {{ scan_id }}
+# ══════════════════════════════════════════════════════════════
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RESULTS_DIR="$SCRIPT_DIR/results"
+RAW_DIR="$RESULTS_DIR/raw_outputs"
+mkdir -p "$RAW_DIR"
+
+# Counters
+TOTAL=0; PASSED=0; FAILED=0; ERRORS=0
+
+# Terminal colors
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+
+echo "══════════════════════════════════════════════════════════"
+echo "  AditForge Audit Starting"
+echo "  Benchmark: {{ benchmark.name }} {{ benchmark.version }}"
+echo "  Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+echo "══════════════════════════════════════════════════════════"
+
+# ── Collect system info ──
+cat > "$RESULTS_DIR/system_info.json" << 'SYSEOF'
+{
+  "hostname": "PLACEHOLDER",
+  "os": "PLACEHOLDER",
+  "kernel": "PLACEHOLDER",
+  "arch": "PLACEHOLDER",
+  "ip_addresses": "PLACEHOLDER",
+  "scan_date": "PLACEHOLDER",
+  "scan_id": "{{ scan_id }}",
+  "benchmark": "{{ benchmark.name }}",
+  "benchmark_version": "{{ benchmark.version }}"
+}
+SYSEOF
+# Overwrite with actual values using standard tools
+python3 -c "
+import json, subprocess, socket, datetime
+info = {
+    'hostname': socket.gethostname(),
+    'os': subprocess.getoutput('cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2').strip('\"'),
+    'kernel': subprocess.getoutput('uname -r'),
+    'arch': subprocess.getoutput('uname -m'),
+    'ip_addresses': subprocess.getoutput('hostname -I 2>/dev/null').strip(),
+    'scan_date': datetime.datetime.utcnow().isoformat() + 'Z',
+    'scan_id': '{{ scan_id }}',
+    'benchmark': '{{ benchmark.name }}',
+    'benchmark_version': '{{ benchmark.version }}'
+}
+with open('$RESULTS_DIR/system_info.json', 'w') as f:
+    json.dump(info, f, indent=2)
+" 2>/dev/null || true
+
+# ── Initialize results ──
+echo '[' > "$RESULTS_DIR/audit_results.json"
+FIRST_RESULT=true
+
+run_check() {
+    local rule_id="$1"
+    local title="$2"
+    local severity="$3"
+    local command="$4"
+    local expected_regex="$5"
+
+    TOTAL=$((TOTAL + 1))
+
+    # Execute audit command
+    local output exit_code
+    output=$(eval "$command" 2>&1) || true
+    exit_code=$?
+
+    # Save raw output as evidence
+    local safe_id=$(echo "$rule_id" | tr '.' '_')
+    echo "$output" > "$RAW_DIR/rule_${safe_id}.txt"
+
+    # Evaluate
+    local status
+    if [ -z "$output" ] && [ $exit_code -ne 0 ]; then
+        status="ERROR"
+        ERRORS=$((ERRORS + 1))
+        echo -e "  ${YELLOW}[ERROR]${NC} $rule_id: $title"
+    elif echo "$output" | grep -qP "$expected_regex" 2>/dev/null; then
+        status="PASS"
+        PASSED=$((PASSED + 1))
+        echo -e "  ${GREEN}[PASS]${NC}  $rule_id: $title"
+    else
+        status="FAIL"
+        FAILED=$((FAILED + 1))
+        echo -e "  ${RED}[FAIL]${NC}  $rule_id: $title"
+    fi
+
+    # Append to results JSON
+    local escaped_output
+    escaped_output=$(python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))" <<< "$output" 2>/dev/null || echo '""')
+
+    if [ "$FIRST_RESULT" = true ]; then
+        FIRST_RESULT=false
+    else
+        echo ',' >> "$RESULTS_DIR/audit_results.json"
+    fi
+
+    cat >> "$RESULTS_DIR/audit_results.json" << RULEEOF
+  {
+    "rule_id": "$rule_id",
+    "title": $(python3 -c "import json; print(json.dumps('$title'))" 2>/dev/null || echo "\"$title\""),
+    "severity": "$severity",
+    "status": "$status",
+    "actual_output": $escaped_output,
+    "expected_regex": $(python3 -c "import json; print(json.dumps('''$expected_regex'''))" 2>/dev/null || echo "\"\"")
+  }
+RULEEOF
+}
+
+# ══════════════════════════════════════════════════════════════
+# AUDIT RULES
+# ══════════════════════════════════════════════════════════════
+
+{% for rule in rules %}
+# ── Rule {{ rule.section_number }}: {{ rule.title }} ──
+run_check \
+    "{{ rule.section_number }}" \
+    "{{ rule.title | replace('"', '\\"') | replace("'", "'\\''") }}" \
+    "{{ rule.severity }}" \
+    '{{ rule.audit_command | replace("'", "'\\''") }}' \
+    '{{ rule.expected_output_regex | replace("'", "'\\''") }}'
+
+{% endfor %}
+
+# ══════════════════════════════════════════════════════════════
+# SUMMARY
+# ══════════════════════════════════════════════════════════════
+echo '' >> "$RESULTS_DIR/audit_results.json"
+echo ']' >> "$RESULTS_DIR/audit_results.json"
+
+COMPLIANCE=$(echo "scale=1; $PASSED * 100 / $TOTAL" | bc 2>/dev/null || echo "N/A")
+
+echo ""
+echo "══════════════════════════════════════════════════════════"
+echo "  AUDIT COMPLETE"
+echo "  Total: $TOTAL | Pass: $PASSED | Fail: $FAILED | Error: $ERRORS"
+echo "  Compliance: ${COMPLIANCE}%"
+echo "  Results: $RESULTS_DIR/audit_results.json"
+echo "══════════════════════════════════════════════════════════"
