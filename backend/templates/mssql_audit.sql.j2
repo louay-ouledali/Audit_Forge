@@ -1,0 +1,18 @@
+-- ══════════════════════════════════════════════════════════════
+-- AditForge — MSSQL Audit
+-- Benchmark: {{ benchmark.name }} {{ benchmark.version }}
+-- Generated: {{ generation_date }}
+-- Scan ID: {{ scan_id }}
+-- Rules: {{ rules|length }} enabled rules
+-- Run as: sqlcmd -S server -i audit_queries.sql -o results\audit_output.txt
+-- ══════════════════════════════════════════════════════════════
+
+{% for rule in rules %}
+PRINT 'RULE_START|{{ rule.section_number }}|{{ rule.severity }}'
+GO
+{{ rule.audit_command }}
+GO
+PRINT 'RULE_END|{{ rule.section_number }}'
+GO
+
+{% endfor %}

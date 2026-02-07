@@ -449,3 +449,37 @@ def override_verification_gate(benchmark_id: int, db: Session = Depends(get_db))
         benchmark.verification_status = "overridden"
     db.commit()
     return {"message": "Benchmark marked as ready (verification overridden)", "benchmark_id": benchmark_id}
+
+
+# ── Bulk Protect ──
+
+@router.post("/{benchmark_id}/commands/bulk-protect")
+def bulk_protect_commands(benchmark_id: int, db: Session = Depends(get_db)):
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    verified_commands = (
+        db.query(RuleCommand)
+        .join(Rule)
+        .filter(
+            Rule.benchmark_id == benchmark_id,
+            RuleCommand.status == "verified",
+            RuleCommand.is_protected.is_(False),
+        )
+        .all()
+    )
+
+    count = 0
+    for cmd in verified_commands:
+        cmd.is_protected = True
+        cmd.protected_at = now
+        cmd.protection_reason = "Bulk protected by auditor"
+        cmd.updated_at = now
+        count += 1
+
+    db.commit()
+    return {"message": f"Protected {count} commands", "protected_count": count}

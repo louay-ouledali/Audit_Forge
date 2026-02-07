@@ -1,0 +1,116 @@
+# ══════════════════════════════════════════════════════════════
+# AditForge — Automated Configuration Review
+# Benchmark: {{ benchmark.name }} {{ benchmark.version }}
+# Generated: {{ generation_date }}
+# Rules: {{ rules|length }} enabled rules
+# Scan ID: {{ scan_id }}
+# ══════════════════════════════════════════════════════════════
+
+$ErrorActionPreference = "Continue"
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ResultsDir = Join-Path $ScriptDir "results"
+$RawDir = Join-Path $ResultsDir "raw_outputs"
+New-Item -ItemType Directory -Force -Path $RawDir | Out-Null
+
+$Total = 0; $Passed = 0; $Failed = 0; $Errors = 0
+$Results = @()
+
+Write-Host "══════════════════════════════════════════════════════════"
+Write-Host "  AditForge Audit Starting"
+Write-Host "  Benchmark: {{ benchmark.name }} {{ benchmark.version }}"
+Write-Host "  Date: $(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')"
+Write-Host "══════════════════════════════════════════════════════════"
+
+# ── Collect system info ──
+$SysInfo = @{
+    hostname          = $env:COMPUTERNAME
+    os                = (Get-CimInstance Win32_OperatingSystem).Caption
+    kernel            = [System.Environment]::OSVersion.VersionString
+    arch              = $env:PROCESSOR_ARCHITECTURE
+    ip_addresses      = ((Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" }).IPAddress -join ", ")
+    scan_date         = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+    scan_id           = "{{ scan_id }}"
+    benchmark         = "{{ benchmark.name }}"
+    benchmark_version = "{{ benchmark.version }}"
+} | ConvertTo-Json -Depth 3
+$SysInfo | Out-File "$ResultsDir\system_info.json" -Encoding UTF8
+
+function Run-Check {
+    param(
+        [string]$RuleId,
+        [string]$Title,
+        [string]$Severity,
+        [scriptblock]$Command,
+        [string]$ExpectedRegex
+    )
+
+    $script:Total++
+    $SafeId = $RuleId -replace '\.', '_'
+
+    try {
+        $Output = & $Command 2>&1 | Out-String
+        $Output | Out-File "$RawDir\rule_$SafeId.txt" -Encoding UTF8
+
+        if ([string]::IsNullOrWhiteSpace($Output)) {
+            $Status = "ERROR"
+            $script:Errors++
+            Write-Host "  [ERROR] ${RuleId}: $Title" -ForegroundColor Yellow
+        }
+        elseif ($Output -match $ExpectedRegex) {
+            $Status = "PASS"
+            $script:Passed++
+            Write-Host "  [PASS]  ${RuleId}: $Title" -ForegroundColor Green
+        }
+        else {
+            $Status = "FAIL"
+            $script:Failed++
+            Write-Host "  [FAIL]  ${RuleId}: $Title" -ForegroundColor Red
+        }
+    }
+    catch {
+        $Output = $_.Exception.Message
+        $Output | Out-File "$RawDir\rule_$SafeId.txt" -Encoding UTF8
+        $Status = "ERROR"
+        $script:Errors++
+        Write-Host "  [ERROR] ${RuleId}: $Title — $Output" -ForegroundColor Yellow
+    }
+
+    $script:Results += @{
+        rule_id        = $RuleId
+        title          = $Title
+        severity       = $Severity
+        status         = $Status
+        actual_output  = $Output.Trim()
+        expected_regex = $ExpectedRegex
+    }
+}
+
+# ══════════════════════════════════════════════════════════════
+# AUDIT RULES
+# ══════════════════════════════════════════════════════════════
+
+{% for rule in rules %}
+# ── Rule {{ rule.section_number }}: {{ rule.title }} ──
+Run-Check `
+    -RuleId "{{ rule.section_number }}" `
+    -Title "{{ rule.title | replace('"', '`"') }}" `
+    -Severity "{{ rule.severity }}" `
+    -Command { {{ rule.audit_command }} } `
+    -ExpectedRegex '{{ rule.expected_output_regex | replace("'", "''") }}'
+
+{% endfor %}
+
+# ══════════════════════════════════════════════════════════════
+# SUMMARY
+# ══════════════════════════════════════════════════════════════
+$Results | ConvertTo-Json -Depth 5 | Out-File "$ResultsDir\audit_results.json" -Encoding UTF8
+
+$Compliance = if ($Total -gt 0) { [math]::Round(($Passed / $Total) * 100, 1) } else { 0 }
+
+Write-Host ""
+Write-Host "══════════════════════════════════════════════════════════"
+Write-Host "  AUDIT COMPLETE"
+Write-Host "  Total: $Total | Pass: $Passed | Fail: $Failed | Error: $Errors"
+Write-Host "  Compliance: $Compliance%"
+Write-Host "  Results: $ResultsDir\audit_results.json"
+Write-Host "══════════════════════════════════════════════════════════"

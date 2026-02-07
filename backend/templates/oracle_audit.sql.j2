@@ -1,0 +1,24 @@
+-- ══════════════════════════════════════════════════════════════
+-- AditForge — Oracle Audit
+-- Benchmark: {{ benchmark.name }} {{ benchmark.version }}
+-- Generated: {{ generation_date }}
+-- Scan ID: {{ scan_id }}
+-- Rules: {{ rules|length }} enabled rules
+-- Run as: sqlplus / as sysdba @audit_queries.sql
+-- ══════════════════════════════════════════════════════════════
+
+SET PAGESIZE 1000
+SET LINESIZE 300
+SET FEEDBACK OFF
+SET HEADING ON
+SPOOL results/audit_output.txt
+
+{% for rule in rules %}
+PROMPT RULE_START|{{ rule.section_number }}|{{ rule.severity }}
+{{ rule.audit_command }}
+PROMPT RULE_END|{{ rule.section_number }}
+
+{% endfor %}
+
+SPOOL OFF
+EXIT
