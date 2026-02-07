@@ -372,6 +372,7 @@ async def bulk_regenerate_commands(
                         previous_commands=history,
                     )
                 except Exception:
+                    logger.warning("Failed to regenerate command for rule %s", rid)
                     continue
 
                 now = datetime.now(timezone.utc)
@@ -391,6 +392,7 @@ async def bulk_regenerate_commands(
                 cmd.updated_at = now
                 db_inner.commit()
         except Exception:
+            logger.exception("Bulk regeneration failed")
             db_inner.rollback()
         finally:
             db_inner.close()

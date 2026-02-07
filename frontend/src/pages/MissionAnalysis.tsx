@@ -34,15 +34,12 @@ export default function MissionAnalysis() {
 
   const fetchMission = async () => {
     try {
-      const resp = await fetch(`/api/missions/${id}`);
-      const json = await resp.json();
-      if (json.data) {
-        setMission(json.data);
-        // Load comparable missions for the same client
-        if (json.data.client_id) {
-          const comparable = await api.getComparableMissions(json.data.client_id);
-          setComparableMissions(comparable.filter((m: ComparableMission) => m.id !== id));
-        }
+      const missionData = await api.getMission(id);
+      setMission(missionData);
+      // Load comparable missions for the same client
+      if (missionData.client_id) {
+        const comparable = await api.getComparableMissions(missionData.client_id);
+        setComparableMissions(comparable.filter((m: ComparableMission) => m.id !== id));
       }
     } catch {
       // Mission data is optional for display

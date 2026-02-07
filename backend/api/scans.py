@@ -185,11 +185,12 @@ def get_scan_status(scan_id: int, db: Session = Depends(get_db)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
 
+    total_checked = scan.total_rules_checked or 0
     return ScanStatusResponse(
         scan_id=scan.id,
         status=scan.status,
-        progress=scan.total_rules_checked or 0,
-        total=scan.total_rules_checked or 0,
+        progress=total_checked,
+        total=scan.total_rules or total_checked,
         current_rule="",
         passed=scan.passed or 0,
         failed=scan.failed or 0,
@@ -263,6 +264,7 @@ def list_scans(
                 "started_at": s.started_at.isoformat() if s.started_at else None,
                 "completed_at": s.completed_at.isoformat() if s.completed_at else None,
                 "results_imported_at": s.results_imported_at.isoformat() if s.results_imported_at else None,
+                "total_rules": s.total_rules or 0,
                 "total_rules_checked": s.total_rules_checked or 0,
                 "passed": s.passed or 0,
                 "failed": s.failed or 0,
@@ -336,6 +338,7 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db)):
             "started_at": scan.started_at.isoformat() if scan.started_at else None,
             "completed_at": scan.completed_at.isoformat() if scan.completed_at else None,
             "results_imported_at": scan.results_imported_at.isoformat() if scan.results_imported_at else None,
+            "total_rules": scan.total_rules or 0,
             "total_rules_checked": scan.total_rules_checked or 0,
             "passed": scan.passed or 0,
             "failed": scan.failed or 0,
@@ -440,9 +443,16 @@ async def import_results(
     return stats
 
 
+MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB
+
+
 async def _extract_result_content(file: UploadFile) -> str:
     """Read uploaded file content. If ZIP, extract the first suitable file."""
     raw = await file.read()
+
+    if len(raw) > MAX_UPLOAD_SIZE:
+        raise ValueError(f"File too large ({len(raw)} bytes). Maximum is {MAX_UPLOAD_SIZE} bytes.")
+
     filename = file.filename or ""
 
     if filename.endswith(".zip") or raw[:4] == b'PK\x03\x04':

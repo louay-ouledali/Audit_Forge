@@ -4,10 +4,11 @@ import { getDashboardStats } from '../services/api';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ clients: 0, active_missions: 0, benchmarks: 0, scans: 0 });
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    getDashboardStats().then(setStats).catch((err) => {
-      console.error('Failed to load dashboard stats:', err);
+    getDashboardStats().then(setStats).catch(() => {
+      setError('Failed to load dashboard stats. Is the backend running?');
     });
   }, []);
 
@@ -26,6 +27,12 @@ export default function Dashboard() {
           Get started by importing a CIS Benchmark or creating a client
         </p>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((stat) => {

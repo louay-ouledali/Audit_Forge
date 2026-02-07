@@ -21,6 +21,7 @@ class Scan(Base):
     completed_at = Column(DateTime)
     status = Column(String, default="pending")
 
+    total_rules = Column(Integer, default=0)
     total_rules_checked = Column(Integer, default=0)
     passed = Column(Integer, default=0)
     failed = Column(Integer, default=0)
