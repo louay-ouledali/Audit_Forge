@@ -117,6 +117,148 @@ Each object: audit_command, expected_output_regex, expected_output_description,
 remediation_command, remediation_description.
 """
 
+ANALYSIS_CROSS_TARGET = """
+You are analyzing configuration audit results from multiple targets within
+the same organization.
+
+MISSION: {mission_name}
+CLIENT: {client_name}
+
+TARGETS AND THEIR FINDINGS:
+{targets_findings}
+
+Analyze the findings and identify:
+
+1. SYSTEMIC ISSUES: Misconfigurations that appear across multiple targets.
+   Group them and explain the likely root cause (e.g., shared Group Policy,
+   common deployment template, shared configuration management).
+
+2. OUTLIERS: Targets that are significantly less compliant than others.
+   Highlight what makes them different.
+
+3. CRITICAL RISK CHAINS: Combinations of misconfigurations across different
+   targets that together create a higher risk than individually.
+   (e.g., weak SSH config on a jump host + permissive firewall on internal servers)
+
+4. PRIORITIZED REMEDIATION PLAN: Suggest the order in which the client should
+   fix issues, considering:
+   - Impact (severity x number of affected targets)
+   - Effort (easy quick wins vs. complex changes)
+   - Dependencies (fix X before Y)
+
+Return ONLY a valid JSON object with these keys:
+{{
+  "systemic_issues": [
+    {{
+      "title": "...",
+      "affected_targets": ["hostname1", "hostname2"],
+      "affected_rules": ["5.2.4", "5.2.5"],
+      "likely_cause": "...",
+      "severity": "high",
+      "recommendation": "..."
+    }}
+  ],
+  "outliers": [
+    {{
+      "target": "hostname",
+      "compliance": 45.2,
+      "average_compliance": 72.1,
+      "notable_gaps": ["...", "..."],
+      "recommendation": "..."
+    }}
+  ],
+  "risk_chains": [
+    {{
+      "title": "...",
+      "description": "...",
+      "involved_targets": ["...", "..."],
+      "involved_rules": ["...", "..."],
+      "combined_risk": "critical",
+      "recommendation": "..."
+    }}
+  ],
+  "remediation_plan": [
+    {{
+      "priority": 1,
+      "action": "...",
+      "targets": ["..."],
+      "rules": ["..."],
+      "effort": "low",
+      "impact": "high",
+      "rationale": "..."
+    }}
+  ]
+}}
+"""
+
+ANALYSIS_CROSS_MISSION = """
+You are comparing configuration audit results between two audit engagements
+for the same client.
+
+CLIENT: {client_name}
+
+PREVIOUS MISSION: {previous_mission_name} ({previous_date})
+  Overall Compliance: {previous_compliance}%
+  Findings: {previous_critical} critical, {previous_high} high,
+            {previous_medium} medium, {previous_low} low
+
+CURRENT MISSION: {current_mission_name} ({current_date})
+  Overall Compliance: {current_compliance}%
+  Findings: {current_critical} critical, {current_high} high,
+            {current_medium} medium, {current_low} low
+
+CHANGES IN DETAIL:
+Rules that improved (FAIL -> PASS): {rules_improved}
+Rules that regressed (PASS -> FAIL): {rules_regressed}
+Rules still failing: {rules_still_failing}
+New targets: {new_targets}
+Removed targets: {removed_targets}
+
+Analyze and provide:
+
+1. IMPROVEMENT SUMMARY: What got better, quantified
+2. REGRESSION ALERTS: What got worse, with severity assessment
+3. PERSISTENT ISSUES: Critical/high findings that remain unfixed — flag these strongly
+4. NEW RISKS: Issues introduced since the last audit
+5. TREND ASSESSMENT: Is the client's security posture improving overall?
+6. RECOMMENDATIONS: What should the client focus on before the next audit
+
+Return ONLY a valid JSON object with these keys:
+{{
+  "improvement_summary": {{ "description": "...", "improved_count": 0, "details": ["..."] }},
+  "regression_alerts": [{{ "rule": "...", "severity": "...", "description": "..." }}],
+  "persistent_issues": [{{ "rule": "...", "severity": "...", "description": "..." }}],
+  "new_risks": [{{ "rule": "...", "severity": "...", "description": "..." }}],
+  "trend_assessment": {{ "direction": "improving", "confidence": "high", "summary": "..." }},
+  "recommendations": [{{ "priority": 1, "action": "...", "rationale": "..." }}]
+}}
+"""
+
+ANALYSIS_CATEGORY = """
+Analyze the following compliance scores by category for a client audit:
+
+CLIENT: {client_name}
+MISSION: {mission_name}
+
+COMPLIANCE BY CATEGORY (across all targets):
+{categories_data}
+
+Provide:
+1. STRENGTHS: Categories with high compliance — what the client is doing well
+2. WEAKNESSES: Categories with low compliance — areas of concern
+3. QUICK WINS: Categories where a small number of fixes would significantly improve the score
+4. STRATEGIC RECOMMENDATIONS: High-level security program recommendations based on the pattern
+   (e.g., "Consider implementing a centralized logging solution" if audit_logging is weak)
+
+Return ONLY a valid JSON object with these keys:
+{{
+  "strengths": [{{ "category": "...", "compliance": 95.0, "description": "..." }}],
+  "weaknesses": [{{ "category": "...", "compliance": 30.0, "description": "..." }}],
+  "quick_wins": [{{ "category": "...", "current_compliance": 60.0, "potential_compliance": 85.0, "fix_count": 3, "description": "..." }}],
+  "strategic_recommendations": [{{ "priority": 1, "recommendation": "...", "rationale": "...", "related_categories": ["..."] }}]
+}}
+"""
+
 COMMAND_REGENERATION = """
 A CIS benchmark audit command failed during execution. Generate a FIXED version.
 

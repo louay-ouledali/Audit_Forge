@@ -5,6 +5,7 @@ from backend.models.benchmark import Benchmark
 from backend.models.client import Client
 from backend.models.finding import Finding
 from backend.models.mission import Mission
+from backend.models.mission_analysis import MissionAnalysis
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
 from backend.models.rule_tag import RuleTag
@@ -19,6 +20,7 @@ __all__ = [
     "Client",
     "Finding",
     "Mission",
+    "MissionAnalysis",
     "Rule",
     "RuleCommand",
     "RuleTag",

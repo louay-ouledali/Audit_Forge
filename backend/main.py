@@ -20,6 +20,7 @@ from backend.api.scans import router as scans_router
 from backend.api.settings import router as settings_router
 from backend.api.reports import router as reports_router
 from backend.api.targets import router as targets_router
+from backend.api.analyses import router as analyses_router
 from backend.config import settings
 from backend.database import init_db
 
@@ -59,6 +60,7 @@ app.include_router(scans_router, prefix="/api")
 app.include_router(findings_router, prefix="/api")
 app.include_router(llm_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
+app.include_router(analyses_router, prefix="/api")
 
 
 @app.exception_handler(Exception)

@@ -23,3 +23,9 @@ class Mission(Base):
 
     client = relationship("Client", back_populates="missions")
     targets = relationship("Target", back_populates="mission", cascade="all, delete-orphan")
+    analyses = relationship(
+        "MissionAnalysis",
+        back_populates="mission",
+        cascade="all, delete-orphan",
+        foreign_keys="MissionAnalysis.mission_id",
+    )
