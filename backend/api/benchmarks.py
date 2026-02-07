@@ -16,6 +16,7 @@ from backend.database import get_db
 from backend.models.benchmark import Benchmark
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
+from backend.models.verification_report import VerificationReport
 from backend.schemas.benchmark import (
     BenchmarkDetailEnvelope,
     BenchmarkImportResponse,
@@ -25,6 +26,7 @@ from backend.schemas.benchmark import (
     EnrichStatusResponse,
     VerifyStatusResponse,
 )
+from backend.schemas.rule import VerificationReportResponse, VerificationResultsResponse
 
 logger = logging.getLogger("auditforge.api.benchmarks")
 
@@ -257,3 +259,193 @@ def get_verification_status(benchmark_id: int, db: Session = Depends(get_db)):
         passed=passed,
         failed=failed,
     )
+
+
+# ── Verification Results ──
+
+@router.get("/{benchmark_id}/verify/results", response_model=VerificationResultsResponse)
+def get_verification_results(
+    benchmark_id: int,
+    level: str | None = Query(None, description="Filter by check level: syntax, safety, cross_reference, regex"),
+    result: str | None = Query(None, description="Filter by result: pass, fail, warn, skip"),
+    db: Session = Depends(get_db),
+):
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    query = (
+        db.query(VerificationReport)
+        .join(RuleCommand, VerificationReport.rule_command_id == RuleCommand.id)
+        .join(Rule, RuleCommand.rule_id == Rule.id)
+        .filter(Rule.benchmark_id == benchmark_id)
+    )
+
+    if level:
+        query = query.filter(VerificationReport.level == level)
+    if result:
+        query = query.filter(VerificationReport.result == result)
+
+    reports = query.order_by(VerificationReport.run_at.desc()).all()
+    return {
+        "data": [VerificationReportResponse.model_validate(r) for r in reports],
+        "total": len(reports),
+        "message": "success",
+    }
+
+
+# ── Bulk Regenerate ──
+
+@router.post("/{benchmark_id}/commands/bulk-regenerate")
+async def bulk_regenerate_commands(
+    benchmark_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    flagged_commands = (
+        db.query(RuleCommand)
+        .join(Rule)
+        .filter(
+            Rule.benchmark_id == benchmark_id,
+            RuleCommand.status == "flagged",
+            RuleCommand.is_protected == False,  # noqa: E712
+        )
+        .all()
+    )
+
+    if not flagged_commands:
+        raise HTTPException(status_code=400, detail="No flagged commands to regenerate")
+
+    rule_ids = [cmd.rule_id for cmd in flagged_commands]
+
+    async def _bulk_regenerate(rids: list[int]) -> None:
+        from backend.database import SessionLocal
+        from backend.ai.benchmark_ai import regenerate_command as ai_regenerate
+
+        db_inner = SessionLocal()
+        try:
+            for rid in rids:
+                rule = db_inner.query(Rule).filter(Rule.id == rid).first()
+                if not rule or not rule.commands:
+                    continue
+                cmd = rule.commands
+                if cmd.is_protected or cmd.status != "flagged":
+                    continue
+
+                bm = rule.benchmark
+                if not bm:
+                    continue
+
+                history: list[dict] = []
+                if cmd.previous_commands:
+                    try:
+                        history = json.loads(cmd.previous_commands)
+                    except (json.JSONDecodeError, TypeError):
+                        history = []
+
+                from datetime import datetime, timezone
+                history.append({
+                    "audit_command": cmd.audit_command,
+                    "expected_output_regex": cmd.expected_output_regex,
+                    "flag_reason": cmd.flag_reason,
+                    "source": cmd.source,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
+
+                try:
+                    result = await ai_regenerate(
+                        section_number=rule.section_number,
+                        title=rule.title,
+                        platform=bm.platform,
+                        platform_family=bm.platform_family,
+                        assessment_type=rule.assessment_type,
+                        audit_description_raw=rule.audit_description_raw,
+                        remediation_description_raw=rule.remediation_description_raw,
+                        current_audit_command=cmd.audit_command,
+                        current_expected_output_regex=cmd.expected_output_regex,
+                        flag_reason=cmd.flag_reason or "Flagged for regeneration",
+                        flag_error_output=cmd.flag_error_output,
+                        previous_commands=history,
+                    )
+                except Exception:
+                    continue
+
+                now = datetime.now(timezone.utc)
+                cmd.audit_command = result.get("audit_command", cmd.audit_command)
+                cmd.expected_output_regex = result.get("expected_output_regex", cmd.expected_output_regex)
+                cmd.expected_output_description = result.get("expected_output_description", cmd.expected_output_description)
+                cmd.remediation_command = result.get("remediation_command", cmd.remediation_command)
+                cmd.remediation_description = result.get("remediation_description", cmd.remediation_description)
+                cmd.source = "llm_regenerated"
+                cmd.status = "generated"
+                cmd.flag_reason = None
+                cmd.flag_error_output = None
+                cmd.flagged_at = None
+                cmd.regeneration_count = (cmd.regeneration_count or 0) + 1
+                cmd.last_regenerated_at = now
+                cmd.previous_commands = json.dumps(history)
+                cmd.updated_at = now
+                db_inner.commit()
+        except Exception:
+            db_inner.rollback()
+        finally:
+            db_inner.close()
+
+    background_tasks.add_task(_bulk_regenerate, rule_ids)
+    return {
+        "message": f"Bulk regeneration started for {len(rule_ids)} commands",
+        "benchmark_id": benchmark_id,
+        "count": len(rule_ids),
+    }
+
+
+# ── Bulk Accept ──
+
+@router.post("/{benchmark_id}/verify/bulk-accept")
+def bulk_accept_commands(benchmark_id: int, db: Session = Depends(get_db)):
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    updated = (
+        db.query(RuleCommand)
+        .join(Rule)
+        .filter(
+            Rule.benchmark_id == benchmark_id,
+            RuleCommand.status.in_(["generated", "pending_review"]),
+            RuleCommand.is_protected == False,  # noqa: E712
+        )
+        .all()
+    )
+
+    count = 0
+    for cmd in updated:
+        cmd.status = "verified"
+        cmd.verified_at = now
+        cmd.verification_notes = "Bulk accepted by auditor"
+        count += 1
+
+    db.commit()
+    return {"message": f"Accepted {count} commands", "count": count}
+
+
+# ── Override Gate ──
+
+@router.post("/{benchmark_id}/verify/override")
+def override_verification_gate(benchmark_id: int, db: Session = Depends(get_db)):
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    benchmark.is_ready = True
+    if benchmark.verification_status == "completed_with_issues":
+        benchmark.verification_status = "overridden"
+    db.commit()
+    return {"message": "Benchmark marked as ready (verification overridden)", "benchmark_id": benchmark_id}

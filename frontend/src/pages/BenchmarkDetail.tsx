@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Shield, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2 } from 'lucide-react';
-import type { Benchmark, Rule, EnrichStatus, VerifyStatus, RuleCommand } from '@/types';
+import { ArrowLeft, Play, Pause, Shield, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle } from 'lucide-react';
+import type { Benchmark, Rule, EnrichStatus, VerifyStatus, RuleCommand, CommandHistoryEntry, VerificationReport } from '@/types';
 import * as api from '@/services/api';
 
 function severityBadge(severity: string) {
@@ -26,10 +26,29 @@ function statusBadge(status: string) {
     paused: 'bg-yellow-100 text-yellow-800',
     pending: 'bg-gray-100 text-gray-600',
     completed_with_issues: 'bg-orange-100 text-orange-800',
+    overridden: 'bg-yellow-100 text-yellow-800',
+    verified: 'bg-green-100 text-green-800',
+    flagged: 'bg-red-100 text-red-800',
+    generated: 'bg-blue-100 text-blue-800',
+    pending_review: 'bg-yellow-100 text-yellow-800',
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] || styles.pending}`}>
       {status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+function verificationResultBadge(result: string) {
+  const styles: Record<string, string> = {
+    pass: 'bg-green-100 text-green-800',
+    fail: 'bg-red-100 text-red-800',
+    warn: 'bg-yellow-100 text-yellow-800',
+    skip: 'bg-gray-100 text-gray-500',
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${styles[result] || 'bg-gray-100 text-gray-600'}`}>
+      {result}
     </span>
   );
 }
@@ -49,6 +68,15 @@ export default function BenchmarkDetail() {
   const [severityFilter, setSeverityFilter] = useState('');
   const [expandedRule, setExpandedRule] = useState<number | null>(null);
   const [ruleCommand, setRuleCommand] = useState<RuleCommand | null>(null);
+  const [commandHistory, setCommandHistory] = useState<CommandHistoryEntry[]>([]);
+  const [verificationReports, setVerificationReports] = useState<VerificationReport[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showReports, setShowReports] = useState(false);
+  const [flagReason, setFlagReason] = useState('');
+  const [showFlagForm, setShowFlagForm] = useState(false);
+  const [unlockReason, setUnlockReason] = useState('');
+  const [showUnlockForm, setShowUnlockForm] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -122,18 +150,159 @@ export default function BenchmarkDetail() {
     }
   };
 
+  const handleBulkAccept = async () => {
+    try {
+      setActionLoading(true);
+      await api.bulkAcceptCommands(benchmarkId);
+      await fetchData();
+      await fetchRules();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to bulk accept');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkRegenerate = async () => {
+    try {
+      setActionLoading(true);
+      await api.bulkRegenerateCommands(benchmarkId);
+      await fetchData();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start bulk regeneration');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleOverride = async () => {
+    try {
+      setActionLoading(true);
+      await api.overrideVerification(benchmarkId);
+      await fetchData();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to override');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleExpandRule = async (ruleId: number) => {
     if (expandedRule === ruleId) {
       setExpandedRule(null);
       setRuleCommand(null);
+      setCommandHistory([]);
+      setVerificationReports([]);
+      setShowHistory(false);
+      setShowReports(false);
+      setShowFlagForm(false);
+      setShowUnlockForm(false);
       return;
     }
     setExpandedRule(ruleId);
+    setShowHistory(false);
+    setShowReports(false);
+    setShowFlagForm(false);
+    setShowUnlockForm(false);
     try {
       const cmd = await api.getRuleCommand(ruleId);
       setRuleCommand(cmd);
     } catch {
       setRuleCommand(null);
+    }
+  };
+
+  const handleFlagCommand = async (ruleId: number) => {
+    if (!flagReason.trim()) return;
+    try {
+      setActionLoading(true);
+      const cmd = await api.flagCommand(ruleId, flagReason);
+      setRuleCommand(cmd);
+      setShowFlagForm(false);
+      setFlagReason('');
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to flag command');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRegenerateCommand = async (ruleId: number) => {
+    try {
+      setActionLoading(true);
+      const cmd = await api.regenerateCommand(ruleId);
+      setRuleCommand(cmd);
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to regenerate command');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleProtectCommand = async (ruleId: number) => {
+    try {
+      setActionLoading(true);
+      const cmd = await api.protectCommand(ruleId);
+      setRuleCommand(cmd);
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to protect command');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleUnlockCommand = async (ruleId: number) => {
+    if (!unlockReason.trim()) return;
+    try {
+      setActionLoading(true);
+      const cmd = await api.unlockCommand(ruleId, unlockReason);
+      setRuleCommand(cmd);
+      setShowUnlockForm(false);
+      setUnlockReason('');
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to unlock command');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleVerifySingle = async (ruleId: number) => {
+    try {
+      setActionLoading(true);
+      const cmd = await api.verifySingleCommand(ruleId);
+      setRuleCommand(cmd);
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to verify command');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleShowHistory = async (ruleId: number) => {
+    if (showHistory) {
+      setShowHistory(false);
+      return;
+    }
+    try {
+      const history = await api.getCommandHistory(ruleId);
+      setCommandHistory(history);
+      setShowHistory(true);
+    } catch {
+      setCommandHistory([]);
+    }
+  };
+
+  const handleShowReports = async (ruleId: number) => {
+    if (showReports) {
+      setShowReports(false);
+      return;
+    }
+    try {
+      const reports = await api.getCommandVerificationReports(ruleId);
+      setVerificationReports(reports);
+      setShowReports(true);
+    } catch {
+      setVerificationReports([]);
     }
   };
 
@@ -170,7 +339,10 @@ export default function BenchmarkDetail() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <button onClick={() => setError('')} className="float-right text-red-400 hover:text-red-600">×</button>
+          {error}
+        </div>
       )}
 
       {benchmark.notes && benchmark.phase1_status === 'failed' && (
@@ -240,10 +412,25 @@ export default function BenchmarkDetail() {
               </div>
             </div>
           )}
-          <div className="mt-3">
-            {benchmark.phase2_status === 'completed' && !['processing', 'completed', 'completed_with_issues'].includes(benchmark.verification_status) && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {benchmark.phase2_status === 'completed' && !['processing'].includes(benchmark.verification_status) && (
               <button onClick={handleVerify} className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
-                <Shield className="h-3 w-3" /> Run Verification
+                <Shield className="h-3 w-3" /> {['completed', 'completed_with_issues', 'overridden'].includes(benchmark.verification_status) ? 'Re-run' : 'Run'} Verification
+              </button>
+            )}
+            {verifyStatus && verifyStatus.failed > 0 && (
+              <button onClick={handleBulkRegenerate} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50">
+                <RefreshCw className="h-3 w-3" /> Regenerate Flagged
+              </button>
+            )}
+            {['completed', 'completed_with_issues'].includes(benchmark.verification_status) && (
+              <button onClick={handleBulkAccept} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50">
+                <CheckCheck className="h-3 w-3" /> Accept All
+              </button>
+            )}
+            {benchmark.verification_status === 'completed_with_issues' && !benchmark.is_ready && (
+              <button onClick={handleOverride} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50">
+                <AlertTriangle className="h-3 w-3" /> Override
               </button>
             )}
           </div>
@@ -319,6 +506,14 @@ export default function BenchmarkDetail() {
                             <span className="text-xs font-medium text-gray-500">Command Status:</span>
                             {statusBadge(ruleCommand.status)}
                             {ruleCommand.is_protected && <span className="rounded bg-purple-100 px-2 py-0.5 text-xs text-purple-700">Protected</span>}
+                            {ruleCommand.source && (
+                              <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{ruleCommand.source}</span>
+                            )}
+                            {ruleCommand.regeneration_count > 0 && (
+                              <span className="rounded bg-blue-50 px-2 py-0.5 text-xs text-blue-700">
+                                Regen #{ruleCommand.regeneration_count}
+                              </span>
+                            )}
                           </div>
                           {ruleCommand.audit_command && (
                             <div>
@@ -332,10 +527,180 @@ export default function BenchmarkDetail() {
                               <p className="mt-1 text-sm text-gray-700">{ruleCommand.expected_output_description}</p>
                             </div>
                           )}
+                          {ruleCommand.expected_output_regex && (
+                            <div>
+                              <span className="text-xs font-medium text-gray-500">Expected Regex:</span>
+                              <code className="mt-1 block rounded bg-gray-100 p-2 text-xs text-gray-800">{ruleCommand.expected_output_regex}</code>
+                            </div>
+                          )}
                           {ruleCommand.flag_reason && (
                             <div className="rounded bg-red-50 p-2">
                               <span className="text-xs font-medium text-red-700">Flag Reason:</span>
                               <p className="mt-1 text-sm text-red-600">{ruleCommand.flag_reason}</p>
+                            </div>
+                          )}
+
+                          {/* Command Action Buttons */}
+                          <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
+                            {!ruleCommand.is_protected && ruleCommand.status !== 'flagged' && (
+                              <button
+                                onClick={() => setShowFlagForm(!showFlagForm)}
+                                className="inline-flex items-center gap-1 rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                              >
+                                <Flag className="h-3 w-3" /> Flag
+                              </button>
+                            )}
+                            {ruleCommand.status === 'flagged' && !ruleCommand.is_protected && (
+                              <button
+                                onClick={() => handleRegenerateCommand(rule.id)}
+                                disabled={actionLoading}
+                                className="inline-flex items-center gap-1 rounded-md bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+                              >
+                                <RefreshCw className="h-3 w-3" /> Regenerate
+                              </button>
+                            )}
+                            {!ruleCommand.is_protected && (
+                              <button
+                                onClick={() => handleVerifySingle(rule.id)}
+                                disabled={actionLoading}
+                                className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+                              >
+                                <ShieldCheck className="h-3 w-3" /> Verify
+                              </button>
+                            )}
+                            {!ruleCommand.is_protected && ['verified', 'generated'].includes(ruleCommand.status) && (
+                              <button
+                                onClick={() => handleProtectCommand(rule.id)}
+                                disabled={actionLoading}
+                                className="inline-flex items-center gap-1 rounded-md bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 disabled:opacity-50"
+                              >
+                                <Lock className="h-3 w-3" /> Protect
+                              </button>
+                            )}
+                            {ruleCommand.is_protected && (
+                              <button
+                                onClick={() => setShowUnlockForm(!showUnlockForm)}
+                                className="inline-flex items-center gap-1 rounded-md bg-yellow-50 px-3 py-1.5 text-xs font-medium text-yellow-700 hover:bg-yellow-100"
+                              >
+                                <Unlock className="h-3 w-3" /> Unlock
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleShowHistory(rule.id)}
+                              className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                            >
+                              <History className="h-3 w-3" /> {showHistory ? 'Hide' : 'Show'} History
+                            </button>
+                            <button
+                              onClick={() => handleShowReports(rule.id)}
+                              className="inline-flex items-center gap-1 rounded-md bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                            >
+                              <ShieldOff className="h-3 w-3" /> {showReports ? 'Hide' : 'Show'} Reports
+                            </button>
+                          </div>
+
+                          {/* Flag Form */}
+                          {showFlagForm && (
+                            <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+                              <label className="block text-xs font-medium text-red-700">Flag Reason:</label>
+                              <textarea
+                                value={flagReason}
+                                onChange={(e) => setFlagReason(e.target.value)}
+                                placeholder="Describe why this command is broken…"
+                                className="w-full rounded border border-red-300 p-2 text-sm focus:border-red-500 focus:outline-none"
+                                rows={2}
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleFlagCommand(rule.id)}
+                                  disabled={actionLoading || !flagReason.trim()}
+                                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                                >
+                                  Submit Flag
+                                </button>
+                                <button
+                                  onClick={() => { setShowFlagForm(false); setFlagReason(''); }}
+                                  className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-300"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Unlock Form */}
+                          {showUnlockForm && (
+                            <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 space-y-2">
+                              <label className="block text-xs font-medium text-yellow-700">Unlock Reason:</label>
+                              <textarea
+                                value={unlockReason}
+                                onChange={(e) => setUnlockReason(e.target.value)}
+                                placeholder="Explain why you are unlocking this protected command…"
+                                className="w-full rounded border border-yellow-300 p-2 text-sm focus:border-yellow-500 focus:outline-none"
+                                rows={2}
+                              />
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleUnlockCommand(rule.id)}
+                                  disabled={actionLoading || !unlockReason.trim()}
+                                  className="rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
+                                >
+                                  Confirm Unlock
+                                </button>
+                                <button
+                                  onClick={() => { setShowUnlockForm(false); setUnlockReason(''); }}
+                                  className="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-300"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Command History */}
+                          {showHistory && (
+                            <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+                              <h4 className="text-xs font-medium text-gray-700">Command History ({commandHistory.length} entries)</h4>
+                              {commandHistory.length === 0 ? (
+                                <p className="text-xs text-gray-400">No previous command versions.</p>
+                              ) : (
+                                commandHistory.map((entry, idx) => (
+                                  <div key={idx} className="rounded border border-gray-100 bg-gray-50 p-2 space-y-1">
+                                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                                      <span>Attempt #{idx + 1}</span>
+                                      {entry.source && <span className="rounded bg-gray-100 px-1.5 py-0.5">{entry.source}</span>}
+                                      {entry.timestamp && <span>{new Date(entry.timestamp).toLocaleString()}</span>}
+                                    </div>
+                                    {entry.audit_command && (
+                                      <pre className="rounded bg-gray-900 p-2 text-xs text-green-400 overflow-x-auto">{entry.audit_command}</pre>
+                                    )}
+                                    {entry.flag_reason && (
+                                      <p className="text-xs text-red-600">Flag: {entry.flag_reason}</p>
+                                    )}
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          )}
+
+                          {/* Verification Reports */}
+                          {showReports && (
+                            <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+                              <h4 className="text-xs font-medium text-gray-700">Verification Reports ({verificationReports.length})</h4>
+                              {verificationReports.length === 0 ? (
+                                <p className="text-xs text-gray-400">No verification reports yet. Run verification first.</p>
+                              ) : (
+                                verificationReports.map((report) => (
+                                  <div key={report.id} className="flex items-center gap-2 rounded border border-gray-100 bg-gray-50 p-2">
+                                    <span className="min-w-[90px] text-xs font-mono text-gray-500">{report.level}</span>
+                                    {verificationResultBadge(report.result)}
+                                    <span className="flex-1 text-xs text-gray-700">{report.message}</span>
+                                    {report.auto_fixable && (
+                                      <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700">auto-fixable</span>
+                                    )}
+                                  </div>
+                                ))
+                              )}
                             </div>
                           )}
                         </div>

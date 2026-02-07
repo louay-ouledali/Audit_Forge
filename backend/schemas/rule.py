@@ -56,10 +56,14 @@ class RuleCommandResponse(BaseModel):
     status: str = "generated"
     source: str = "llm_generated"
     is_protected: bool = False
+    protection_reason: str | None = None
+    protected_at: datetime | None = None
     verified_at: datetime | None = None
+    verification_notes: str | None = None
     flagged_at: datetime | None = None
     flag_reason: str | None = None
     regeneration_count: int = 0
+    last_regenerated_at: datetime | None = None
 
 
 class RuleCommandUpdate(BaseModel):
@@ -68,6 +72,56 @@ class RuleCommandUpdate(BaseModel):
     expected_output_description: str | None = None
     remediation_command: str | None = None
     remediation_description: str | None = None
+
+
+class FlagCommandRequest(BaseModel):
+    reason: str
+    error_output: str | None = None
+
+
+class RegenerateCommandRequest(BaseModel):
+    system_info: str | None = None
+
+
+class ProtectCommandRequest(BaseModel):
+    reason: str | None = "Manually protected by auditor"
+
+
+class UnlockCommandRequest(BaseModel):
+    reason: str
+
+
+class CommandHistoryEntry(BaseModel):
+    audit_command: str | None = None
+    expected_output_regex: str | None = None
+    flag_reason: str | None = None
+    source: str | None = None
+    timestamp: str | None = None
+
+
+class CommandHistoryResponse(BaseModel):
+    data: list[CommandHistoryEntry]
+    total: int
+    message: str = "success"
+
+
+class VerificationReportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    rule_command_id: int
+    level: str
+    result: str
+    message: str | None = None
+    details: str | None = None
+    auto_fixable: bool = False
+    run_at: datetime | None = None
+
+
+class VerificationResultsResponse(BaseModel):
+    data: list[VerificationReportResponse]
+    total: int
+    message: str = "success"
 
 
 class RuleListResponse(BaseModel):

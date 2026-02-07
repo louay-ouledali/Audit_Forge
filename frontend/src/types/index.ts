@@ -109,7 +109,33 @@ export interface RuleCommand {
   status: string;
   source: string;
   is_protected: boolean;
+  protection_reason: string | null;
+  protected_at: string | null;
+  verified_at: string | null;
+  verification_notes: string | null;
+  flagged_at: string | null;
   flag_reason: string | null;
+  regeneration_count: number;
+  last_regenerated_at: string | null;
+}
+
+export interface CommandHistoryEntry {
+  audit_command: string | null;
+  expected_output_regex: string | null;
+  flag_reason: string | null;
+  source: string | null;
+  timestamp: string | null;
+}
+
+export interface VerificationReport {
+  id: number;
+  rule_command_id: number;
+  level: string;
+  result: string;
+  message: string | null;
+  details: string | null;
+  auto_fixable: boolean;
+  run_at: string | null;
 }
 
 export interface LLMStatus {
