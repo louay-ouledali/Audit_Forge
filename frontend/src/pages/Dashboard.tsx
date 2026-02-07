@@ -6,7 +6,9 @@ export default function Dashboard() {
   const [stats, setStats] = useState({ clients: 0, active_missions: 0, benchmarks: 0, scans: 0 });
 
   useEffect(() => {
-    getDashboardStats().then(setStats).catch(() => {});
+    getDashboardStats().then(setStats).catch((err) => {
+      console.error('Failed to load dashboard stats:', err);
+    });
   }, []);
 
   const cards = [

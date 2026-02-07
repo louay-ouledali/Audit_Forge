@@ -5,6 +5,10 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.models.benchmark import Benchmark
+from backend.models.client import Client
+from backend.models.mission import Mission
+from backend.models.scan import Scan
 
 router = APIRouter(tags=["health"])
 
@@ -22,11 +26,6 @@ def health_check(db: Session = Depends(get_db)) -> dict:
 @router.get("/stats")
 def get_dashboard_stats(db: Session = Depends(get_db)) -> dict:
     """Return aggregate counts for the dashboard."""
-    from backend.models.client import Client
-    from backend.models.mission import Mission
-    from backend.models.benchmark import Benchmark
-    from backend.models.scan import Scan
-
     clients = db.query(func.count(Client.id)).scalar() or 0
     missions = db.query(func.count(Mission.id)).filter(Mission.status != "completed").scalar() or 0
     benchmarks = db.query(func.count(Benchmark.id)).scalar() or 0
