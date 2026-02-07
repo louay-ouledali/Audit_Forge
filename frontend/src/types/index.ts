@@ -20,6 +20,7 @@ export interface Mission {
   notes: string | null;
   created_at: string;
   target_count: number;
+  client_name?: string | null;
 }
 
 export interface Target {
@@ -143,6 +144,30 @@ export interface LLMStatus {
   mode: string;
   model: string;
   error: string | null;
+}
+
+// ── Script Export (USB) types ─────────────────────────────────
+
+export interface GenerateScriptRequest {
+  benchmark_id: number;
+  target_id?: number | null;
+  preset_id?: number | null;
+  selected_rule_ids?: number[] | null;
+  category_filter?: string[] | null;
+  severity_filter?: string[] | null;
+  profile_filter?: string | null;
+}
+
+export interface ScriptPreviewRule {
+  id: number;
+  section_number: string;
+  title: string | null;
+  severity: string | null;
+}
+
+export interface ScriptPreviewResponse {
+  total_rules: number;
+  rules: ScriptPreviewRule[];
 }
 
 // ── Network Scan types ───────────────────────────────────────

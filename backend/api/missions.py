@@ -17,6 +17,19 @@ from backend.schemas.mission import (
 router = APIRouter(tags=["missions"])
 
 
+@router.get("/missions", response_model=MissionListResponse)
+def list_all_missions(db: Session = Depends(get_db)) -> dict:
+    """List all missions across all clients."""
+    missions = db.query(Mission).order_by(Mission.id.desc()).all()
+    result = []
+    for m in missions:
+        resp = MissionResponse.model_validate(m)
+        resp.target_count = len(m.targets)
+        resp.client_name = m.client.name if m.client else None
+        result.append(resp)
+    return {"data": result, "total": len(result)}
+
+
 @router.get("/clients/{client_id}/missions", response_model=MissionListResponse)
 def list_missions(client_id: int, db: Session = Depends(get_db)) -> dict:
     client = db.query(Client).filter(Client.id == client_id).first()

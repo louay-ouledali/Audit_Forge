@@ -15,7 +15,7 @@ export default function Dashboard() {
 
   const cards = [
     { label: 'Clients', value: stats.clients, icon: Building2, color: 'text-blue-600 bg-blue-50', link: '/clients' },
-    { label: 'Active Missions', value: stats.active_missions, icon: Crosshair, color: 'text-green-600 bg-green-50', link: '/clients' },
+    { label: 'Active Missions', value: stats.active_missions, icon: Crosshair, color: 'text-green-600 bg-green-50', link: '/missions' },
     { label: 'Benchmarks', value: stats.benchmarks, icon: FileText, color: 'text-purple-600 bg-purple-50', link: '/benchmarks' },
     { label: 'Scans', value: stats.scans, icon: Play, color: 'text-orange-600 bg-orange-50', link: '/scans' },
   ];
