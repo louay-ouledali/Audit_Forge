@@ -23,11 +23,7 @@ export default function MissionAnalysis() {
 
   const fetchData = async () => {
     try {
-      const [missionData, analysesData] = await Promise.all([
-        api.getClient(0).catch(() => null), // will fetch mission below
-        api.getMissionAnalyses(id),
-      ]);
-      void missionData;
+      const analysesData = await api.getMissionAnalyses(id);
       setAnalyses(analysesData.data);
     } catch {
       setError('Failed to load analyses');
