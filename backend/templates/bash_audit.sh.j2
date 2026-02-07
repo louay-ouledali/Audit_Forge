@@ -49,7 +49,7 @@ info = {
     'kernel': subprocess.getoutput('uname -r'),
     'arch': subprocess.getoutput('uname -m'),
     'ip_addresses': subprocess.getoutput('hostname -I 2>/dev/null').strip(),
-    'scan_date': datetime.datetime.utcnow().isoformat() + 'Z',
+    'scan_date': datetime.datetime.now(datetime.timezone.utc).isoformat(),
     'scan_id': '{{ scan_id }}',
     'benchmark': '{{ benchmark.name }}',
     'benchmark_version': '{{ benchmark.version }}'

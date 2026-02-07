@@ -468,7 +468,7 @@ def bulk_protect_commands(benchmark_id: int, db: Session = Depends(get_db)):
         .filter(
             Rule.benchmark_id == benchmark_id,
             RuleCommand.status == "verified",
-            RuleCommand.is_protected == False,  # noqa: E712
+            RuleCommand.is_protected.is_(False),
         )
         .all()
     )

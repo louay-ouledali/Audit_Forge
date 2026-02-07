@@ -85,7 +85,7 @@ def filter_rules(
 
     query = (
         db.query(Rule)
-        .filter(Rule.benchmark_id == benchmark_id, Rule.enabled == True)  # noqa: E712
+        .filter(Rule.benchmark_id == benchmark_id, Rule.enabled.is_(True))
     )
 
     # 1. Explicit rule IDs take priority
