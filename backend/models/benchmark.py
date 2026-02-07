@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -16,7 +16,7 @@ class Benchmark(Base):
     version = Column(String, nullable=False)
     platform = Column(String, nullable=False)
     platform_family = Column(String, nullable=False)
-    import_date = Column(DateTime, default=datetime.utcnow)
+    import_date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     pdf_filename = Column(String)
     pdf_hash = Column(String)
     total_rules = Column(Integer, default=0)

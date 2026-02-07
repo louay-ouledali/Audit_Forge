@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -38,6 +39,7 @@ _SKIP_STATUSES = {"skipped", "manual", "not_applicable"}
 
 # In-memory progress tracking for active scans (scan_id -> progress dict)
 _scan_progress: dict[int, dict[str, Any]] = {}
+_progress_lock = threading.Lock()
 
 # Set of scan IDs that have been cancelled
 _cancelled_scans: set[int] = set()
@@ -48,14 +50,17 @@ MAX_CONSECUTIVE_ERRORS = 20
 
 def get_scan_progress(scan_id: int) -> dict[str, Any] | None:
     """Return current progress for an active scan, or None."""
-    return _scan_progress.get(scan_id)
+    with _progress_lock:
+        prog = _scan_progress.get(scan_id)
+        return dict(prog) if prog else None
 
 
 def cancel_scan(scan_id: int) -> bool:
     """Mark a scan as cancelled.  Returns True if the scan was active."""
-    if scan_id in _scan_progress:
-        _cancelled_scans.add(scan_id)
-        return True
+    with _progress_lock:
+        if scan_id in _scan_progress:
+            _cancelled_scans.add(scan_id)
+            return True
     return False
 
 
@@ -191,17 +196,18 @@ async def execute_network_scan(
         total = len(rules)
 
         # 8. Initialise progress tracker
-        _scan_progress[scan_id] = {
-            "scan_id": scan_id,
-            "status": "running",
-            "progress": 0,
-            "total": total,
-            "current_rule": "",
-            "passed": 0,
-            "failed": 0,
-            "errors": 0,
-            "compliance_percentage": 0.0,
-        }
+        with _progress_lock:
+            _scan_progress[scan_id] = {
+                "scan_id": scan_id,
+                "status": "running",
+                "progress": 0,
+                "total": total,
+                "current_rule": "",
+                "passed": 0,
+                "failed": 0,
+                "errors": 0,
+                "compliance_percentage": 0.0,
+            }
 
         passed = failed = errors = 0
         consecutive_errors = 0
@@ -222,8 +228,9 @@ async def execute_network_scan(
                 continue
 
             # Update progress
-            _scan_progress[scan_id]["progress"] = idx + 1
-            _scan_progress[scan_id]["current_rule"] = rule.section_number
+            with _progress_lock:
+                _scan_progress[scan_id]["progress"] = idx + 1
+                _scan_progress[scan_id]["current_rule"] = rule.section_number
 
             # Execute
             try:
@@ -261,14 +268,15 @@ async def execute_network_scan(
             # Update running progress
             checked = passed + failed + errors
             pct = (passed / checked * 100) if checked > 0 else 0.0
-            _scan_progress[scan_id].update(
-                {
-                    "passed": passed,
-                    "failed": failed,
-                    "errors": errors,
-                    "compliance_percentage": round(pct, 1),
-                }
-            )
+            with _progress_lock:
+                _scan_progress[scan_id].update(
+                    {
+                        "passed": passed,
+                        "failed": failed,
+                        "errors": errors,
+                        "compliance_percentage": round(pct, 1),
+                    }
+                )
 
             # Abort if too many consecutive errors (likely connection issue)
             if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
@@ -287,6 +295,7 @@ async def execute_network_scan(
         if scan.status not in ("cancelled", "failed"):
             scan.status = "completed"
         scan.completed_at = datetime.now(timezone.utc)
+        scan.total_rules = total
         scan.total_rules_checked = passed + failed + errors
         scan.passed = passed
         scan.failed = failed
@@ -319,11 +328,14 @@ async def execute_network_scan(
 
     finally:
         # Clean up
-        if connector:
-            try:
-                await connector.disconnect()
-            except Exception:
-                pass
-        _scan_progress.pop(scan_id, None)
-        _cancelled_scans.discard(scan_id)
-        db.close()
+        try:
+            if connector:
+                try:
+                    await connector.disconnect()
+                except Exception:
+                    pass
+        finally:
+            with _progress_lock:
+                _scan_progress.pop(scan_id, None)
+                _cancelled_scans.discard(scan_id)
+            db.close()

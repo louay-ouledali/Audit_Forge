@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 
@@ -17,4 +17,4 @@ class VerificationReport(Base):
     message = Column(Text)
     details = Column(Text)
     auto_fixable = Column(Boolean, default=False)
-    run_at = Column(DateTime, default=datetime.utcnow)
+    run_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

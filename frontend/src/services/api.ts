@@ -60,6 +60,11 @@ export async function deleteMission(id: number): Promise<void> {
   await api.delete(`/missions/${id}`);
 }
 
+export async function getMission(id: number): Promise<Mission> {
+  const { data } = await api.get(`/missions/${id}`);
+  return data.data;
+}
+
 // Targets
 export async function getTargets(missionId: number): Promise<Target[]> {
   const { data } = await api.get(`/missions/${missionId}/targets`);

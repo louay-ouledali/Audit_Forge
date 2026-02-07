@@ -64,8 +64,8 @@ export default function Reports() {
 
   // Load scans and clients on mount
   useEffect(() => {
-    api.getScans().then((res) => setScans(res.data)).catch(() => {});
-    api.getClients().then((res) => setClients(res)).catch(() => {});
+    api.getScans().then((res) => setScans(res.data)).catch(() => setError('Failed to load scans'));
+    api.getClients().then((res) => setClients(res)).catch(() => setError('Failed to load clients'));
   }, []);
 
   // Load missions when client changes

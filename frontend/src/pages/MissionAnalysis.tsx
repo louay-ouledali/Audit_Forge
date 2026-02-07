@@ -34,15 +34,12 @@ export default function MissionAnalysis() {
 
   const fetchMission = async () => {
     try {
-      const resp = await fetch(`/api/missions/${id}`);
-      const json = await resp.json();
-      if (json.data) {
-        setMission(json.data);
-        // Load comparable missions for the same client
-        if (json.data.client_id) {
-          const comparable = await api.getComparableMissions(json.data.client_id);
-          setComparableMissions(comparable.filter((m: ComparableMission) => m.id !== id));
-        }
+      const missionData = await api.getMission(id);
+      setMission(missionData);
+      // Load comparable missions for the same client
+      if (missionData.client_id) {
+        const comparable = await api.getComparableMissions(missionData.client_id);
+        setComparableMissions(comparable.filter((m: ComparableMission) => m.id !== id));
       }
     } catch {
       // Mission data is optional for display
@@ -257,6 +254,7 @@ function AnalysisCard({
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
             className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
             title="Delete"
+            aria-label="Delete analysis"
           >
             <Trash2 className="h-4 w-4" />
           </button>

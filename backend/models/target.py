@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -26,7 +26,7 @@ class Target(Base):
     db_connection_string_encrypted = Column(Text)
 
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     mission = relationship("Mission", back_populates="targets")
     scans = relationship("Scan", back_populates="target", cascade="all, delete-orphan")
