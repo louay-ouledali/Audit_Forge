@@ -246,11 +246,8 @@ def list_scans(
     if target_id:
         query = query.filter(Scan.target_id == target_id)
     if mission_id:
-        target_ids = [t.id for t in db.query(TargetModel.id).filter(TargetModel.mission_id == mission_id).all()]
-        if target_ids:
-            query = query.filter(Scan.target_id.in_(target_ids))
-        else:
-            return {"data": [], "total": 0}
+        subq = db.query(TargetModel.id).filter(TargetModel.mission_id == mission_id).subquery()
+        query = query.filter(Scan.target_id.in_(subq))
     if status:
         query = query.filter(Scan.status == status)
 

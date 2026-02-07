@@ -17,6 +17,8 @@ from backend.models.scan import Scan
 
 logger = logging.getLogger("auditforge.result_importer")
 
+MAX_OUTPUT_LENGTH = 4000
+
 
 def parse_json_results(raw: str, scan_id: int, benchmark_id: int, db: Session) -> dict[str, Any]:
     """Parse audit_results.json format (Linux/Windows mode B scripts).
@@ -64,9 +66,10 @@ def parse_json_results(raw: str, scan_id: int, benchmark_id: int, db: Session) -
 
         actual = entry.get("actual_output", "")
 
+        cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
+
         # If status not provided in JSON, try to evaluate using regex
         if not entry.get("status"):
-            cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
             if cmd and cmd.expected_output_regex:
                 try:
                     if re.search(cmd.expected_output_regex, actual, re.MULTILINE | re.IGNORECASE):
@@ -80,14 +83,10 @@ def parse_json_results(raw: str, scan_id: int, benchmark_id: int, db: Session) -
             scan_id=scan_id,
             rule_id=rule.id,
             status=status,
-            actual_output=actual[:4000] if actual else "",
-            expected_output=None,
+            actual_output=actual[:MAX_OUTPUT_LENGTH] if actual else "",
+            expected_output=cmd.expected_output_regex if cmd else None,
             severity=rule.severity,
         )
-        # Populate expected_output from rule command if available
-        cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
-        if cmd:
-            finding.expected_output = cmd.expected_output_regex
 
         db.add(finding)
         findings_created += 1
@@ -168,7 +167,7 @@ def parse_marker_results(raw_text: str, scan_id: int, benchmark_id: int, db: Ses
                         scan_id=scan_id,
                         rule_id=rule.id,
                         status=status,
-                        actual_output=output_text[:4000],
+                        actual_output=output_text[:MAX_OUTPUT_LENGTH],
                         expected_output=regex,
                         severity=current_severity or rule.severity,
                     )
