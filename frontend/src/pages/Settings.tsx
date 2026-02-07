@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Save, CheckCircle2, XCircle } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle } from 'lucide-react';
 import type { Settings as SettingsType } from '@/types';
 import * as api from '@/services/api';
 
@@ -18,6 +18,11 @@ export default function Settings() {
   const [settings, setSettings] = useState<SettingsType>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const restoreFileRef = useRef<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
@@ -52,6 +57,53 @@ export default function Settings() {
       setToast({ type: 'error', message: 'Failed to save settings' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleBackup = async () => {
+    setBackingUp(true);
+    try {
+      const blob = await api.createBackup();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `auditforge_backup_${timestamp}.db`;
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setToast({ type: 'success', message: 'Backup downloaded successfully' });
+    } catch {
+      setToast({ type: 'error', message: 'Failed to create backup' });
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const handleRestoreFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    restoreFileRef.current = file;
+    setShowRestoreConfirm(true);
+    // Reset input so the same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRestoreConfirm = async () => {
+    const file = restoreFileRef.current;
+    if (!file) return;
+    setShowRestoreConfirm(false);
+    setRestoring(true);
+    try {
+      const result = await api.restoreBackup(file);
+      setToast({ type: 'success', message: `${result.message} (${result.tables_restored} tables)` });
+    } catch {
+      setToast({ type: 'error', message: 'Failed to restore backup' });
+    } finally {
+      setRestoring(false);
+      restoreFileRef.current = null;
     }
   };
 
@@ -192,6 +244,85 @@ export default function Settings() {
           </div>
         </fieldset>
       </section>
+
+      {/* Database Backup & Restore */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-gray-600" />
+          <h3 className="text-lg font-semibold text-gray-900">Database Backup &amp; Restore</h3>
+        </div>
+        <p className="text-sm text-gray-500">
+          Create a full backup of your AditForge database or restore from a previous backup.
+        </p>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            onClick={handleBackup}
+            disabled={backingUp}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            {backingUp ? 'Creating backup…' : 'Download Backup'}
+          </button>
+
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <Upload className="h-4 w-4" />
+            {restoring ? 'Restoring…' : 'Restore from Backup'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".db,.sqlite,.sqlite3,.backup"
+              className="hidden"
+              onChange={handleRestoreFileSelect}
+              disabled={restoring}
+            />
+          </label>
+        </div>
+
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600 flex-shrink-0" />
+            <p className="text-xs text-amber-700">
+              Restoring a backup will replace <strong>all current data</strong>. A safety backup of the
+              current database will be created automatically. The application should be restarted after
+              restoring.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Restore Confirmation Dialog */}
+      {showRestoreConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <AlertTriangle className="h-6 w-6 text-amber-500" />
+              <h4 className="text-lg font-semibold text-gray-900">Confirm Restore</h4>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">
+              Are you sure you want to restore the database from{' '}
+              <strong>{restoreFileRef.current?.name}</strong>?
+            </p>
+            <p className="text-sm text-red-600 mb-4">
+              This will replace all current data. A safety backup will be created first.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setShowRestoreConfirm(false); restoreFileRef.current = null; }}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRestoreConfirm}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex justify-end">
         <button

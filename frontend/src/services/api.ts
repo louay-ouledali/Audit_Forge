@@ -345,3 +345,21 @@ export async function getComparableMissions(clientId: number): Promise<Comparabl
   const { data } = await api.get(`/clients/${clientId}/missions/comparable`);
   return data.data;
 }
+
+// ── Database Backup & Restore ────────────────────────────────
+
+export async function createBackup(): Promise<Blob> {
+  const { data } = await api.post('/settings/backup', null, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function restoreBackup(file: File): Promise<{ message: string; tables_restored: number }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post('/settings/restore', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}

@@ -15,3 +15,14 @@ class SettingsUpdate(BaseModel):
 class SingleSettingResponse(BaseModel):
     data: dict[str, str]
     message: str = "success"
+
+
+class BackupResponse(BaseModel):
+    message: str
+    filename: str
+    size_bytes: int
+
+
+class RestoreResponse(BaseModel):
+    message: str
+    tables_restored: int

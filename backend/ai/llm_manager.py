@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -9,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from backend.core.exceptions import LLMResponseError, LLMTimeoutError, LLMUnavailableError
 from backend.database import SessionLocal
 from backend.models.app_settings import AppSettings
 
@@ -17,6 +19,10 @@ logger = logging.getLogger("auditforge.llm")
 # LLM generation parameters — low temperature for deterministic structured output
 LLM_TEMPERATURE = 0.1
 LLM_MAX_TOKENS = 8192
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 2.0  # seconds — multiplied by attempt number for backoff
 
 
 class LLMManager:
@@ -40,13 +46,70 @@ class LLMManager:
             "category_detection": cfg.get("llm_category_detection", "true"),
         }
 
-    async def invoke(self, prompt: str, system_prompt: str | None = None, timeout: float = 300.0) -> str:
-        """Send a prompt and get a text response."""
+    async def invoke(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        timeout: float = 300.0,
+        max_retries: int = MAX_RETRIES,
+    ) -> str:
+        """Send a prompt and get a text response with retry and exponential backoff."""
         config = self.get_current_config()
-        if config["mode"] == "offline":
-            return await self._invoke_ollama(prompt, system_prompt, config, timeout)
-        else:
-            return await self._invoke_online(prompt, system_prompt, config, timeout)
+        last_exc: Exception | None = None
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                if config["mode"] == "offline":
+                    return await self._invoke_ollama(prompt, system_prompt, config, timeout)
+                else:
+                    return await self._invoke_online(prompt, system_prompt, config, timeout)
+            except httpx.TimeoutException as exc:
+                last_exc = exc
+                logger.warning(
+                    "LLM timeout (attempt %d/%d): %s", attempt, max_retries, exc,
+                )
+                if attempt < max_retries:
+                    delay = RETRY_BASE_DELAY * attempt
+                    await asyncio.sleep(delay)
+            except httpx.ConnectError as exc:
+                last_exc = exc
+                logger.warning(
+                    "LLM connection failed (attempt %d/%d): %s", attempt, max_retries, exc,
+                )
+                if attempt < max_retries:
+                    delay = RETRY_BASE_DELAY * attempt
+                    await asyncio.sleep(delay)
+            except httpx.HTTPStatusError as exc:
+                # Don't retry client errors (4xx) — only server errors (5xx)
+                if exc.response.status_code < 500:
+                    raise LLMResponseError(
+                        f"LLM returned HTTP {exc.response.status_code}",
+                        detail=str(exc),
+                    ) from exc
+                last_exc = exc
+                logger.warning(
+                    "LLM server error %d (attempt %d/%d)",
+                    exc.response.status_code, attempt, max_retries,
+                )
+                if attempt < max_retries:
+                    delay = RETRY_BASE_DELAY * attempt
+                    await asyncio.sleep(delay)
+
+        # All retries exhausted
+        if isinstance(last_exc, httpx.TimeoutException):
+            raise LLMTimeoutError(
+                f"LLM timed out after {max_retries} attempts",
+                detail=str(last_exc),
+            ) from last_exc
+        if isinstance(last_exc, httpx.ConnectError):
+            raise LLMUnavailableError(
+                f"LLM unavailable after {max_retries} attempts",
+                detail=str(last_exc),
+            ) from last_exc
+        raise LLMResponseError(
+            f"LLM call failed after {max_retries} attempts",
+            detail=str(last_exc),
+        ) from last_exc
 
     async def invoke_json(self, prompt: str, system_prompt: str | None = None, timeout: float = 300.0) -> Any:
         """Send a prompt and parse the response as JSON, with one retry on failure."""
@@ -60,7 +123,13 @@ class LLMManager:
                 f"Please fix and return ONLY valid JSON:\n\n{raw}"
             )
             raw2 = await self.invoke(retry_prompt, system_prompt, timeout)
-            return self._parse_json(raw2)
+            try:
+                return self._parse_json(raw2)
+            except (json.JSONDecodeError, ValueError) as exc:
+                raise LLMResponseError(
+                    "LLM failed to return valid JSON after retry",
+                    detail=raw2[:500],
+                ) from exc
 
     async def check_availability(self) -> dict[str, Any]:
         """Check if the configured LLM is reachable."""
