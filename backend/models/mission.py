@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -19,7 +19,7 @@ class Mission(Base):
     end_date = Column(Date)
     status = Column(String, default="in_progress")
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     client = relationship("Client", back_populates="missions")
     targets = relationship("Target", back_populates="mission", cascade="all, delete-orphan")

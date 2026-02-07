@@ -254,6 +254,7 @@ function AnalysisCard({
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
             className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
             title="Delete"
+            aria-label="Delete analysis"
           >
             <Trash2 className="h-4 w-4" />
           </button>

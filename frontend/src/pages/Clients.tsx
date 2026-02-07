@@ -232,6 +232,7 @@ export default function Clients() {
                       onClick={() => handleEdit(client)}
                       className="mr-2 inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                       title="Edit"
+                      aria-label={`Edit client ${client.name}`}
                     >
                       <Pencil className="h-4 w-4" />
                     </button>
@@ -239,6 +240,7 @@ export default function Clients() {
                       onClick={() => handleDelete(client.id)}
                       className="inline-flex items-center rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
                       title="Delete"
+                      aria-label={`Delete client ${client.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

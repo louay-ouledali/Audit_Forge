@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -17,6 +17,6 @@ class MissionAnalysis(Base):
     compared_mission_id = Column(Integer, ForeignKey("missions.id"), nullable=True)
     result_json = Column(Text, nullable=False)
     llm_model_used = Column(String)
-    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     mission = relationship("Mission", back_populates="analyses", foreign_keys=[mission_id])

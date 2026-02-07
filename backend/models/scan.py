@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
@@ -34,7 +34,7 @@ class Scan(Base):
     results_imported_at = Column(DateTime)
 
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     target = relationship("Target", back_populates="scans")
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")
