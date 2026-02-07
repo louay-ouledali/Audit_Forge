@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,10 +25,18 @@ from backend.database import init_db
 
 logger = logging.getLogger("auditforge")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    init_db()
+    yield
+
+
 app = FastAPI(
     title="AditForge API",
     version="0.1.0",
     description="Automated Configuration Review Platform",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -49,11 +59,6 @@ app.include_router(scans_router, prefix="/api")
 app.include_router(findings_router, prefix="/api")
 app.include_router(llm_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    init_db()
 
 
 @app.exception_handler(Exception)
