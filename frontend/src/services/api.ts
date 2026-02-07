@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -318,4 +318,30 @@ export async function generateReport(payload: ReportGenerateRequest): Promise<Bl
 export async function generateAISummary(payload: AISummaryRequest): Promise<AISummaryResponse> {
   const { data } = await api.post('/reports/ai-summary', payload);
   return data;
+}
+
+// ── Module 12: Post-Mission AI Analysis ──────────────────────
+
+export async function runMissionAnalysis(missionId: number, payload: AnalysisRequest): Promise<MissionAnalysisResult> {
+  const { data } = await api.post(`/missions/${missionId}/analyze`, payload);
+  return data.data;
+}
+
+export async function getMissionAnalyses(missionId: number): Promise<{ data: MissionAnalysisResult[]; total: number }> {
+  const { data } = await api.get(`/missions/${missionId}/analyses`);
+  return data;
+}
+
+export async function getMissionAnalysis(missionId: number, analysisId: number): Promise<MissionAnalysisResult> {
+  const { data } = await api.get(`/missions/${missionId}/analyses/${analysisId}`);
+  return data.data;
+}
+
+export async function deleteMissionAnalysis(missionId: number, analysisId: number): Promise<void> {
+  await api.delete(`/missions/${missionId}/analyses/${analysisId}`);
+}
+
+export async function getComparableMissions(clientId: number): Promise<ComparableMission[]> {
+  const { data } = await api.get(`/clients/${clientId}/missions/comparable`);
+  return data.data;
 }

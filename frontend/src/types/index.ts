@@ -248,3 +248,28 @@ export interface AISummaryRequest {
 export interface AISummaryResponse {
   summary: string;
 }
+
+// ── Module 12: Post-Mission AI Analysis types ────────────────
+
+export interface AnalysisRequest {
+  analysis_type: 'cross_target' | 'cross_mission' | 'category_analysis';
+  compare_mission_id?: number | null;
+}
+
+export interface MissionAnalysisResult {
+  id: number;
+  mission_id: number;
+  analysis_type: string;
+  compared_mission_id: number | null;
+  result: Record<string, unknown>;
+  llm_model_used: string | null;
+  generated_at: string | null;
+}
+
+export interface ComparableMission {
+  id: number;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+  compliance: number | null;
+}

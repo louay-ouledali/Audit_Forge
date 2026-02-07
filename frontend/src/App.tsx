@@ -10,6 +10,7 @@ import Scans from './pages/Scans';
 import Findings from './pages/Findings';
 import FindingDetail from './pages/FindingDetail';
 import Reports from './pages/Reports';
+import MissionAnalysis from './pages/MissionAnalysis';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
           <Route path="findings" element={<Findings />} />
           <Route path="findings/:id" element={<FindingDetail />} />
           <Route path="reports" element={<Reports />} />
+          <Route path="missions/:missionId/analysis" element={<MissionAnalysis />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>
