@@ -146,6 +146,30 @@ export interface LLMStatus {
   error: string | null;
 }
 
+// ── Script Export (USB) types ─────────────────────────────────
+
+export interface GenerateScriptRequest {
+  benchmark_id: number;
+  target_id?: number | null;
+  preset_id?: number | null;
+  selected_rule_ids?: number[] | null;
+  category_filter?: string[] | null;
+  severity_filter?: string[] | null;
+  profile_filter?: string | null;
+}
+
+export interface ScriptPreviewRule {
+  id: number;
+  section_number: string;
+  title: string | null;
+  severity: string | null;
+}
+
+export interface ScriptPreviewResponse {
+  total_rules: number;
+  rules: ScriptPreviewRule[];
+}
+
 // ── Network Scan types ───────────────────────────────────────
 
 export interface NetworkScanRequest {
