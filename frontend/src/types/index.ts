@@ -20,6 +20,7 @@ export interface Mission {
   notes: string | null;
   created_at: string;
   target_count: number;
+  client_name?: string | null;
 }
 
 export interface Target {

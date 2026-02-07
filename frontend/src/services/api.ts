@@ -41,6 +41,11 @@ export async function deleteClient(id: number): Promise<void> {
 }
 
 // Missions
+export async function getAllMissions(): Promise<Mission[]> {
+  const { data } = await api.get('/missions');
+  return data.data;
+}
+
 export async function getMissions(clientId: number): Promise<Mission[]> {
   const { data } = await api.get(`/clients/${clientId}/missions`);
   return data.data;
@@ -92,7 +97,7 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function updateSettings(payload: Settings): Promise<Settings> {
-  const { data } = await api.put('/settings', payload);
+  const { data } = await api.put('/settings', { settings: payload });
   return data.data;
 }
 

@@ -37,6 +37,7 @@ class MissionResponse(BaseModel):
     notes: str | None = None
     created_at: datetime | None = None
     target_count: int = 0
+    client_name: str | None = None
 
 
 class MissionDetailEnvelope(BaseModel):

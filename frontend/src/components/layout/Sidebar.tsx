@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Building2,
+  Crosshair,
   FileText,
   Play,
   AlertTriangle,
@@ -14,6 +15,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
   { label: 'Clients', icon: Building2, path: '/clients' },
+  { label: 'Missions', icon: Crosshair, path: '/missions' },
   { label: 'Benchmarks', icon: FileText, path: '/benchmarks' },
   { label: 'Scans', icon: Play, path: '/scans' },
   { label: 'Findings', icon: AlertTriangle, path: '/findings' },
