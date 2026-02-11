@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 from backend.ai.llm_manager import llm_manager
@@ -20,6 +21,7 @@ from backend.ai.prompts import (
     PHASE2_COMMAND_GENERATION,
     PHASE2_COMMAND_SYSTEM,
 )
+from backend.core.command_templates import match_template
 
 logger = logging.getLogger("auditforge.ai")
 
@@ -159,63 +161,138 @@ async def generate_commands_for_batch(
     platform_family: str,
     concurrency: int = 3,
 ) -> list[dict[str, Any]]:
-    """Generate audit commands with concurrent LLM calls.
-    
-    Splits rules_batch into sub-batches of ~5 rules, fires them
-    concurrently (up to `concurrency` at a time), then merges results
-    back in order.
+    """Generate audit commands with deterministic templates + concurrent LLM fallback.
+
+    For each rule, first tries the deterministic command-template system
+    (instant, no LLM call needed).  Rules that don't match any template
+    are batched and sent to the LLM concurrently.
+
+    Returns one result dict per input rule, in the same order.
     """
-    SUB_BATCH_SIZE = 5
-    sub_batches: list[list[dict[str, Any]]] = []
-    for i in range(0, len(rules_batch), SUB_BATCH_SIZE):
-        sub_batches.append(rules_batch[i : i + SUB_BATCH_SIZE])
+    # --- Phase A: try deterministic templates first ---
+    all_results: list[dict[str, Any] | None] = [None] * len(rules_batch)
+    llm_needed: list[tuple[int, dict[str, Any]]] = []  # (original_index, rule)
 
-    semaphore = asyncio.Semaphore(concurrency)
+    for idx, rule in enumerate(rules_batch):
+        tmpl = match_template(rule, platform_family)
+        if tmpl:
+            tmpl["section_number"] = rule.get("section_number", "")
+            all_results[idx] = tmpl
+            logger.info(
+                "Template matched for %s: %s",
+                rule.get("section_number", "?"),
+                tmpl.get("audit_command", "")[:60],
+            )
+        else:
+            llm_needed.append((idx, rule))
 
-    async def _process_sub_batch(sb: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        async with semaphore:
-            try:
-                raw = await _call_llm_for_batch(sb, platform, platform_family)
-                sections_in = [r.get("section_number", "?") for r in sb]
-                sections_out = [r.get("section_number", "?") for r in raw if isinstance(r, dict)]
-                cmds_out = [bool(r.get("audit_command")) for r in raw if isinstance(r, dict)]
-                logger.info(
-                    "Sub-batch IN=%s OUT=%s has_cmd=%s",
-                    sections_in, sections_out, cmds_out,
-                )
-                # Build lookup by section_number for bonus matching
-                by_sec: dict[str, dict] = {}
-                for item in raw:
-                    if isinstance(item, dict):
-                        sec = item.get("section_number", "")
-                        if sec:
-                            by_sec[sec] = item
+    template_count = len(rules_batch) - len(llm_needed)
+    if template_count:
+        logger.info(
+            "Templates resolved %d/%d rules; %d remaining for LLM",
+            template_count, len(rules_batch), len(llm_needed),
+        )
 
-                matched: list[dict[str, Any]] = []
-                for idx, rule in enumerate(sb):
-                    sec = rule.get("section_number", "")
-                    # Try section_number match first
-                    if sec in by_sec:
-                        matched.append(by_sec[sec])
-                    # Positional fallback (always, not just when lengths match)
-                    elif idx < len(raw) and isinstance(raw[idx], dict):
-                        matched.append(raw[idx])
-                    else:
-                        matched.append({})
-                return matched
-            except Exception as exc:
-                sections = [r.get("section_number", "?") for r in sb]
-                logger.warning("Sub-batch [%s] failed: %s", ",".join(sections), exc)
-                return [{} for _ in sb]
+    # --- Phase B: send unmatched rules to LLM in concurrent sub-batches ---
+    if llm_needed:
+        SUB_BATCH_SIZE = 5
+        sub_batches: list[list[tuple[int, dict[str, Any]]]] = []
+        for i in range(0, len(llm_needed), SUB_BATCH_SIZE):
+            sub_batches.append(llm_needed[i : i + SUB_BATCH_SIZE])
 
-    tasks = [_process_sub_batch(sb) for sb in sub_batches]
-    sub_results = await asyncio.gather(*tasks)
+        semaphore = asyncio.Semaphore(concurrency)
 
-    # Flatten in order
-    all_results: list[dict[str, Any]] = []
-    for sr in sub_results:
-        all_results.extend(sr)
-    return all_results
+        async def _process_sub_batch(
+            sb: list[tuple[int, dict[str, Any]]],
+        ) -> list[tuple[int, dict[str, Any]]]:
+            async with semaphore:
+                rules_only = [r for _, r in sb]
+                try:
+                    raw = await _call_llm_for_batch(rules_only, platform, platform_family)
+                    sections_in = [r.get("section_number", "?") for r in rules_only]
+                    sections_out = [r.get("section_number", "?") for r in raw if isinstance(r, dict)]
+                    cmds_out = [bool(r.get("audit_command")) for r in raw if isinstance(r, dict)]
+                    logger.info(
+                        "Sub-batch IN=%s OUT=%s has_cmd=%s",
+                        sections_in, sections_out, cmds_out,
+                    )
+                    by_sec: dict[str, dict] = {}
+                    for item in raw:
+                        if isinstance(item, dict):
+                            sec = item.get("section_number", "")
+                            if sec:
+                                by_sec[sec] = item
+
+                    matched: list[tuple[int, dict[str, Any]]] = []
+                    for pos, (orig_idx, rule) in enumerate(sb):
+                        sec = rule.get("section_number", "")
+                        if sec in by_sec:
+                            result = _post_process_llm_result(by_sec[sec])
+                            matched.append((orig_idx, result))
+                        elif pos < len(raw) and isinstance(raw[pos], dict):
+                            result = _post_process_llm_result(raw[pos])
+                            matched.append((orig_idx, result))
+                        else:
+                            matched.append((orig_idx, {}))
+                    return matched
+                except Exception as exc:
+                    sections = [r.get("section_number", "?") for _, r in sb]
+                    logger.warning("Sub-batch [%s] failed: %s", ",".join(sections), exc)
+                    return [(idx, {}) for idx, _ in sb]
+
+        tasks = [_process_sub_batch(sb) for sb in sub_batches]
+        sub_results = await asyncio.gather(*tasks)
+
+        for batch_result in sub_results:
+            for orig_idx, result in batch_result:
+                all_results[orig_idx] = result
+
+    # Replace any remaining None slots with empty dicts
+    return [r if r is not None else {} for r in all_results]
+
+
+# Common bad-regex patterns that LLMs produce
+_BAD_REGEX_PATTERNS = [
+    re.compile(r"^\d+\s+or\s+more", re.IGNORECASE),       # "14 or more"
+    re.compile(r"^\d+\s+or\s+fewer", re.IGNORECASE),       # "30 or fewer"
+    re.compile(r"^\d+\s+or\s+greater", re.IGNORECASE),     # "24 or greater"
+    re.compile(r"^\d+\s+or\s+less", re.IGNORECASE),        # "5 or less"
+    re.compile(r"^enabled\s+or\s+greater", re.IGNORECASE), # "Enabled or greater"
+    re.compile(r"characters?$", re.IGNORECASE),             # "...characters"
+    re.compile(r"passwords?$", re.IGNORECASE),              # "...passwords"
+    re.compile(r"minutes?$", re.IGNORECASE),                # "...minutes"
+]
+
+
+def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Clean up common LLM mistakes in generated commands and regex patterns."""
+    regex = result.get("expected_output_regex", "")
+    if regex:
+        # Check if regex is a bad English-phrase pattern
+        for bad in _BAD_REGEX_PATTERNS:
+            if bad.search(regex):
+                # Try to salvage: extract any number and build a simple \d+ match
+                num_match = re.search(r"\d+", regex)
+                if num_match:
+                    result["expected_output_regex"] = r"\d+"
+                    logger.warning(
+                        "Replaced bad LLM regex '%s' with '\\d+' for %s",
+                        regex, result.get("section_number", "?"),
+                    )
+                break
+
+        # Validate the regex compiles
+        try:
+            re.compile(result["expected_output_regex"])
+        except re.error:
+            logger.warning(
+                "Invalid regex from LLM for %s: %s — replacing with .*",
+                result.get("section_number", "?"),
+                result["expected_output_regex"],
+            )
+            result["expected_output_regex"] = ".*"
+
+    return result
 
 
 async def regenerate_command(

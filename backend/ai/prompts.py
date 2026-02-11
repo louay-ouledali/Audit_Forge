@@ -45,6 +45,31 @@ ABSOLUTE RULES — VIOLATIONS WILL CAUSE FAILURES:
 4. Keep ALL string values SHORT (under 100 chars). No prose in values.
 5. expected_output_regex = a short Python-compatible regex matching compliant output.
 
+══════════════════════════════════════════════════════════
+REGEX QUALITY — CRITICAL
+══════════════════════════════════════════════════════════
+The regex must match the ACTUAL TEXT the command will print, NOT the English
+description from the CIS rule.  It is used by a Python re.search() call against
+the command's stdout — therefore it must be a valid Python regular expression.
+
+GOOD regex: Minimum password length\\s+(?:1[4-9]|[2-9]\\d|\\d{{3,}})
+BAD  regex: 14 or more password
+BAD  regex: Enabled or greater
+BAD  regex: 24 or more characters
+
+For NUMERIC THRESHOLDS (e.g. "14 or more"):
+  Build a regex range.  Example for >= 14: (?:1[4-9]|[2-9]\\d|\\d{{3,}})
+  Example for >= 24: (?:2[4-9]|[3-9]\\d|\\d{{3,}})
+  Example for <= 30: (?:[0-9]|[12]\\d|30)
+
+For EXACT VALUES (e.g. REG_DWORD 0x00000001):
+  Match the exact value: REG_DWORD\\s+0x0*1\\b
+
+For STATUS STRINGS (e.g. "Disabled", "Success and Failure"):
+  Match the exact word: disabled  OR  Success and Failure
+
+NEVER produce a regex that is just the CIS rule's English description.
+
 ═══════════════════════════════════════════════════════════
 WINDOWS — PowerShell is the default shell
 ═══════════════════════════════════════════════════════════
@@ -56,10 +81,12 @@ SYNTAX:
 COMMAND PATTERNS BY CIS SECTION:
 • 1.1.x Password Policy / 1.2.x Account Lockout → net accounts
   Output lines: "Minimum password length                  14"
-  Regex: Minimum password length\\s+\\d+
+  Regex example (>=14): Minimum password length\\s+(?:1[4-9]|[2-9]\\d|\\d{{3,}})
 • 2.2.x User Rights Assignment → secedit /export /cfg C:\\Windows\\Temp\\secpol.cfg /quiet; Select-String -Path C:\\Windows\\Temp\\secpol.cfg -Pattern "SeRight"
 • 2.3.x Security Options → reg query (use the registry path from CIS text)
-• 5.x System Services → Get-Service -Name ServiceName | Select-Object Status,StartType
+• 5.x System Services → Get-Service -Name ServiceName | Select-Object -ExpandProperty StartType
+  Output: "Disabled"
+  Regex: Disabled
 • 9.x Firewall → reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\...
   Or: Get-NetFirewallProfile -Name Domain | Select-Object Enabled
 • 17.x Audit Policy → auditpol /get /subcategory:"{{GUID}}" (copy GUID from CIS text)
@@ -167,6 +194,13 @@ LINUX-SPECIFIC ROUTING:
 NETWORK-SPECIFIC ROUTING:
 - Config checking → show running-config | include pattern
 - Section checking → show running-config | section pattern
+
+REGEX REMINDER:
+The expected_output_regex MUST match the literal text the command prints.
+For numeric thresholds like "14 or more", use a numeric regex range:
+  >=14 → (?:1[4-9]|[2-9]\\d|\\d{{3,}})
+  >=24 → (?:2[4-9]|[3-9]\\d|\\d{{3,}})
+NEVER use English phrases like "14 or more" or "Enabled or greater" as regex.
 
 RULES:
 {rules_json}
@@ -317,6 +351,12 @@ Return ONLY a valid JSON object with these keys:
 
 COMMAND_REGENERATION_SYSTEM = """You fix CIS benchmark audit commands that failed. Return a JSON object with: audit_command, expected_output_regex, expected_output_description, remediation_command, remediation_description, explanation.
 Commands must be READ-ONLY, non-interactive, and work when pasted into the platform shell.
+
+REGEX QUALITY:
+• The regex must match ACTUAL command output text, NOT the English rule description.
+• For numeric thresholds (e.g. >=14): use (?:1[4-9]|[2-9]\\d|\\d{{3,}})
+• For exact values (REG_DWORD): use ValueName\\s+REG_DWORD\\s+0x0*1\\b
+• NEVER produce regex like "14 or more" or "Enabled or greater".
 
 WINDOWS (PowerShell):
 • NEVER use && — use ; to chain commands

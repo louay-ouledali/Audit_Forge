@@ -220,9 +220,40 @@ def verify_regex(regex_str: str | None) -> dict:
         return {"valid": True, "error": None}  # optional field
     try:
         re.compile(regex_str)
-        return {"valid": True, "error": None}
     except re.error as e:
         return {"valid": False, "error": str(e)}
+
+    # Quality check: reject regex that looks like plain-English descriptions
+    # instead of actual patterns matching command output
+    quality_error = _check_regex_quality(regex_str)
+    if quality_error:
+        return {"valid": False, "error": quality_error}
+
+    return {"valid": True, "error": None}
+
+
+# Patterns that indicate the regex is an English phrase, not a real pattern
+_ENGLISH_REGEX_PATTERNS = [
+    (re.compile(r"^\d+\s+or\s+more", re.I), "Regex looks like English text, not a pattern"),
+    (re.compile(r"^\d+\s+or\s+fewer", re.I), "Regex looks like English text, not a pattern"),
+    (re.compile(r"^\d+\s+or\s+greater", re.I), "Regex looks like English text, not a pattern"),
+    (re.compile(r"^\d+\s+or\s+less", re.I), "Regex looks like English text, not a pattern"),
+    (re.compile(r"enabled\s+or\s+greater", re.I), "Regex looks like English text, not a pattern"),
+    (re.compile(r"characters?\s*$", re.I), "Regex ends with prose ('characters')"),
+    (re.compile(r"passwords?\s*$", re.I), "Regex ends with prose ('passwords')"),
+    (re.compile(r"minutes?\s*$", re.I), "Regex ends with prose ('minutes')"),
+    (re.compile(r"days?\s*$", re.I), "Regex ends with prose ('days')"),
+    (re.compile(r"^(?:should|must|needs?\s+to|is\s+set\s+to)\b", re.I), "Regex is an English sentence"),
+]
+
+
+def _check_regex_quality(regex_str: str) -> str | None:
+    """Return an error message if the regex is a bad English-phrase pattern."""
+    stripped = regex_str.strip()
+    for pattern, message in _ENGLISH_REGEX_PATTERNS:
+        if pattern.search(stripped):
+            return f"{message}: '{stripped}'"
+    return None
 
 
 def verify_command_full(cmd: RuleCommand, platform_family: str, db: Session) -> dict:
