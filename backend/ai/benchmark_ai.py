@@ -251,46 +251,32 @@ async def generate_commands_for_batch(
     return [r if r is not None else {} for r in all_results]
 
 
-# Common bad-regex patterns that LLMs produce
-_BAD_REGEX_PATTERNS = [
-    re.compile(r"^\d+\s+or\s+more", re.IGNORECASE),       # "14 or more"
-    re.compile(r"^\d+\s+or\s+fewer", re.IGNORECASE),       # "30 or fewer"
-    re.compile(r"^\d+\s+or\s+greater", re.IGNORECASE),     # "24 or greater"
-    re.compile(r"^\d+\s+or\s+less", re.IGNORECASE),        # "5 or less"
-    re.compile(r"^enabled\s+or\s+greater", re.IGNORECASE), # "Enabled or greater"
-    re.compile(r"characters?$", re.IGNORECASE),             # "...characters"
-    re.compile(r"passwords?$", re.IGNORECASE),              # "...passwords"
-    re.compile(r"minutes?$", re.IGNORECASE),                # "...minutes"
-]
-
-
 def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
     """Clean up common LLM mistakes in generated commands and regex patterns."""
+    from backend.core.verification_engine import _check_regex_quality
+
     regex = result.get("expected_output_regex", "")
     if regex:
-        # Check if regex is a bad English-phrase pattern
-        for bad in _BAD_REGEX_PATTERNS:
-            if bad.search(regex):
-                # Try to salvage: extract any number and build a simple \d+ match
-                num_match = re.search(r"\d+", regex)
-                if num_match:
-                    result["expected_output_regex"] = r"\d+"
-                    logger.warning(
-                        "Replaced bad LLM regex '%s' with '\\d+' for %s",
-                        regex, result.get("section_number", "?"),
-                    )
-                break
-
-        # Validate the regex compiles
-        try:
-            re.compile(result["expected_output_regex"])
-        except re.error:
+        # Check if regex is a bad English-phrase pattern (reuse verification logic)
+        quality_error = _check_regex_quality(regex)
+        if quality_error:
+            # Clear the bad regex so verification falls back to exit-code check
+            result["expected_output_regex"] = ""
             logger.warning(
-                "Invalid regex from LLM for %s: %s — replacing with .*",
-                result.get("section_number", "?"),
-                result["expected_output_regex"],
+                "Cleared bad LLM regex for %s: %s",
+                result.get("section_number", "?"), quality_error,
             )
-            result["expected_output_regex"] = ".*"
+        else:
+            # Validate the regex compiles
+            try:
+                re.compile(result["expected_output_regex"])
+            except re.error:
+                logger.warning(
+                    "Invalid regex from LLM for %s: %s — clearing",
+                    result.get("section_number", "?"),
+                    result["expected_output_regex"],
+                )
+                result["expected_output_regex"] = ""
 
     return result
 

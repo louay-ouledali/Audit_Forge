@@ -91,7 +91,7 @@ def _regex_lte(threshold: int) -> str:
 # ---------------------------------------------------------------------------
 
 _NUM_RE = re.compile(
-    r"(?:set\s+to|is\s+set\s+to|to)\s+['\"]?(\d+)\b", re.IGNORECASE,
+    r"(?:is\s+set\s+to|set\s+to|to)\s+['\"]?(\d+)\b", re.IGNORECASE,
 )
 _REG_PATH_RE = re.compile(
     r"(HKLM\\[A-Za-z0-9\\_]+):([A-Za-z0-9_]+)", re.IGNORECASE,
