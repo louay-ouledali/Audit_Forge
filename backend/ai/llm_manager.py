@@ -38,7 +38,7 @@ class LLMManager:
             db.close()
         return {
             "mode": cfg.get("llm_mode", "offline"),
-            "offline_model": cfg.get("llm_offline_model", "qwen2.5:14b"),
+            "offline_model": cfg.get("llm_offline_model", "qwen2.5:7b"),
             "ollama_url": cfg.get("llm_ollama_url", "http://host.docker.internal:11434"),
             "online_provider": cfg.get("llm_online_provider", ""),
             "online_api_key": cfg.get("llm_online_api_key_encrypted", ""),

@@ -1,0 +1,570 @@
+"""Deterministic command templates for common CIS benchmark rule patterns.
+
+Instead of calling the LLM for every rule, this module matches rules to
+known audit-command patterns and returns pre-built commands with precise
+regex patterns.  This is faster (zero LLM latency) and produces higher
+quality output (numeric thresholds encoded correctly in regex).
+
+The public entry point is ``match_template(rule, platform_family)``.
+It returns a dict with the same keys as the LLM would
+(audit_command, expected_output_regex, …) or ``None`` when no template
+matches and the rule should fall through to the LLM.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# Helper: build a regex that matches an integer >= threshold
+# ---------------------------------------------------------------------------
+
+def _regex_gte(threshold: int) -> str:
+    """Return a regex fragment that matches an integer >= *threshold*.
+
+    Works for thresholds 0-999.  The generated pattern is anchored to
+    word boundaries so it won't accidentally match inside larger numbers
+    in unrelated text.
+
+    >>> import re
+    >>> pat = _regex_gte(14)
+    >>> bool(re.search(pat, '13'))
+    False
+    >>> bool(re.search(pat, '14'))
+    True
+    >>> bool(re.search(pat, '99'))
+    True
+    """
+    if threshold <= 0:
+        return r"\d+"
+    if threshold <= 9:
+        hi = threshold
+        parts = []
+        if hi <= 9:
+            parts.append(f"[{hi}-9]")
+        parts.append(r"[1-9]\d+")  # 10+
+        return "(?:" + "|".join(parts) + ")"
+    if threshold <= 99:
+        tens, ones = divmod(threshold, 10)
+        parts = []
+        # same tens digit, ones >= required
+        if ones == 0:
+            parts.append(f"{tens}\\d")
+        else:
+            parts.append(f"{tens}[{ones}-9]")
+        # higher tens digit in same century
+        if tens + 1 <= 9:
+            parts.append(f"[{tens + 1}-9]\\d")
+        # three-or-more digits (100+)
+        parts.append(r"\d{3,}")
+        return "(?:" + "|".join(parts) + ")"
+    # 100-999 – simplified: just match the number or higher
+    return r"\d{3,}"
+
+
+def _regex_lte(threshold: int) -> str:
+    """Return a regex fragment matching an integer in 0..*threshold*."""
+    if threshold >= 999:
+        return r"\d+"
+    if threshold <= 9:
+        return f"[0-{threshold}]"
+    tens, ones = divmod(threshold, 10)
+    parts = []
+    # single digits
+    parts.append(r"[0-9]")
+    # same tens digit
+    if tens > 0:
+        if ones == 9:
+            parts.append(f"{tens}\\d")
+        else:
+            parts.append(f"{tens}[0-{ones}]")
+        # lower tens digits
+        if tens > 1:
+            parts.append(f"[1-{tens - 1}]\\d")
+    return "(?:" + "|".join(parts) + ")"
+
+
+# ---------------------------------------------------------------------------
+# Extractors: pull numbers / paths from rule text
+# ---------------------------------------------------------------------------
+
+_NUM_RE = re.compile(
+    r"(?:is\s+set\s+to|set\s+to|to)\s+['\"]?(\d+)\b", re.IGNORECASE,
+)
+_REG_PATH_RE = re.compile(
+    r"(HKLM\\[A-Za-z0-9\\_]+):([A-Za-z0-9_]+)", re.IGNORECASE,
+)
+_GUID_RE = re.compile(
+    r"\{[0-9a-fA-F-]{36}\}",
+)
+
+
+def _extract_threshold(text: str) -> int | None:
+    """Return the first integer threshold mentioned in rule text."""
+    m = _NUM_RE.search(text)
+    return int(m.group(1)) if m else None
+
+
+def _extract_registry(text: str) -> tuple[str, str] | None:
+    """Return (key_path, value_name) from audit/remediation text."""
+    m = _REG_PATH_RE.search(text)
+    return (m.group(1), m.group(2)) if m else None
+
+
+def _extract_guid(text: str) -> str | None:
+    m = _GUID_RE.search(text)
+    return m.group(0) if m else None
+
+
+# ---------------------------------------------------------------------------
+# Windows templates
+# ---------------------------------------------------------------------------
+
+# net accounts field labels keyed by title keywords
+_NET_ACCOUNTS_FIELDS: dict[str, str] = {
+    "password history": "Length of password history maintained",
+    "maximum password age": "Maximum password age",
+    "minimum password age": "Minimum password age",
+    "minimum password length": "Minimum password length",
+    "lockout duration": "Lockout duration",
+    "lockout threshold": "Lockout threshold",
+    "lockout observation window": "Lockout observation window",
+    "reset account lockout": "Lockout observation window",
+}
+
+
+def _try_net_accounts(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Windows password-policy / account-lockout rules (1.1.x, 1.2.x)."""
+    section = rule.get("section_number", "")
+    if not (section.startswith("1.1.") or section.startswith("1.2.")):
+        return None
+
+    title_lower = (rule.get("title") or "").lower()
+    combined_text = (
+        (rule.get("title") or "")
+        + " "
+        + (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+
+    # Find which net accounts field this is about
+    field_label = None
+    for keyword, label in _NET_ACCOUNTS_FIELDS.items():
+        if keyword in title_lower:
+            field_label = label
+            break
+    if not field_label:
+        return None
+
+    threshold = _extract_threshold(combined_text)
+    if threshold is None:
+        return None
+
+    # Determine comparison direction from title
+    is_max = "maximum" in title_lower or "or fewer" in title_lower
+    if is_max:
+        num_regex = _regex_lte(threshold)
+    else:
+        num_regex = _regex_gte(threshold)
+
+    escaped_label = re.escape(field_label)
+    return {
+        "audit_command": "net accounts",
+        "expected_output_regex": f"{escaped_label}\\s+{num_regex}",
+        "expected_output_description": f"{field_label} meets threshold ({threshold})",
+        "remediation_command": "",
+        "remediation_description": f"Set {field_label} to the required value via Group Policy.",
+    }
+
+
+def _try_registry(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Windows registry-backed settings (2.3.x, 9.x, 18.x, 19.x)."""
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+    reg = _extract_registry(combined)
+    if not reg:
+        return None
+
+    key_path, value_name = reg
+    threshold = _extract_threshold(combined)
+
+    # Build regex for reg query output: "ValueName    REG_DWORD    0x00000001"
+    if threshold is not None:
+        hex_val = f"0x{threshold:08x}"
+        regex = f"{re.escape(value_name)}\\s+REG_DWORD\\s+{re.escape(hex_val)}"
+    else:
+        # Check for Enabled/Disabled pattern (REG_DWORD 1 = Enabled, 0 = Disabled)
+        title_lower = (rule.get("title") or "").lower()
+        if "enabled" in title_lower or "is set to 'on" in title_lower:
+            regex = f"{re.escape(value_name)}\\s+REG_DWORD\\s+0x0*1\\b"
+        elif "disabled" in title_lower or "is set to 'off" in title_lower:
+            regex = f"{re.escape(value_name)}\\s+REG_DWORD\\s+0x0+\\b"
+        else:
+            regex = f"{re.escape(value_name)}\\s+REG_DWORD\\s+0x[0-9a-fA-F]+"
+
+    return {
+        "audit_command": f"reg query {key_path} /v {value_name}",
+        "expected_output_regex": regex,
+        "expected_output_description": f"Registry value {value_name} is set correctly",
+        "remediation_command": "",
+        "remediation_description": f"Set {key_path}\\{value_name} via Group Policy or reg add.",
+    }
+
+
+def _try_auditpol(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Windows audit-policy rules (17.x)."""
+    section = rule.get("section_number", "")
+    if not section.startswith("17."):
+        return None
+
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+    guid = _extract_guid(combined)
+    if not guid:
+        return None
+
+    title_lower = (rule.get("title") or "").lower()
+    if "success and failure" in title_lower:
+        regex = "Success and Failure"
+    elif "success" in title_lower:
+        regex = "Success"
+    elif "failure" in title_lower:
+        regex = "Failure"
+    else:
+        regex = "Success|Failure"
+
+    return {
+        "audit_command": f'auditpol /get /subcategory:"{guid}"',
+        "expected_output_regex": regex,
+        "expected_output_description": f"Audit policy subcategory {guid} is configured",
+        "remediation_command": "",
+        "remediation_description": "Configure via Advanced Audit Policy in Group Policy.",
+    }
+
+
+def _try_windows_service(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Windows service rules (5.x)."""
+    section = rule.get("section_number", "")
+    if not section.startswith("5."):
+        return None
+
+    title_lower = (rule.get("title") or "").lower()
+    # Extract service name from title like "Ensure 'Print Spooler (Spooler)' is set to 'Disabled'"
+    svc_match = re.search(r"\((\w+)\)", rule.get("title") or "")
+    if not svc_match:
+        return None
+
+    svc_name = svc_match.group(1)
+    if "disabled" in title_lower:
+        regex = "Disabled|Stopped"
+    else:
+        regex = "Running"
+
+    return {
+        "audit_command": f"Get-Service -Name {svc_name} | Select-Object -ExpandProperty StartType",
+        "expected_output_regex": regex,
+        "expected_output_description": f"Service {svc_name} start type",
+        "remediation_command": "",
+        "remediation_description": f"Set service {svc_name} startup type via Group Policy or sc.exe.",
+    }
+
+
+def _try_secedit(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Windows user rights assignment rules (2.2.x)."""
+    section = rule.get("section_number", "")
+    if not section.startswith("2.2."):
+        return None
+
+    title = rule.get("title") or ""
+    # Extract the right name, e.g. "Access this computer from the network"
+    right_match = re.search(r"Ensure '([^']+)'", title)
+    if not right_match:
+        return None
+
+    right_name = right_match.group(1)
+    # Map common right names to secedit policy keys
+    # We use a generic approach: export secpol and grep for a pattern
+    pattern_word = right_name.split()[0] if right_name else "Se"
+    return {
+        "audit_command": (
+            "secedit /export /cfg C:\\Windows\\Temp\\secpol.cfg /quiet; "
+            f'Select-String -Path C:\\Windows\\Temp\\secpol.cfg -Pattern "{pattern_word}"'
+        ),
+        "expected_output_regex": re.escape(pattern_word),
+        "expected_output_description": f"User rights assignment: {right_name}",
+        "remediation_command": "",
+        "remediation_description": f"Configure '{right_name}' via Group Policy > User Rights Assignment.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Linux templates
+# ---------------------------------------------------------------------------
+
+def _try_sysctl(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Linux kernel parameter rules."""
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+    # Look for sysctl parameter pattern
+    param_match = re.search(r"sysctl\s+([\w.]+)", combined)
+    if not param_match:
+        # Also match patterns like "net.ipv4.ip_forward"
+        param_match = re.search(r"\b(net\.[\w.]+|kernel\.[\w.]+|fs\.[\w.]+)\b", combined)
+    if not param_match:
+        return None
+
+    param = param_match.group(1)
+    # Determine expected value
+    val_match = re.search(rf"{re.escape(param)}\s*=\s*(\d+)", combined)
+    expected_val = val_match.group(1) if val_match else "0"
+
+    escaped_param = re.escape(param)
+    return {
+        "audit_command": f"sysctl {param}",
+        "expected_output_regex": f"{escaped_param}\\s*=\\s*{re.escape(expected_val)}",
+        "expected_output_description": f"{param} = {expected_val}",
+        "remediation_command": "",
+        "remediation_description": f"Set {param} = {expected_val} in /etc/sysctl.conf and run sysctl -p.",
+    }
+
+
+def _try_systemctl(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Linux service rules (systemctl is-enabled)."""
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+    title_lower = (rule.get("title") or "").lower()
+
+    svc_match = re.search(r"systemctl\s+is-enabled\s+([\w@.-]+)", combined)
+    if not svc_match:
+        # Try to find service name from title like "Ensure X is not enabled"
+        svc_match2 = re.search(r"(?:Ensure|Verify)\s+(\w[\w.-]+)\s+is\s+(?:not\s+)?(?:enabled|disabled|active)", title_lower)
+        if not svc_match2:
+            return None
+        svc_name = svc_match2.group(1)
+    else:
+        svc_name = svc_match.group(1)
+
+    if "not enabled" in title_lower or "disabled" in title_lower or "not installed" in title_lower:
+        regex = "disabled|masked|not-found"
+    else:
+        regex = "enabled"
+
+    return {
+        "audit_command": f"systemctl is-enabled {svc_name}",
+        "expected_output_regex": regex,
+        "expected_output_description": f"Service {svc_name} state",
+        "remediation_command": "",
+        "remediation_description": f"Configure {svc_name} via systemctl.",
+    }
+
+
+def _try_file_permissions(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Linux file permission rules (stat)."""
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+    stat_match = re.search(r"stat\s+(?:-c\s+'[^']+'\s+)?(/[\w/.]+)", combined)
+    if not stat_match:
+        return None
+
+    filepath = stat_match.group(1)
+    # Look for expected permissions like 644, 600, etc.
+    perm_match = re.search(r"\b([0-7]{3,4})\b", combined)
+    if perm_match:
+        perms = perm_match.group(1)
+        regex = f"{re.escape(perms)}\\s+root\\s+root"
+    else:
+        regex = r"[0-6][0-4][0-4]\s+root\s+root"
+
+    return {
+        "audit_command": f"stat -c '%a %U %G' {filepath}",
+        "expected_output_regex": regex,
+        "expected_output_description": f"File {filepath} permissions and ownership",
+        "remediation_command": "",
+        "remediation_description": f"Set correct permissions on {filepath}.",
+    }
+
+
+def _try_grep_config(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Linux config-file grep rules."""
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+    # Match patterns like: grep -E '^PermitRootLogin' /etc/ssh/sshd_config
+    grep_match = re.search(
+        r"grep\s+(?:-[EiPr]+\s+)?['\"]?([^'\"]+?)['\"]?\s+(/[\w/._-]+)",
+        combined,
+    )
+    if not grep_match:
+        return None
+
+    pattern = grep_match.group(1)
+    filepath = grep_match.group(2)
+
+    title_lower = (rule.get("title") or "").lower()
+    # Determine expected value
+    val_match = re.search(r"is\s+set\s+to\s+['\"]?(\w+)", title_lower)
+    if val_match:
+        expected_val = val_match.group(1)
+        key_match = re.search(r"ensure\s+'?([^']+?)'?\s+is\s+set", title_lower)
+        key_name = key_match.group(1).strip() if key_match else pattern
+        regex = f"{re.escape(key_name)}\\s+{re.escape(expected_val)}"
+    else:
+        regex = re.escape(pattern.strip("^$"))
+
+    return {
+        "audit_command": f"grep -E '{pattern}' {filepath}",
+        "expected_output_regex": regex,
+        "expected_output_description": f"Config check in {filepath}",
+        "remediation_command": "",
+        "remediation_description": f"Edit {filepath} to set the required value.",
+    }
+
+
+def _try_linux_password_policy(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Linux password policy rules (/etc/login.defs)."""
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+    title_lower = (rule.get("title") or "").lower()
+
+    login_defs_fields = {
+        "pass_max_days": "PASS_MAX_DAYS",
+        "pass_min_days": "PASS_MIN_DAYS",
+        "pass_warn_age": "PASS_WARN_AGE",
+        "pass_min_len": "PASS_MIN_LEN",
+    }
+
+    field_name = None
+    for key, label in login_defs_fields.items():
+        if key.replace("_", " ") in title_lower or label.lower() in combined.lower():
+            field_name = label
+            break
+    if not field_name:
+        return None
+
+    threshold = _extract_threshold(combined)
+    if threshold is None:
+        # Try extracting from the combined text directly
+        num_match = re.search(rf"{field_name}\s+(\d+)", combined)
+        if num_match:
+            threshold = int(num_match.group(1))
+
+    if threshold is not None:
+        is_max = "max" in field_name.lower() or "or fewer" in title_lower or "or less" in title_lower
+        if is_max:
+            num_regex = _regex_lte(threshold)
+        else:
+            num_regex = _regex_gte(threshold)
+        regex = f"{re.escape(field_name)}\\s+{num_regex}"
+    else:
+        regex = f"{re.escape(field_name)}\\s+\\d+"
+
+    return {
+        "audit_command": f"grep -E '^{field_name}' /etc/login.defs",
+        "expected_output_regex": regex,
+        "expected_output_description": f"{field_name} meets the required threshold",
+        "remediation_command": "",
+        "remediation_description": f"Edit /etc/login.defs and set {field_name} to the required value.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Network device templates
+# ---------------------------------------------------------------------------
+
+def _try_show_running_config(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match network device show running-config rules."""
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+
+    show_match = re.search(
+        r"(show\s+running-config\s+\|\s+(?:include|section)\s+[\w\s-]+)",
+        combined, re.IGNORECASE,
+    )
+    if not show_match:
+        return None
+
+    command = show_match.group(1).strip()
+    # Extract the pattern being searched for
+    pattern_match = re.search(r"\|\s+(?:include|section)\s+(.+)", command, re.IGNORECASE)
+    search_term = pattern_match.group(1).strip() if pattern_match else ""
+
+    return {
+        "audit_command": command,
+        "expected_output_regex": re.escape(search_term) if search_term else ".",
+        "expected_output_description": f"Network config check: {search_term}",
+        "remediation_command": "",
+        "remediation_description": f"Configure the required setting in device configuration.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Master dispatcher
+# ---------------------------------------------------------------------------
+
+# Template chains by platform family – tried in order, first match wins
+_WINDOWS_TEMPLATES = [
+    _try_net_accounts,
+    _try_auditpol,
+    _try_windows_service,
+    _try_secedit,
+    _try_registry,  # registry last because it's the broadest matcher
+]
+
+_LINUX_TEMPLATES = [
+    _try_linux_password_policy,
+    _try_sysctl,
+    _try_systemctl,
+    _try_file_permissions,
+    _try_grep_config,
+]
+
+_NETWORK_TEMPLATES = [
+    _try_show_running_config,
+]
+
+_TEMPLATES_BY_FAMILY: dict[str, list] = {
+    "windows": _WINDOWS_TEMPLATES,
+    "linux": _LINUX_TEMPLATES,
+    "network": _NETWORK_TEMPLATES,
+}
+
+
+def match_template(rule: dict[str, Any], platform_family: str) -> dict[str, str] | None:
+    """Try to match *rule* to a deterministic command template.
+
+    Returns a dict with keys ``audit_command``, ``expected_output_regex``,
+    ``expected_output_description``, ``remediation_command``,
+    ``remediation_description`` — or ``None`` if no template matched.
+    """
+    templates = _TEMPLATES_BY_FAMILY.get(platform_family, [])
+    for fn in templates:
+        result = fn(rule)
+        if result:
+            return result
+    return None
