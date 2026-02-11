@@ -1,0 +1,34 @@
+══════════════════════════════════════════════════════════════
+AditForge — {{ benchmark.name }} {{ benchmark.version }}
+Network Device Audit Commands
+Generated: {{ generation_date }}
+Scan ID: {{ scan_id }}
+Rules: {{ rules|length }} enabled rules
+══════════════════════════════════════════════════════════════
+
+INSTRUCTIONS:
+1. SSH into the target device
+2. Enter privileged EXEC mode (enable)
+3. Set terminal length to 0: terminal length 0
+4. Start logging your terminal session to a file
+5. Paste ALL commands below into the session
+6. Save the terminal log as: results/audit_output.txt
+7. Import the output file back into AditForge
+
+NOTE: Each rule is preceded by a marker comment (!RULE:section_number).
+      AditForge uses these markers to parse the output automatically.
+      Do NOT remove the marker lines.
+
+══════════════════════════════════════════════════════════════
+COMMANDS — Paste everything below this line:
+══════════════════════════════════════════════════════════════
+
+terminal length 0
+{% for rule in rules %}
+! ── !RULE:{{ rule.section_number }} {{ rule.title }} ──
+! Severity: {{ rule.severity }}
+! Expected: {{ rule.expected_output_description }}
+{{ rule.audit_command }}
+
+{% endfor %}
+! ── END OF AUDIT ──

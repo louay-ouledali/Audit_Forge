@@ -1,0 +1,339 @@
+import { useEffect, useRef, useState } from 'react';
+import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle } from 'lucide-react';
+import type { Settings as SettingsType } from '@/types';
+import * as api from '@/services/api';
+
+const defaultSettings: SettingsType = {
+  llm_mode: 'offline',
+  llm_offline_model: '',
+  llm_ollama_url: '',
+  llm_online_provider: '',
+  llm_online_model: '',
+  verification_enabled: 'true',
+  verification_auto_protect_passing: 'false',
+  default_scan_mode: 'network',
+};
+
+export default function Settings() {
+  const [settings, setSettings] = useState<SettingsType>(defaultSettings);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const restoreFileRef = useRef<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await api.getSettings();
+        setSettings({ ...defaultSettings, ...data });
+      } catch {
+        // keep defaults
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const handleChange = (key: string, value: string) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.updateSettings(settings);
+      setToast({ type: 'success', message: 'Settings saved successfully' });
+    } catch {
+      setToast({ type: 'error', message: 'Failed to save settings' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleBackup = async () => {
+    setBackingUp(true);
+    try {
+      const blob = await api.createBackup();
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `auditforge_backup_${timestamp}.db`;
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setToast({ type: 'success', message: 'Backup downloaded successfully' });
+    } catch {
+      setToast({ type: 'error', message: 'Failed to create backup' });
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const handleRestoreFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    restoreFileRef.current = file;
+    setShowRestoreConfirm(true);
+    // Reset input so the same file can be selected again
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRestoreConfirm = async () => {
+    const file = restoreFileRef.current;
+    if (!file) return;
+    setShowRestoreConfirm(false);
+    setRestoring(true);
+    try {
+      const result = await api.restoreBackup(file);
+      setToast({ type: 'success', message: `${result.message} (${result.tables_restored} tables)` });
+    } catch {
+      setToast({ type: 'error', message: 'Failed to restore backup' });
+    } finally {
+      setRestoring(false);
+      restoreFileRef.current = null;
+    }
+  };
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-12 text-gray-500">Loading…</div>;
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      {toast && (
+        <div
+          className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${
+            toast.type === 'success'
+              ? 'border-green-200 bg-green-50 text-green-700'
+              : 'border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : (
+            <XCircle className="h-4 w-4" />
+          )}
+          {toast.message}
+        </div>
+      )}
+
+      {/* LLM Configuration */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900">LLM Configuration</h3>
+
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-gray-700">LLM Mode</legend>
+          <div className="flex gap-6">
+            {['offline', 'online'].map((mode) => (
+              <label key={mode} className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
+                  name="llm_mode"
+                  value={mode}
+                  checked={settings.llm_mode === mode}
+                  onChange={() => handleChange('llm_mode', mode)}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Offline Model</label>
+          <input
+            value={settings.llm_offline_model}
+            onChange={(e) => handleChange('llm_offline_model', e.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            placeholder="e.g. mistral"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Ollama URL</label>
+          <input
+            value={settings.llm_ollama_url}
+            onChange={(e) => handleChange('llm_ollama_url', e.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            placeholder="http://localhost:11434"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Online Provider</label>
+          <input
+            value={settings.llm_online_provider}
+            onChange={(e) => handleChange('llm_online_provider', e.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            placeholder="e.g. openai"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Online Model</label>
+          <input
+            value={settings.llm_online_model}
+            onChange={(e) => handleChange('llm_online_model', e.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+            placeholder="e.g. gpt-4o"
+          />
+        </div>
+      </section>
+
+      {/* Verification */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900">Verification</h3>
+
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={settings.verification_enabled === 'true'}
+            onChange={(e) => handleChange('verification_enabled', e.target.checked ? 'true' : 'false')}
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-sm text-gray-700">Enable verification</span>
+        </label>
+
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={settings.verification_auto_protect_passing === 'true'}
+            onChange={(e) =>
+              handleChange('verification_auto_protect_passing', e.target.checked ? 'true' : 'false')
+            }
+            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-sm text-gray-700">Auto-protect passing checks</span>
+        </label>
+      </section>
+
+      {/* Scan Defaults */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900">Scan Defaults</h3>
+
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-gray-700">Default Scan Mode</legend>
+          <div className="flex gap-6">
+            {['network', 'script_export'].map((mode) => (
+              <label key={mode} className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                  type="radio"
+                  name="default_scan_mode"
+                  value={mode}
+                  checked={settings.default_scan_mode === mode}
+                  onChange={() => handleChange('default_scan_mode', mode)}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                {mode === 'network' ? 'Network' : 'Script Export'}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </section>
+
+      {/* Database Backup & Restore */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-gray-600" />
+          <h3 className="text-lg font-semibold text-gray-900">Database Backup &amp; Restore</h3>
+        </div>
+        <p className="text-sm text-gray-500">
+          Create a full backup of your AditForge database or restore from a previous backup.
+        </p>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <button
+            onClick={handleBackup}
+            disabled={backingUp}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            {backingUp ? 'Creating backup…' : 'Download Backup'}
+          </button>
+
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            <Upload className="h-4 w-4" />
+            {restoring ? 'Restoring…' : 'Restore from Backup'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".db,.sqlite,.sqlite3,.backup"
+              className="hidden"
+              onChange={handleRestoreFileSelect}
+              disabled={restoring}
+            />
+          </label>
+        </div>
+
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600 flex-shrink-0" />
+            <p className="text-xs text-amber-700">
+              Restoring a backup will replace <strong>all current data</strong>. A safety backup of the
+              current database will be created automatically. The application should be restarted after
+              restoring.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Restore Confirmation Dialog */}
+      {showRestoreConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <AlertTriangle className="h-6 w-6 text-amber-500" />
+              <h4 className="text-lg font-semibold text-gray-900">Confirm Restore</h4>
+            </div>
+            <p className="text-sm text-gray-600 mb-2">
+              Are you sure you want to restore the database from{' '}
+              <strong>{restoreFileRef.current?.name}</strong>?
+            </p>
+            <p className="text-sm text-red-600 mb-4">
+              This will replace all current data. A safety backup will be created first.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setShowRestoreConfirm(false); restoreFileRef.current = null; }}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRestoreConfirm}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Restore
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          <Save className="h-4 w-4" />
+          {saving ? 'Saving…' : 'Save Settings'}
+        </button>
+      </div>
+    </div>
+  );
+}

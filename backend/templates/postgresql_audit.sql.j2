@@ -1,0 +1,30 @@
+-- ══════════════════════════════════════════════════════════════
+-- AditForge — PostgreSQL Audit
+-- Benchmark: {{ benchmark.name }} {{ benchmark.version }}
+-- Generated: {{ generation_date }}
+-- Scan ID: {{ scan_id }}
+-- Rules: {{ rules|length }} enabled rules
+-- Run as: psql -U postgres -f audit_queries.sql -o results/audit_output.txt
+-- ══════════════════════════════════════════════════════════════
+
+\pset format unaligned
+\pset tuples_only on
+\timing off
+
+\o results/system_info.txt
+SELECT json_build_object(
+    'hostname', inet_server_addr()::text,
+    'version', version(),
+    'scan_date', now()::text,
+    'scan_id', '{{ scan_id }}',
+    'benchmark', '{{ benchmark.name }}'
+);
+\o
+
+{% for rule in rules %}
+-- ── Rule {{ rule.section_number }}: {{ rule.title }} ──
+\echo 'RULE_START|{{ rule.section_number }}|{{ rule.severity }}'
+{{ rule.audit_command }}
+\echo 'RULE_END|{{ rule.section_number }}'
+
+{% endfor %}
