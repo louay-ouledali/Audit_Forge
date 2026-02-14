@@ -351,7 +351,10 @@ def _fix_compliance_testing_command(cmd: str) -> str:
         cmd = auditpol_match.group(1)
 
     # Pattern: "grep ..." in a test block
-    grep_match = re.search(r"(grep\s+(?:-[A-Za-z]+\s+)?'[^']+'\s+/[\w/._-]+)", cmd)
+    grep_match = re.search(
+        r"""(grep\s+(?:-[A-Za-z]+\s+)?(?:'[^']+'|"[^"]+"|[\w^$.\\]+)\s+/[\w/._-]+)""",
+        cmd,
+    )
     if grep_match:
         cmd = grep_match.group(1)
 
