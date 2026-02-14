@@ -244,6 +244,18 @@ _ENGLISH_REGEX_PATTERNS = [
     (re.compile(r"minutes?\s*$", re.I), "Regex ends with prose ('minutes')"),
     (re.compile(r"days?\s*$", re.I), "Regex ends with prose ('days')"),
     (re.compile(r"^(?:should|must|needs?\s+to|is\s+set\s+to)\b", re.I), "Regex is an English sentence"),
+    (re.compile(r"^(?:the\s+|this\s+|a\s+)", re.I), "Regex starts with an article (English prose)"),
+    (re.compile(r"\bshould\s+be\b", re.I), "Regex contains 'should be' (English prose)"),
+    (re.compile(r"\bmust\s+be\b", re.I), "Regex contains 'must be' (English prose)"),
+    (re.compile(r"\bor\s+higher\b", re.I), "Regex contains 'or higher' (English prose)"),
+    (re.compile(r"\bor\s+lower\b", re.I), "Regex contains 'or lower' (English prose)"),
+    (re.compile(r"\bor\s+above\b", re.I), "Regex contains 'or above' (English prose)"),
+    (re.compile(r"\bor\s+below\b", re.I), "Regex contains 'or below' (English prose)"),
+    (re.compile(r"^(?:PASS|FAIL|Compliant|Non-compliant|Yes|No)\s*$", re.I), "Regex is a compliance verdict, not command output"),
+    (re.compile(r"\bat\s+least\s+\d+", re.I), "Regex contains 'at least N' (English prose)"),
+    (re.compile(r"\bno\s+more\s+than\b", re.I), "Regex contains 'no more than' (English prose)"),
+    (re.compile(r"\bgreater\s+than\b", re.I), "Regex contains 'greater than' (English prose)"),
+    (re.compile(r"\bless\s+than\b", re.I), "Regex contains 'less than' (English prose)"),
 ]
 
 

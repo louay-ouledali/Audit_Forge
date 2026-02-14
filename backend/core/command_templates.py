@@ -93,6 +93,16 @@ def _regex_lte(threshold: int) -> str:
 _NUM_RE = re.compile(
     r"(?:is\s+set\s+to|set\s+to|to)\s+['\"]?(\d+)\b", re.IGNORECASE,
 )
+# Broader pattern for extracting thresholds from CIS rule titles/descriptions
+_THRESHOLD_RE = re.compile(
+    r"(?:"
+    r"(?:is\s+set\s+to|set\s+to|to)\s+['\"]?(\d+)"
+    r"|(\d+)\s+or\s+(?:more|greater|higher|above)"
+    r"|(\d+)\s+or\s+(?:fewer|less|lower|below)"
+    r"|(?:at\s+least|minimum\s+of|>=)\s+(\d+)"
+    r"|(?:at\s+most|maximum\s+of|no\s+more\s+than|<=)\s+(\d+)"
+    r")\b", re.IGNORECASE,
+)
 _REG_PATH_RE = re.compile(
     r"(HKLM\\[A-Za-z0-9\\_]+):([A-Za-z0-9_]+)", re.IGNORECASE,
 )
@@ -102,9 +112,21 @@ _GUID_RE = re.compile(
 
 
 def _extract_threshold(text: str) -> int | None:
-    """Return the first integer threshold mentioned in rule text."""
-    m = _NUM_RE.search(text)
-    return int(m.group(1)) if m else None
+    """Return the first integer threshold mentioned in rule text.
+
+    Handles patterns like:
+      "set to 14", "24 or more", "30 or fewer",
+      "at least 14", "no more than 30"
+    """
+    # Try the broad pattern first
+    m = _THRESHOLD_RE.search(text)
+    if m:
+        for grp in m.groups():
+            if grp is not None:
+                return int(grp)
+    # Fall back to the simple pattern
+    m2 = _NUM_RE.search(text)
+    return int(m2.group(1)) if m2 else None
 
 
 def _extract_registry(text: str) -> tuple[str, str] | None:
@@ -464,7 +486,7 @@ def _try_linux_password_policy(rule: dict[str, Any]) -> dict[str, str] | None:
     if not field_name:
         return None
 
-    threshold = _extract_threshold(combined)
+    threshold = _extract_threshold(combined + " " + (rule.get("title") or ""))
     if threshold is None:
         # Try extracting from the combined text directly
         num_match = re.search(rf"{field_name}\s+(\d+)", combined)
@@ -487,6 +509,89 @@ def _try_linux_password_policy(rule: dict[str, Any]) -> dict[str, str] | None:
         "expected_output_description": f"{field_name} meets the required threshold",
         "remediation_command": "",
         "remediation_description": f"Edit /etc/login.defs and set {field_name} to the required value.",
+    }
+
+
+def _try_mount_point(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Linux filesystem mount point rules (e.g. 'Ensure /tmp is a separate partition')."""
+    title_lower = (rule.get("title") or "").lower()
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+
+    # Look for mount point patterns: /tmp, /var, /var/log, /home, etc.
+    mount_match = re.search(r"(?:ensure\s+)?(/(?:tmp|var(?:/log(?:/audit)?)?|home|dev/shm))\s+is\b", title_lower)
+    if not mount_match:
+        return None
+
+    mount_point = mount_match.group(1)
+
+    # Check for mount options like nodev, nosuid, noexec
+    option_match = re.search(r"\b(nodev|nosuid|noexec)\b", title_lower)
+    if option_match:
+        option = option_match.group(1)
+        return {
+            "audit_command": f"findmnt -n {mount_point} | grep {option}",
+            "expected_output_regex": re.escape(option),
+            "expected_output_description": f"{mount_point} has {option} option set",
+            "remediation_command": "",
+            "remediation_description": f"Add {option} to {mount_point} mount options in /etc/fstab.",
+        }
+
+    return {
+        "audit_command": f"findmnt -n {mount_point}",
+        "expected_output_regex": re.escape(mount_point),
+        "expected_output_description": f"{mount_point} is a separate mount",
+        "remediation_command": "",
+        "remediation_description": f"Create a separate partition for {mount_point}.",
+    }
+
+
+def _try_package_check(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Linux package install/remove rules."""
+    title_lower = (rule.get("title") or "").lower()
+    combined = (
+        (rule.get("audit_description_raw") or "")
+        + " "
+        + (rule.get("remediation_description_raw") or "")
+    )
+
+    # Pattern: "Ensure <package> is installed" or "Ensure <package> is not installed"
+    pkg_match = re.search(
+        r"ensure\s+(\w[\w.-]+)\s+is\s+(not\s+)?installed",
+        title_lower,
+    )
+    if not pkg_match:
+        return None
+
+    pkg_name = pkg_match.group(1)
+    is_not_installed = bool(pkg_match.group(2))
+
+    # Determine package manager from audit text
+    if "dpkg" in combined or "apt" in combined:
+        if is_not_installed:
+            cmd = f"dpkg-query -W -f='${{Status}}' {pkg_name} 2>&1"
+            regex = "not-installed|no packages found|not installed"
+        else:
+            cmd = f"dpkg-query -s {pkg_name} 2>/dev/null | grep -i status"
+            regex = "install ok installed"
+    else:
+        # Fallback: try rpm
+        if is_not_installed:
+            cmd = f"rpm -q {pkg_name} 2>&1"
+            regex = "not installed"
+        else:
+            cmd = f"rpm -q {pkg_name}"
+            regex = pkg_name
+
+    return {
+        "audit_command": cmd,
+        "expected_output_regex": regex,
+        "expected_output_description": f"Package {pkg_name} {'not ' if is_not_installed else ''}installed",
+        "remediation_command": "",
+        "remediation_description": f"{'Remove' if not is_not_installed else 'Install'} {pkg_name} using the system package manager.",
     }
 
 
@@ -538,6 +643,8 @@ _WINDOWS_TEMPLATES = [
 
 _LINUX_TEMPLATES = [
     _try_linux_password_policy,
+    _try_mount_point,
+    _try_package_check,
     _try_sysctl,
     _try_systemctl,
     _try_file_permissions,

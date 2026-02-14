@@ -255,6 +255,13 @@ def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
     """Clean up common LLM mistakes in generated commands and regex patterns."""
     from backend.core.verification_engine import _check_regex_quality
 
+    # --- Fix commands that test compliance instead of retrieving values ---
+    cmd = result.get("audit_command", "")
+    if cmd:
+        cmd = _fix_compliance_testing_command(cmd)
+        result["audit_command"] = cmd
+
+    # --- Fix regex quality ---
     regex = result.get("expected_output_regex", "")
     if regex:
         # Check if regex is a bad English-phrase pattern (reuse verification logic)
@@ -279,6 +286,82 @@ def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
                 result["expected_output_regex"] = ""
 
     return result
+
+
+# Patterns that indicate the command is testing compliance rather than retrieving a value
+_COMPLIANCE_TEST_PATTERNS = [
+    # PowerShell if/else blocks
+    re.compile(r'\bif\s*\(.*-(?:ge|le|gt|lt|eq|ne)\b', re.IGNORECASE),
+    # PowerShell ternary-style pass/fail
+    re.compile(r'["\'](?:PASS|FAIL|Compliant|Non-compliant)["\']', re.IGNORECASE),
+    # Bash test constructs
+    re.compile(r'\btest\s+.*(?:&&|;\s*then)\b'),
+    # Bash if/then blocks
+    re.compile(r'\bif\s+\[.*\]\s*;\s*then\b'),
+    # echo PASS/FAIL pattern
+    re.compile(r'\becho\s+["\']?(?:PASS|FAIL|Compliant)["\']?\b', re.IGNORECASE),
+]
+
+# Known substitution rules: bad pattern → fixed command
+_WINDOWS_CMD_FIXES: list[tuple[re.Pattern, str]] = [
+    # PowerShell password policy via complex if/else → just use net accounts
+    (re.compile(r'.*net\s+accounts.*-(?:ge|le|gt|lt).*', re.IGNORECASE | re.DOTALL), "net accounts"),
+    # PowerShell registry query wrapped in if/else → just the reg query
+    (re.compile(r'.*if\s*\(\s*\(reg\s+query\s+([^)]+)\)', re.IGNORECASE), None),  # handled specially
+]
+
+
+def _fix_compliance_testing_command(cmd: str) -> str:
+    """Strip compliance-testing logic from commands, keeping only the retrieval part."""
+    if not cmd:
+        return cmd
+
+    # Check if command contains compliance-testing patterns
+    has_compliance_test = any(p.search(cmd) for p in _COMPLIANCE_TEST_PATTERNS)
+    if not has_compliance_test:
+        return cmd
+
+    # Try to extract the underlying retrieval command
+    original = cmd
+
+    # Pattern: "net accounts" somewhere in a larger if/else block
+    if re.search(r'\bnet\s+accounts\b', cmd, re.IGNORECASE):
+        cmd = "net accounts"
+
+    # Pattern: "reg query HKLM\..." somewhere in a larger if/else block
+    reg_match = re.search(r'(reg\s+query\s+HKLM\\[^\s|;"]+(?:\s+/v\s+\S+)?)', cmd, re.IGNORECASE)
+    if reg_match:
+        cmd = reg_match.group(1)
+
+    # Pattern: "sysctl ..." in a test block
+    sysctl_match = re.search(r'(sysctl\s+(?:-n\s+)?[\w.]+)', cmd)
+    if sysctl_match:
+        param = re.search(r'sysctl\s+(?:-n\s+)?([\w.]+)', cmd)
+        if param:
+            cmd = f"sysctl {param.group(1)}"
+
+    # Pattern: "systemctl is-enabled ..." in a test block
+    systemctl_match = re.search(r'(systemctl\s+is-enabled\s+[\w@.-]+)', cmd)
+    if systemctl_match:
+        cmd = systemctl_match.group(1)
+
+    # Pattern: "auditpol /get ..." in a test block
+    auditpol_match = re.search(r'(auditpol\s+/get\s+/subcategory:\S+)', cmd)
+    if auditpol_match:
+        cmd = auditpol_match.group(1)
+
+    # Pattern: "grep ..." in a test block
+    grep_match = re.search(r"(grep\s+(?:-[A-Za-z]+\s+)?'[^']+'\s+/[\w/._-]+)", cmd)
+    if grep_match:
+        cmd = grep_match.group(1)
+
+    if cmd != original:
+        logger.info(
+            "Fixed compliance-testing command → retrieval only: %s",
+            cmd[:80],
+        )
+
+    return cmd
 
 
 async def regenerate_command(

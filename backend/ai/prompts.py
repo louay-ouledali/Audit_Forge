@@ -46,6 +46,24 @@ ABSOLUTE RULES — VIOLATIONS WILL CAUSE FAILURES:
 5. expected_output_regex = a short Python-compatible regex matching compliant output.
 
 ══════════════════════════════════════════════════════════
+COMMAND PURPOSE — CRITICAL
+══════════════════════════════════════════════════════════
+The audit command must RETRIEVE THE RAW VALUE from the system.
+It must NOT test compliance or make boolean pass/fail decisions.
+
+GOOD: net accounts                  ← retrieves all password policy values
+BAD:  if ((net accounts | ...) -ge 14) {{ "PASS" }} else {{ "FAIL" }}
+
+GOOD: reg query HKLM\\path /v Value  ← retrieves the registry value
+BAD:  if ((Get-ItemProperty ...).Value -eq 1) {{ "Compliant" }}
+
+GOOD: sysctl net.ipv4.ip_forward    ← retrieves the kernel parameter
+BAD:  test $(sysctl -n net.ipv4.ip_forward) -eq 0 && echo PASS
+
+The command's ONLY job is to print the current system value.
+Our engine then compares the output against expected_output_regex.
+
+══════════════════════════════════════════════════════════
 REGEX QUALITY — CRITICAL
 ══════════════════════════════════════════════════════════
 The regex must match the ACTUAL TEXT the command will print, NOT the English
@@ -77,6 +95,7 @@ SYNTAX:
 • NEVER use && — PowerShell does not support it. Use ; to chain commands.
 • reg query paths must NOT have quotes: reg query HKLM\\SOFTWARE\\Path /v Value
 • Do NOT wrap the entire command in quotes.
+• Do NOT write If/Else or try/catch — just the retrieval command.
 
 COMMAND PATTERNS BY CIS SECTION:
 • 1.1.x Password Policy / 1.2.x Account Lockout → net accounts
@@ -106,6 +125,7 @@ LINUX — bash is the default shell
 SYNTAX:
 • Chain with && or ;
 • All commands assume root or sudo. Do NOT add sudo prefix.
+• Do NOT use If/then/else — just the retrieval command.
 
 COMMAND PATTERNS BY CIS SECTION:
 • Filesystem config (1.x) → mount | grep /tmp ; grep -E '\\s/tmp\\s' /etc/fstab
@@ -170,6 +190,22 @@ The command MUST work when pasted directly into the platform's native shell:
   - Windows → PowerShell
   - Linux → bash
   - Network → privileged EXEC (SSH CLI)
+
+═══════════════════════════════════════════════════════════
+CRITICAL: RETRIEVE RAW VALUES, DO NOT TEST COMPLIANCE
+═══════════════════════════════════════════════════════════
+The command must ONLY retrieve the current system setting.
+It must NOT contain any logic to test compliance or return pass/fail.
+
+WRONG approach (testing compliance):
+  if ((net accounts | Select-String 'Minimum password length').Line -match '(\\d+)') {{ if ([int]$matches[1] -ge 14) {{ "PASS" }} else {{ "FAIL" }} }}
+  test $(sysctl -n net.ipv4.ip_forward) -eq 0 && echo PASS || echo FAIL
+
+CORRECT approach (retrieving the raw value):
+  net accounts
+  sysctl net.ipv4.ip_forward
+
+The compliance check happens LATER in our pipeline — NOT in the command.
 
 READ THE AUDIT TEXT CAREFULLY for each rule:
 - If the audit text provides a specific CLI command, USE IT (adapt syntax for the shell).
@@ -350,6 +386,14 @@ Return ONLY a valid JSON object with these keys:
 """
 
 COMMAND_REGENERATION_SYSTEM = """You fix CIS benchmark audit commands that failed. Return a JSON object with: audit_command, expected_output_regex, expected_output_description, remediation_command, remediation_description, explanation.
+
+CRITICAL: The audit command must RETRIEVE THE RAW VALUE from the system.
+It must NOT contain any compliance testing logic (no if/else, no pass/fail).
+Our engine compares the raw output against expected_output_regex separately.
+
+GOOD: net accounts                  ← retrieves all password policy values
+BAD:  if (...) {{ "PASS" }} else {{ "FAIL" }}   ← testing compliance directly
+
 Commands must be READ-ONLY, non-interactive, and work when pasted into the platform shell.
 
 REGEX QUALITY:
