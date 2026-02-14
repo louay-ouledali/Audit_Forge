@@ -444,6 +444,7 @@ async def import_results(
 
 
 MAX_UPLOAD_SIZE = 100 * 1024 * 1024  # 100 MB
+MAX_DECOMPRESSED_SIZE = 200 * 1024 * 1024  # 200 MB – guard against zip bombs
 
 
 async def _extract_result_content(file: UploadFile) -> str:
@@ -480,6 +481,13 @@ async def _extract_result_content(file: UploadFile) -> str:
                     target_file = names[0]
                 if not target_file:
                     raise ValueError("ZIP file is empty")
+
+                info = zf.getinfo(target_file)
+                if info.file_size > MAX_DECOMPRESSED_SIZE:
+                    raise ValueError(
+                        f"Decompressed file too large ({info.file_size} bytes). "
+                        f"Maximum is {MAX_DECOMPRESSED_SIZE} bytes."
+                    )
 
                 return zf.read(target_file).decode("utf-8", errors="replace")
         except zipfile.BadZipFile:
