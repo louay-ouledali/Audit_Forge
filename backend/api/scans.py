@@ -489,7 +489,14 @@ async def _extract_result_content(file: UploadFile) -> str:
                         f"Maximum is {MAX_DECOMPRESSED_SIZE} bytes."
                     )
 
-                return zf.read(target_file).decode("utf-8", errors="replace")
+                data = zf.read(target_file)
+                if len(data) > MAX_DECOMPRESSED_SIZE:
+                    raise ValueError(
+                        f"Decompressed file too large ({len(data)} bytes). "
+                        f"Maximum is {MAX_DECOMPRESSED_SIZE} bytes."
+                    )
+
+                return data.decode("utf-8", errors="replace")
         except zipfile.BadZipFile:
             raise ValueError("Invalid ZIP file")
 
