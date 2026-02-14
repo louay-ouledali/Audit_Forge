@@ -65,17 +65,31 @@ def _regex_gte(threshold: int) -> str:
 
 
 def _regex_lte(threshold: int) -> str:
-    """Return a regex fragment matching an integer in 0..*threshold*."""
+    """Return a regex fragment matching an integer in 0..*threshold*.
+
+    Works for thresholds 0-999.
+
+    >>> import re
+    >>> pat = _regex_lte(30)
+    >>> bool(re.fullmatch(pat, '30'))
+    True
+    >>> bool(re.fullmatch(pat, '31'))
+    False
+    >>> bool(re.fullmatch(pat, '0'))
+    True
+    """
     if threshold >= 999:
         return r"\d+"
+    if threshold < 0:
+        return "(?!)"  # matches nothing
     if threshold <= 9:
         return f"[0-{threshold}]"
-    tens, ones = divmod(threshold, 10)
-    parts = []
-    # single digits
-    parts.append(r"[0-9]")
-    # same tens digit
-    if tens > 0:
+    if threshold <= 99:
+        tens, ones = divmod(threshold, 10)
+        parts = []
+        # single digits
+        parts.append(r"[0-9]")
+        # same tens digit
         if ones == 9:
             parts.append(f"{tens}\\d")
         else:
@@ -83,6 +97,31 @@ def _regex_lte(threshold: int) -> str:
         # lower tens digits
         if tens > 1:
             parts.append(f"[1-{tens - 1}]\\d")
+        return "(?:" + "|".join(parts) + ")"
+    # 100-999: break into parts
+    hundreds, remainder = divmod(threshold, 100)
+    tens, ones = divmod(remainder, 10)
+    parts = []
+    # single digits (0-9)
+    parts.append(r"[0-9]")
+    # two-digit numbers (10-99)
+    parts.append(r"[1-9]\d")
+    # three-digit: same hundreds digit, smaller tens/ones
+    if tens > 0:
+        if ones == 9:
+            parts.append(f"{hundreds}[0-{tens}]\\d")
+        else:
+            # Same hundreds digit, lower tens digits (full range)
+            if tens > 0:
+                parts.append(f"{hundreds}[0-{tens - 1}]\\d")
+            # Same hundreds + same tens, ones up to threshold
+            parts.append(f"{hundreds}{tens}[0-{ones}]")
+    else:
+        # tens == 0: only X00 through X0{ones}
+        parts.append(f"{hundreds}0[0-{ones}]")
+    # lower hundreds digits (full range)
+    if hundreds > 1:
+        parts.append(f"[1-{hundreds - 1}]\\d\\d")
     return "(?:" + "|".join(parts) + ")"
 
 
@@ -158,7 +197,13 @@ _NET_ACCOUNTS_FIELDS: dict[str, str] = {
 
 
 def _try_net_accounts(rule: dict[str, Any]) -> dict[str, str] | None:
-    """Match Windows password-policy / account-lockout rules (1.1.x, 1.2.x)."""
+    """Match Windows password-policy / account-lockout rules (1.1.x, 1.2.x).
+
+    Generates a PowerShell command that extracts ONLY the numeric value
+    for the specific policy field.  For example, instead of dumping all
+    ``net accounts`` output, it pipes through ``Select-String`` and
+    extracts just the number so the output is a single integer like ``24``.
+    """
     section = rule.get("section_number", "")
     if not (section.startswith("1.1.") or section.startswith("1.2.")):
         return None
@@ -192,18 +237,29 @@ def _try_net_accounts(rule: dict[str, Any]) -> dict[str, str] | None:
     else:
         num_regex = _regex_gte(threshold)
 
-    escaped_label = re.escape(field_label)
+    # Build a targeted command that outputs ONLY the numeric value
+    escaped_label_ps = field_label.replace("'", "''")
+    audit_cmd = (
+        f"(net accounts | Select-String '{escaped_label_ps}').Line "
+        f"-replace '\\D',''"
+    )
+
     return {
-        "audit_command": "net accounts",
-        "expected_output_regex": f"{escaped_label}\\s+{num_regex}",
-        "expected_output_description": f"{field_label} meets threshold ({threshold})",
+        "audit_command": audit_cmd,
+        "expected_output_regex": f"^{num_regex}$",
+        "expected_output_description": f"{field_label} value (number only, must meet threshold {threshold})",
         "remediation_command": "",
         "remediation_description": f"Set {field_label} to the required value via Group Policy.",
     }
 
 
 def _try_registry(rule: dict[str, Any]) -> dict[str, str] | None:
-    """Match Windows registry-backed settings (2.3.x, 9.x, 18.x, 19.x)."""
+    """Match Windows registry-backed settings (2.3.x, 9.x, 18.x, 19.x).
+
+    Uses ``(Get-ItemProperty ...).ValueName`` to output only the value itself,
+    not the whole reg-query table.  For REG_DWORD values the output is a
+    plain integer (e.g. ``1``), making regex matching trivial.
+    """
     combined = (
         (rule.get("audit_description_raw") or "")
         + " "
@@ -214,26 +270,40 @@ def _try_registry(rule: dict[str, Any]) -> dict[str, str] | None:
         return None
 
     key_path, value_name = reg
+
+    # Convert HKLM\ to PowerShell registry drive path HKLM:\
+    ps_key_path = key_path.replace("HKLM\\", "HKLM:\\", 1)
+
     threshold = _extract_threshold(combined)
 
-    # Build regex for reg query output: "ValueName    REG_DWORD    0x00000001"
     if threshold is not None:
-        hex_val = f"0x{threshold:08x}"
-        regex = f"{re.escape(value_name)}\\s+REG_DWORD\\s+{re.escape(hex_val)}"
+        # Numeric threshold → output just the number, regex matches >= or <=
+        title_lower = (rule.get("title") or "").lower()
+        is_max = "maximum" in title_lower or "or fewer" in title_lower or "or less" in title_lower
+        if is_max:
+            num_regex = _regex_lte(threshold)
+        else:
+            num_regex = _regex_gte(threshold)
+        regex = f"^{num_regex}$"
     else:
         # Check for Enabled/Disabled pattern (REG_DWORD 1 = Enabled, 0 = Disabled)
         title_lower = (rule.get("title") or "").lower()
         if "enabled" in title_lower or "is set to 'on" in title_lower:
-            regex = f"{re.escape(value_name)}\\s+REG_DWORD\\s+0x0*1\\b"
+            regex = "^1$"
         elif "disabled" in title_lower or "is set to 'off" in title_lower:
-            regex = f"{re.escape(value_name)}\\s+REG_DWORD\\s+0x0+\\b"
+            regex = "^0$"
         else:
-            regex = f"{re.escape(value_name)}\\s+REG_DWORD\\s+0x[0-9a-fA-F]+"
+            regex = r"^\d+$"
+
+    audit_cmd = (
+        f"(Get-ItemProperty -Path '{ps_key_path}' "
+        f"-Name '{value_name}' -ErrorAction Stop).{value_name}"
+    )
 
     return {
-        "audit_command": f"reg query {key_path} /v {value_name}",
+        "audit_command": audit_cmd,
         "expected_output_regex": regex,
-        "expected_output_description": f"Registry value {value_name} is set correctly",
+        "expected_output_description": f"Registry value {value_name} (single value output)",
         "remediation_command": "",
         "remediation_description": f"Set {key_path}\\{value_name} via Group Policy or reg add.",
     }
@@ -274,7 +344,11 @@ def _try_auditpol(rule: dict[str, Any]) -> dict[str, str] | None:
 
 
 def _try_windows_service(rule: dict[str, Any]) -> dict[str, str] | None:
-    """Match Windows service rules (5.x)."""
+    """Match Windows service rules (5.x).
+
+    Uses ``Get-Service … | Select-Object -ExpandProperty StartType``
+    which outputs a single word like ``Disabled`` or ``Automatic``.
+    """
     section = rule.get("section_number", "")
     if not section.startswith("5."):
         return None
@@ -287,14 +361,14 @@ def _try_windows_service(rule: dict[str, Any]) -> dict[str, str] | None:
 
     svc_name = svc_match.group(1)
     if "disabled" in title_lower:
-        regex = "Disabled|Stopped"
+        regex = "^(?:Disabled|Stopped)$"
     else:
-        regex = "Running"
+        regex = "^(?:Running|Automatic)$"
 
     return {
-        "audit_command": f"Get-Service -Name {svc_name} | Select-Object -ExpandProperty StartType",
+        "audit_command": f"(Get-Service -Name {svc_name} -ErrorAction Stop).StartType",
         "expected_output_regex": regex,
-        "expected_output_description": f"Service {svc_name} start type",
+        "expected_output_description": f"Service {svc_name} start type (single value)",
         "remediation_command": "",
         "remediation_description": f"Set service {svc_name} startup type via Group Policy or sc.exe.",
     }
@@ -333,7 +407,11 @@ def _try_secedit(rule: dict[str, Any]) -> dict[str, str] | None:
 # ---------------------------------------------------------------------------
 
 def _try_sysctl(rule: dict[str, Any]) -> dict[str, str] | None:
-    """Match Linux kernel parameter rules."""
+    """Match Linux kernel parameter rules.
+
+    Uses ``sysctl -n param`` (not ``sysctl param``) to output ONLY the value.
+    For example: ``sysctl -n net.ipv4.ip_forward`` → ``0``
+    """
     combined = (
         (rule.get("audit_description_raw") or "")
         + " "
@@ -352,18 +430,20 @@ def _try_sysctl(rule: dict[str, Any]) -> dict[str, str] | None:
     val_match = re.search(rf"{re.escape(param)}\s*=\s*(\d+)", combined)
     expected_val = val_match.group(1) if val_match else "0"
 
-    escaped_param = re.escape(param)
     return {
-        "audit_command": f"sysctl {param}",
-        "expected_output_regex": f"{escaped_param}\\s*=\\s*{re.escape(expected_val)}",
-        "expected_output_description": f"{param} = {expected_val}",
+        "audit_command": f"sysctl -n {param}",
+        "expected_output_regex": f"^{re.escape(expected_val)}$",
+        "expected_output_description": f"{param} value (expected: {expected_val})",
         "remediation_command": "",
         "remediation_description": f"Set {param} = {expected_val} in /etc/sysctl.conf and run sysctl -p.",
     }
 
 
 def _try_systemctl(rule: dict[str, Any]) -> dict[str, str] | None:
-    """Match Linux service rules (systemctl is-enabled)."""
+    """Match Linux service rules (systemctl is-enabled).
+
+    Output is a single word: ``enabled``, ``disabled``, ``masked``, etc.
+    """
     combined = (
         (rule.get("audit_description_raw") or "")
         + " "
@@ -382,14 +462,14 @@ def _try_systemctl(rule: dict[str, Any]) -> dict[str, str] | None:
         svc_name = svc_match.group(1)
 
     if "not enabled" in title_lower or "disabled" in title_lower or "not installed" in title_lower:
-        regex = "disabled|masked|not-found"
+        regex = "^(?:disabled|masked|not-found|inactive)$"
     else:
-        regex = "enabled"
+        regex = "^enabled$"
 
     return {
-        "audit_command": f"systemctl is-enabled {svc_name}",
+        "audit_command": f"systemctl is-enabled {svc_name} 2>/dev/null || echo not-found",
         "expected_output_regex": regex,
-        "expected_output_description": f"Service {svc_name} state",
+        "expected_output_description": f"Service {svc_name} state (single value)",
         "remediation_command": "",
         "remediation_description": f"Configure {svc_name} via systemctl.",
     }
@@ -463,7 +543,11 @@ def _try_grep_config(rule: dict[str, Any]) -> dict[str, str] | None:
 
 
 def _try_linux_password_policy(rule: dict[str, Any]) -> dict[str, str] | None:
-    """Match Linux password policy rules (/etc/login.defs)."""
+    """Match Linux password policy rules (/etc/login.defs).
+
+    Uses ``awk`` to extract ONLY the numeric value.
+    For example: ``awk '/^PASS_MAX_DAYS/ {print $2}' /etc/login.defs`` → ``365``
+    """
     combined = (
         (rule.get("audit_description_raw") or "")
         + " "
@@ -499,14 +583,14 @@ def _try_linux_password_policy(rule: dict[str, Any]) -> dict[str, str] | None:
             num_regex = _regex_lte(threshold)
         else:
             num_regex = _regex_gte(threshold)
-        regex = f"{re.escape(field_name)}\\s+{num_regex}"
+        regex = f"^{num_regex}$"
     else:
-        regex = f"{re.escape(field_name)}\\s+\\d+"
+        regex = r"^\d+$"
 
     return {
-        "audit_command": f"grep -E '^{field_name}' /etc/login.defs",
+        "audit_command": f"awk '/^{field_name}/ {{print $2}}' /etc/login.defs",
         "expected_output_regex": regex,
-        "expected_output_description": f"{field_name} meets the required threshold",
+        "expected_output_description": f"{field_name} value (number only, threshold {threshold})",
         "remediation_command": "",
         "remediation_description": f"Edit /etc/login.defs and set {field_name} to the required value.",
     }

@@ -46,78 +46,96 @@ ABSOLUTE RULES — VIOLATIONS WILL CAUSE FAILURES:
 5. expected_output_regex = a short Python-compatible regex matching compliant output.
 
 ══════════════════════════════════════════════════════════
-COMMAND PURPOSE — CRITICAL
+COMMAND PURPOSE — CRITICAL: SINGLE-VALUE OUTPUT
 ══════════════════════════════════════════════════════════
-The audit command must RETRIEVE THE RAW VALUE from the system.
+The audit command must EXTRACT AND OUTPUT ONLY THE SPECIFIC VALUE needed.
 It must NOT test compliance or make boolean pass/fail decisions.
+It must NOT dump multi-line output when a single value is needed.
 
-GOOD: net accounts                  ← retrieves all password policy values
-BAD:  if ((net accounts | ...) -ge 14) {{ "PASS" }} else {{ "FAIL" }}
+For NUMERIC RULES (threshold checks like "14 or more"):
+  The command MUST output ONLY the number — a single integer on one line.
+  Our engine will compare this number against the expected_output_regex.
 
-GOOD: reg query HKLM\\path /v Value  ← retrieves the registry value
-BAD:  if ((Get-ItemProperty ...).Value -eq 1) {{ "Compliant" }}
+  GOOD: (net accounts | Select-String 'Minimum password length').Line -replace '\\D',''
+        → outputs: 14
+  BAD:  net accounts
+        → outputs 15+ lines of text (too much)
 
-GOOD: sysctl net.ipv4.ip_forward    ← retrieves the kernel parameter
-BAD:  test $(sysctl -n net.ipv4.ip_forward) -eq 0 && echo PASS
+  GOOD: sysctl -n net.ipv4.ip_forward
+        → outputs: 0
+  BAD:  sysctl net.ipv4.ip_forward
+        → outputs: net.ipv4.ip_forward = 0 (extra text)
 
-The command's ONLY job is to print the current system value.
-Our engine then compares the output against expected_output_regex.
+  GOOD: (Get-ItemProperty -Path 'HKLM:\\path' -Name 'ValueName').ValueName
+        → outputs: 1
+  BAD:  reg query HKLM\\path /v ValueName
+        → outputs table format with headers
+
+For STATUS/STRING RULES (enable/disable, service state):
+  Output ONLY the status word.
+
+  GOOD: (Get-Service -Name Spooler).StartType
+        → outputs: Disabled
+  GOOD: systemctl is-enabled sshd
+        → outputs: enabled
 
 ══════════════════════════════════════════════════════════
 REGEX QUALITY — CRITICAL
 ══════════════════════════════════════════════════════════
-The regex must match the ACTUAL TEXT the command will print, NOT the English
-description from the CIS rule.  It is used by a Python re.search() call against
-the command's stdout — therefore it must be a valid Python regular expression.
-
-GOOD regex: Minimum password length\\s+(?:1[4-9]|[2-9]\\d|\\d{{3,}})
-BAD  regex: 14 or more password
-BAD  regex: Enabled or greater
-BAD  regex: 24 or more characters
+Since the command now outputs a SINGLE VALUE, the regex must match that
+single value.  Use ^ and $ anchors for clean matching.
 
 For NUMERIC THRESHOLDS (e.g. "14 or more"):
-  Build a regex range.  Example for >= 14: (?:1[4-9]|[2-9]\\d|\\d{{3,}})
-  Example for >= 24: (?:2[4-9]|[3-9]\\d|\\d{{3,}})
-  Example for <= 30: (?:[0-9]|[12]\\d|30)
+  Regex must match the bare number output.
+  >=14 → ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$
+  >=24 → ^(?:2[4-9]|[3-9]\\d|\\d{{3,}})$
+  <=30 → ^(?:[0-9]|[12]\\d|30)$
 
-For EXACT VALUES (e.g. REG_DWORD 0x00000001):
-  Match the exact value: REG_DWORD\\s+0x0*1\\b
+For EXACT VALUES (e.g. registry value 1):
+  Regex: ^1$  or  ^0$
 
-For STATUS STRINGS (e.g. "Disabled", "Success and Failure"):
-  Match the exact word: disabled  OR  Success and Failure
+For STATUS STRINGS:
+  Regex: ^Disabled$  or  ^enabled$  or  ^Success and Failure$
 
 NEVER produce a regex that is just the CIS rule's English description.
+NEVER use phrases like "14 or more" or "Enabled or greater" as regex.
 
 ═══════════════════════════════════════════════════════════
 WINDOWS — PowerShell is the default shell
 ═══════════════════════════════════════════════════════════
 SYNTAX:
 • NEVER use && — PowerShell does not support it. Use ; to chain commands.
-• reg query paths must NOT have quotes: reg query HKLM\\SOFTWARE\\Path /v Value
 • Do NOT wrap the entire command in quotes.
-• Do NOT write If/Else or try/catch — just the retrieval command.
+• Do NOT write If/Else or try/catch — just the value-extraction command.
+• Use PowerShell property access (.PropertyName) to get single values.
 
 COMMAND PATTERNS BY CIS SECTION:
-• 1.1.x Password Policy / 1.2.x Account Lockout → net accounts
-  Output lines: "Minimum password length                  14"
-  Regex example (>=14): Minimum password length\\s+(?:1[4-9]|[2-9]\\d|\\d{{3,}})
+• 1.1.x Password Policy / 1.2.x Account Lockout → extract the specific number
+  Command: (net accounts | Select-String 'Minimum password length').Line -replace '\\D',''
+  Output: 14  (just the number)
+  Regex (>=14): ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$
 • 2.2.x User Rights Assignment → secedit /export /cfg C:\\Windows\\Temp\\secpol.cfg /quiet; Select-String -Path C:\\Windows\\Temp\\secpol.cfg -Pattern "SeRight"
-• 2.3.x Security Options → reg query (use the registry path from CIS text)
-• 5.x System Services → Get-Service -Name ServiceName | Select-Object -ExpandProperty StartType
-  Output: "Disabled"
-  Regex: Disabled
-• 9.x Firewall → reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\WindowsFirewall\\...
-  Or: Get-NetFirewallProfile -Name Domain | Select-Object Enabled
-• 17.x Audit Policy → auditpol /get /subcategory:"{{GUID}}" (copy GUID from CIS text)
+• 2.3.x Security Options → extract the registry value directly
+  Command: (Get-ItemProperty -Path 'HKLM:\\path' -Name 'ValueName').ValueName
+  Output: 1  (just the value)
+  Regex: ^1$
+• 5.x System Services → (Get-Service -Name ServiceName).StartType
+  Output: Disabled  (single word)
+  Regex: ^Disabled$
+• 9.x Firewall → (Get-ItemProperty -Path 'HKLM:\\path' -Name 'EnableFirewall').EnableFirewall
+  Or: (Get-NetFirewallProfile -Name Domain).Enabled
+  Output: True  or  1
+• 17.x Audit Policy → auditpol /get /subcategory:"{{GUID}}"
   Output: "  Credential Validation    Success and Failure"
   Regex: Success and Failure|Success
-• 18.x/19.x Admin Templates → reg query HKLM\\path /v ValueName
-  Output: ValueName    REG_DWORD    0x00000001
-  Regex: ValueName\\s+REG_DWORD\\s+0x0*1\\b
+• 18.x/19.x Admin Templates → (Get-ItemProperty -Path 'HKLM:\\path' -Name 'ValueName').ValueName
+  Output: 1  (just the integer value)
+  Regex: ^1$
 
 REGISTRY PATH RULES:
-• CIS text says "HKLM\\KEY\\Path:ValueName" → command: reg query HKLM\\KEY\\Path /v ValueName
-  (split at last colon — before = key path, after = value name)
+• CIS text says "HKLM\\KEY\\Path:ValueName" → command:
+  (Get-ItemProperty -Path 'HKLM:\\KEY\\Path' -Name 'ValueName').ValueName
+  (Replace HKLM\\ with HKLM:\\ for PowerShell; output is just the value)
 
 ═══════════════════════════════════════════════════════════
 LINUX — bash is the default shell
@@ -125,38 +143,37 @@ LINUX — bash is the default shell
 SYNTAX:
 • Chain with && or ;
 • All commands assume root or sudo. Do NOT add sudo prefix.
-• Do NOT use If/then/else — just the retrieval command.
+• Do NOT use If/then/else — just the value-extraction command.
+• Use awk, cut, or -n flags to extract JUST the value.
 
-COMMAND PATTERNS BY CIS SECTION:
-• Filesystem config (1.x) → mount | grep /tmp ; grep -E '\\s/tmp\\s' /etc/fstab
-• Kernel parameters (3.x network) → sysctl net.ipv4.ip_forward
-  Output: "net.ipv4.ip_forward = 0"
-  Regex: net\\.ipv4\\.ip_forward\\s*=\\s*0
-• Kernel params from file → grep -r 'net.ipv4.ip_forward' /etc/sysctl.conf /etc/sysctl.d/
+COMMAND PATTERNS BY CIS SECTION (SINGLE-VALUE OUTPUT):
+• Filesystem config (1.x) → findmnt -n /tmp
+• Kernel parameters (3.x network) → sysctl -n net.ipv4.ip_forward
+  Output: 0  (just the number, use -n flag)
+  Regex: ^0$
 • Package installed → dpkg-query -s packagename 2>/dev/null | grep -i status  (Debian/Ubuntu)
   Or: rpm -q packagename  (RHEL/CentOS)
 • Package NOT installed → dpkg-query -W -f='${{Status}}' packagename 2>&1 | grep -c 'not-installed'
-• Service status → systemctl is-enabled servicename
-  Output: "disabled" or "enabled"
-  Regex: disabled
-• Service running → systemctl is-active servicename
-• File permissions → stat -c '%a %U %G' /etc/ssh/sshd_config
-  Output: "600 root root"
-  Regex: [0-6][0-4]0\\s+root\\s+root
-• File content → grep -E '^PermitRootLogin' /etc/ssh/sshd_config
-  Output: "PermitRootLogin no"
-  Regex: PermitRootLogin\\s+no
-• Cron / at → stat -c '%a' /etc/crontab
-• PAM config → grep -E 'pam_pwquality' /etc/pam.d/common-password
-• Password policy → grep -E '^PASS_MAX_DAYS' /etc/login.defs
-  Output: "PASS_MAX_DAYS   365"
-  Regex: PASS_MAX_DAYS\\s+[0-9]+
-• Audit rules → auditctl -l | grep -E 'time-change|identity|system-locale'
-  Or: grep -r 'something' /etc/audit/rules.d/
+• Service status → systemctl is-enabled servicename 2>/dev/null || echo not-found
+  Output: disabled  (single word)
+  Regex: ^disabled$
+• File permissions → stat -c '%a' /etc/ssh/sshd_config
+  Output: 600  (just the permission number)
+  Regex: ^[0-6][0-4][0-4]$
+• File ownership → stat -c '%U' /etc/ssh/sshd_config
+  Output: root  (just the owner name)
+  Regex: ^root$
+• File content → grep -E '^PermitRootLogin' /etc/ssh/sshd_config | awk '{{print $2}}'
+  Output: no  (just the value, NOT the whole line)
+  Regex: ^no$
+• Password policy → awk '/^PASS_MAX_DAYS/ {{print $2}}' /etc/login.defs
+  Output: 365  (just the number)
+  Regex: ^(?:[0-9]|[1-9]\\d|[12]\\d\\d|3[0-5]\\d|36[0-5])$
+• Audit rules → auditctl -l | grep -c 'time-change'
+  Output: 2  (count of matching rules)
 • User/group → awk -F: '($3 == 0) {{ print $1 }}' /etc/passwd
-• Firewall (UFW) → ufw status verbose
-• Firewall (iptables) → iptables -L -n
-• Firewall (nftables) → nft list ruleset
+• Firewall (UFW) → ufw status | head -1
+• Firewall (iptables) → iptables -L -n | head -1
 
 ═══════════════════════════════════════════════════════════
 NETWORK DEVICES — SSH CLI (Cisco IOS/NX-OS/ASA, Juniper, etc.)
@@ -192,50 +209,68 @@ The command MUST work when pasted directly into the platform's native shell:
   - Network → privileged EXEC (SSH CLI)
 
 ═══════════════════════════════════════════════════════════
-CRITICAL: RETRIEVE RAW VALUES, DO NOT TEST COMPLIANCE
+CRITICAL: EXTRACT ONLY THE SPECIFIC VALUE, NOT FULL OUTPUT
 ═══════════════════════════════════════════════════════════
-The command must ONLY retrieve the current system setting.
+The command must output ONLY the specific value needed for comparison.
 It must NOT contain any logic to test compliance or return pass/fail.
+It must NOT dump multi-line output when only one value is needed.
 
-WRONG approach (testing compliance):
-  if ((net accounts | Select-String 'Minimum password length').Line -match '(\\d+)') {{ if ([int]$matches[1] -ge 14) {{ "PASS" }} else {{ "FAIL" }} }}
-  test $(sysctl -n net.ipv4.ip_forward) -eq 0 && echo PASS || echo FAIL
+FOR NUMERIC RULES (threshold comparisons like "24 or more"):
+  Output ONLY the number, nothing else.
 
-CORRECT approach (retrieving the raw value):
-  net accounts
-  sysctl net.ipv4.ip_forward
+  WRONG (multi-line output):
+    net accounts    ← outputs 15+ lines
+    reg query HKLM\\path /v ValueName  ← outputs table with headers
+    sysctl net.ipv4.ip_forward  ← outputs "net.ipv4.ip_forward = 0"
+
+  CORRECT (single value only):
+    (net accounts | Select-String 'Minimum password length').Line -replace '\\D',''  ← outputs: 14
+    (Get-ItemProperty -Path 'HKLM:\\path' -Name 'ValueName').ValueName  ← outputs: 1
+    sysctl -n net.ipv4.ip_forward  ← outputs: 0
+    awk '/^PASS_MAX_DAYS/ {{print $2}}' /etc/login.defs  ← outputs: 365
+
+FOR STRING/STATUS RULES:
+  Output ONLY the status word or short string.
+
+  CORRECT:
+    (Get-Service -Name Spooler).StartType  ← outputs: Disabled
+    systemctl is-enabled sshd  ← outputs: enabled
 
 The compliance check happens LATER in our pipeline — NOT in the command.
 
 READ THE AUDIT TEXT CAREFULLY for each rule:
-- If the audit text provides a specific CLI command, USE IT (adapt syntax for the shell).
-- If the audit text only describes a GUI path, translate it to the CLI equivalent.
+- If the audit text provides a specific CLI command, USE IT but pipe/filter
+  to extract just the needed value.
 - If the audit text mentions a registry path like HKLM\\KEY\\Path:ValueName, use:
-  reg query HKLM\\KEY\\Path /v ValueName (Windows)
+  (Get-ItemProperty -Path 'HKLM:\\KEY\\Path' -Name 'ValueName').ValueName (Windows)
 
 WINDOWS-SPECIFIC ROUTING:
-- Password Policy (1.1.x) or Account Lockout (1.2.x) with NO registry path → net accounts
+- Password Policy (1.1.x) or Account Lockout (1.2.x) with NO registry path →
+  (net accounts | Select-String 'FieldLabel').Line -replace '\\D',''
 - User Rights (2.2.x) → secedit /export /cfg C:\\Windows\\Temp\\secpol.cfg /quiet; Select-String -Path C:\\Windows\\Temp\\secpol.cfg -Pattern "PolicyKey"
 - Audit Policy (17.x) → auditpol /get /subcategory:"GUID" (copy GUID from CIS text)
-- Registry-backed settings (2.3.x, 9.x, 18.x, 19.x) → reg query HKLM\\path /v ValueName
+- Registry-backed settings (2.3.x, 9.x, 18.x, 19.x) →
+  (Get-ItemProperty -Path 'HKLM:\\path' -Name 'ValueName').ValueName
 
 LINUX-SPECIFIC ROUTING:
-- Kernel params → sysctl param.name
-- Service state → systemctl is-enabled servicename
-- File content → grep -E 'pattern' /path/to/config
-- File permissions → stat -c '%a %U %G' /path/to/file
+- Kernel params → sysctl -n param.name  (use -n for value only)
+- Service state → systemctl is-enabled servicename 2>/dev/null || echo not-found
+- File content → grep -E 'pattern' /path/file | awk '{{print $2}}'  (extract value only)
+- File permissions → stat -c '%a' /path/to/file  (number only)
 - Package check → dpkg-query -s pkg 2>/dev/null | grep Status (or rpm -q pkg)
-- Audit rules → auditctl -l | grep pattern
+- Password policy → awk '/^FIELD/ {{print $2}}' /etc/login.defs  (number only)
+- Audit rules → auditctl -l | grep -c pattern  (count of matching rules)
 
 NETWORK-SPECIFIC ROUTING:
 - Config checking → show running-config | include pattern
 - Section checking → show running-config | section pattern
 
 REGEX REMINDER:
-The expected_output_regex MUST match the literal text the command prints.
-For numeric thresholds like "14 or more", use a numeric regex range:
-  >=14 → (?:1[4-9]|[2-9]\\d|\\d{{3,}})
-  >=24 → (?:2[4-9]|[3-9]\\d|\\d{{3,}})
+Since commands now output SINGLE VALUES, use anchored regex:
+  >=14 → ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$
+  >=24 → ^(?:2[4-9]|[3-9]\\d|\\d{{3,}})$
+  Exact 1 → ^1$
+  Disabled → ^Disabled$
 NEVER use English phrases like "14 or more" or "Enabled or greater" as regex.
 
 RULES:
@@ -387,32 +422,38 @@ Return ONLY a valid JSON object with these keys:
 
 COMMAND_REGENERATION_SYSTEM = """You fix CIS benchmark audit commands that failed. Return a JSON object with: audit_command, expected_output_regex, expected_output_description, remediation_command, remediation_description, explanation.
 
-CRITICAL: The audit command must RETRIEVE THE RAW VALUE from the system.
+CRITICAL: The audit command must OUTPUT ONLY THE SPECIFIC VALUE needed.
+For numeric rules, output ONLY the number (e.g. "14", "365", "0").
+For status rules, output ONLY the status word (e.g. "Disabled", "enabled").
 It must NOT contain any compliance testing logic (no if/else, no pass/fail).
-Our engine compares the raw output against expected_output_regex separately.
+It must NOT dump multi-line output when only one value is needed.
 
-GOOD: net accounts                  ← retrieves all password policy values
-BAD:  if (...) {{ "PASS" }} else {{ "FAIL" }}   ← testing compliance directly
+GOOD: (net accounts | Select-String 'Minimum password length').Line -replace '\\D',''  ← outputs: 14
+GOOD: sysctl -n net.ipv4.ip_forward   ← outputs: 0
+GOOD: (Get-ItemProperty -Path 'HKLM:\\path' -Name 'Value').Value  ← outputs: 1
+BAD:  net accounts  ← outputs 15+ lines
+BAD:  if (...) {{ "PASS" }} else {{ "FAIL" }}
 
 Commands must be READ-ONLY, non-interactive, and work when pasted into the platform shell.
 
 REGEX QUALITY:
-• The regex must match ACTUAL command output text, NOT the English rule description.
-• For numeric thresholds (e.g. >=14): use (?:1[4-9]|[2-9]\\d|\\d{{3,}})
-• For exact values (REG_DWORD): use ValueName\\s+REG_DWORD\\s+0x0*1\\b
+• Since command outputs a single value, use anchored regex with ^ and $.
+• For numeric thresholds (e.g. >=14): ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$
+• For exact values: ^1$ or ^0$
+• For status words: ^Disabled$ or ^enabled$
 • NEVER produce regex like "14 or more" or "Enabled or greater".
 
 WINDOWS (PowerShell):
 • NEVER use && — use ; to chain commands
-• reg query paths: NO quotes, e.g. reg query HKLM\\PATH /v ValueName
-• 1.1.x/1.2.x password/lockout → net accounts
-• 2.2.x user rights → secedit /export then Select-String
+• For registry: (Get-ItemProperty -Path 'HKLM:\\path' -Name 'Value').Value
+• For net accounts: (net accounts | Select-String 'FieldLabel').Line -replace '\\D',''
+• For services: (Get-Service -Name Svc).StartType
 • 17.x audit policy → auditpol /get /subcategory:"GUID"
-• 18.x/19.x/2.3.x/9.x → reg query
 
 LINUX (bash):
-• sysctl for kernel params, grep for config files, systemctl for services
-• stat -c '%a %U %G' for permissions, auditctl -l for audit rules
+• sysctl -n for kernel params (value only), awk for extracting fields
+• systemctl is-enabled for services, stat -c '%a' for permissions (number only)
+• grep pattern file | awk '{{print $2}}' for config values
 
 NETWORK (SSH CLI):
 • show running-config | include/section pattern"""

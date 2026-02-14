@@ -312,7 +312,11 @@ _WINDOWS_CMD_FIXES: list[tuple[re.Pattern, str]] = [
 
 
 def _fix_compliance_testing_command(cmd: str) -> str:
-    """Strip compliance-testing logic from commands, keeping only the retrieval part."""
+    """Strip compliance-testing logic from commands, keeping only the retrieval part.
+
+    Also converts multi-value commands to single-value extraction where
+    possible.
+    """
     if not cmd:
         return cmd
 
@@ -325,25 +329,48 @@ def _fix_compliance_testing_command(cmd: str) -> str:
     original = cmd
 
     # Pattern: "net accounts" somewhere in a larger if/else block
-    if re.search(r'\bnet\s+accounts\b', cmd, re.IGNORECASE):
+    # Extract just the relevant Select-String line if possible
+    net_field_match = re.search(
+        r"net\s+accounts.*Select-String\s+['\"]([^'\"]+)['\"]",
+        cmd, re.IGNORECASE,
+    )
+    if net_field_match:
+        field = net_field_match.group(1)
+        cmd = f"(net accounts | Select-String '{field}').Line -replace '\\D',''"
+    elif re.search(r'\bnet\s+accounts\b', cmd, re.IGNORECASE):
         cmd = "net accounts"
 
-    # Pattern: "reg query HKLM\..." somewhere in a larger if/else block
-    reg_match = re.search(r'(reg\s+query\s+HKLM\\[^\s|;"]+(?:\s+/v\s+\S+)?)', cmd, re.IGNORECASE)
-    if reg_match:
-        cmd = reg_match.group(1)
+    # Pattern: Get-ItemProperty extraction wrapped in if/else
+    gip_match = re.search(
+        r"\(Get-ItemProperty\s+-Path\s+'([^']+)'\s+-Name\s+'?(\w+)'?\)\.(\w+)",
+        cmd, re.IGNORECASE,
+    )
+    if gip_match:
+        path, name, prop = gip_match.group(1), gip_match.group(2), gip_match.group(3)
+        cmd = f"(Get-ItemProperty -Path '{path}' -Name '{name}').{prop}"
 
-    # Pattern: "sysctl ..." in a test block
-    sysctl_match = re.search(r'(sysctl\s+(?:-n\s+)?[\w.]+)', cmd)
+    # Pattern: "reg query HKLM\..." somewhere in a larger if/else block
+    # Convert to Get-ItemProperty for single-value output
+    reg_match = re.search(
+        r'reg\s+query\s+(HKLM\\[^\s|;"]+)\s+/v\s+(\S+)',
+        cmd, re.IGNORECASE,
+    )
+    if reg_match:
+        key_path = reg_match.group(1)
+        value_name = reg_match.group(2)
+        ps_path = key_path.replace("HKLM\\", "HKLM:\\", 1)
+        cmd = f"(Get-ItemProperty -Path '{ps_path}' -Name '{value_name}').{value_name}"
+
+    # Pattern: "sysctl ..." in a test block — use -n for value only
+    sysctl_match = re.search(r'sysctl\s+(?:-n\s+)?([\w.]+)', cmd)
     if sysctl_match:
-        param = re.search(r'sysctl\s+(?:-n\s+)?([\w.]+)', cmd)
-        if param:
-            cmd = f"sysctl {param.group(1)}"
+        param = sysctl_match.group(1)
+        cmd = f"sysctl -n {param}"
 
     # Pattern: "systemctl is-enabled ..." in a test block
     systemctl_match = re.search(r'(systemctl\s+is-enabled\s+[\w@.-]+)', cmd)
     if systemctl_match:
-        cmd = systemctl_match.group(1)
+        cmd = systemctl_match.group(1) + " 2>/dev/null || echo not-found"
 
     # Pattern: "auditpol /get ..." in a test block
     auditpol_match = re.search(r'(auditpol\s+/get\s+/subcategory:\S+)', cmd)
@@ -360,7 +387,7 @@ def _fix_compliance_testing_command(cmd: str) -> str:
 
     if cmd != original:
         logger.info(
-            "Fixed compliance-testing command → retrieval only: %s",
+            "Fixed compliance-testing command → single-value retrieval: %s",
             cmd[:80],
         )
 
