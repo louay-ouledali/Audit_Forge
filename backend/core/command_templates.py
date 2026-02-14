@@ -112,8 +112,10 @@ def _regex_lte(threshold: int) -> str:
             parts.append(f"{hundreds}[0-{tens}]\\d")
         else:
             # Same hundreds digit, lower tens digits (full range)
-            if tens > 0:
+            if tens > 1:
                 parts.append(f"{hundreds}[0-{tens - 1}]\\d")
+            elif tens == 1:
+                parts.append(f"{hundreds}0\\d")
             # Same hundreds + same tens, ones up to threshold
             parts.append(f"{hundreds}{tens}[0-{ones}]")
     else:
