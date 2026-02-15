@@ -28,6 +28,15 @@ RETRY_BASE_DELAY = 2.0  # seconds — multiplied by attempt number for backoff
 class LLMManager:
     """Single interface for all LLM operations."""
 
+    # Known provider base URLs (OpenAI-compatible chat/completions endpoints)
+    PROVIDER_BASE_URLS: dict[str, str] = {
+        "openai": "https://api.openai.com/v1",
+        "anthropic": "https://api.anthropic.com/v1",
+        "mistral": "https://api.mistral.ai/v1",
+        "groq": "https://api.groq.com/openai/v1",
+        "openrouter": "https://openrouter.ai/api/v1",
+    }
+
     def get_current_config(self) -> dict[str, str]:
         """Read LLM settings from the app_settings table."""
         db = SessionLocal()
@@ -43,6 +52,7 @@ class LLMManager:
             "online_provider": cfg.get("llm_online_provider", ""),
             "online_api_key": cfg.get("llm_online_api_key_encrypted", ""),
             "online_model": cfg.get("llm_online_model", ""),
+            "online_base_url": cfg.get("llm_online_base_url", ""),
             "category_detection": cfg.get("llm_category_detection", "true"),
         }
 
@@ -63,7 +73,7 @@ class LLMManager:
                 if config["mode"] == "offline":
                     return await self._invoke_ollama(prompt, system_prompt, config, timeout, json_mode=json_mode)
                 else:
-                    return await self._invoke_online(prompt, system_prompt, config, timeout)
+                    return await self._invoke_online(prompt, system_prompt, config, timeout, json_mode=json_mode)
             except httpx.TimeoutException as exc:
                 last_exc = exc
                 logger.warning(
@@ -162,11 +172,16 @@ class LLMManager:
             else:
                 has_key = bool(config["online_api_key"])
                 has_model = bool(config["online_model"])
+                provider = config.get("online_provider", "")
+                base_url = config.get("online_base_url", "").strip()
+                if not base_url:
+                    base_url = self.PROVIDER_BASE_URLS.get(provider, "")
                 return {
                     "available": has_key and has_model,
                     "mode": "online",
                     "model": config["online_model"],
-                    "provider": config["online_provider"],
+                    "provider": provider,
+                    "base_url": base_url,
                     "error": None if (has_key and has_model) else "Missing API key or model name",
                 }
         except Exception as exc:
@@ -212,14 +227,23 @@ class LLMManager:
             # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
             return data.get("message", {}).get("content", "")
 
-    async def _invoke_online(self, prompt: str, system_prompt: str | None, config: dict, timeout: float) -> str:
-        """Call OpenAI-compatible API."""
+    async def _invoke_online(
+        self,
+        prompt: str,
+        system_prompt: str | None,
+        config: dict,
+        timeout: float,
+        *,
+        json_mode: bool = False,
+    ) -> str:
+        """Call OpenAI-compatible API (OpenAI, Mistral, Groq, OpenRouter, or custom)."""
         provider = config.get("online_provider", "openai")
-        base_urls = {
-            "openai": "https://api.openai.com/v1",
-            "anthropic": "https://api.anthropic.com/v1",
-        }
-        base_url = base_urls.get(provider, "https://api.openai.com/v1")
+
+        # Use custom base URL if configured, otherwise look up by provider name
+        base_url = config.get("online_base_url", "").strip()
+        if not base_url:
+            base_url = self.PROVIDER_BASE_URLS.get(provider, "https://api.openai.com/v1")
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -228,13 +252,17 @@ class LLMManager:
             "Authorization": f"Bearer {config['online_api_key']}",
             "Content-Type": "application/json",
         }
-        payload = {
+        payload: dict[str, Any] = {
             "model": config["online_model"],
             "messages": messages,
             "temperature": LLM_TEMPERATURE,
             "max_tokens": LLM_MAX_TOKENS,
         }
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        timeouts = httpx.Timeout(timeout, connect=30.0)
+        async with httpx.AsyncClient(timeout=timeouts) as client:
             resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()

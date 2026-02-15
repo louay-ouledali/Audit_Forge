@@ -36,6 +36,7 @@ VALID_SETTING_KEYS = {
     "llm_online_provider",
     "llm_online_api_key_encrypted",
     "llm_online_model",
+    "llm_online_base_url",
     "verification_enabled",
     "verification_auto_protect_passing",
     "default_scan_mode",
