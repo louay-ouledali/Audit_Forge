@@ -227,7 +227,7 @@ class LLMManager:
                     # Connection test failed but config looks valid —
                     # still mark as available since some endpoints don't
                     # support GET /models (e.g. Anthropic, some custom)
-                    logger.debug("Online API connectivity check failed: %s", api_exc)
+                    logger.debug("Online API /models endpoint check failed: %s", api_exc)
                     return {
                         "available": True,
                         "mode": "online",

@@ -146,6 +146,14 @@ export interface LLMStatus {
   error: string | null;
 }
 
+export interface LLMTestResult {
+  success: boolean;
+  response: string | null;
+  response_time_ms: number;
+  model?: string;
+  error?: string;
+}
+
 // ── Script Export (USB) types ─────────────────────────────────
 
 export interface GenerateScriptRequest {

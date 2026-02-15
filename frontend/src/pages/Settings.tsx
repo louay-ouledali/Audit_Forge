@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle, Zap, Loader2 } from 'lucide-react';
-import type { Settings as SettingsType } from '@/types';
+import type { Settings as SettingsType, LLMTestResult } from '@/types';
 import * as api from '@/services/api';
 
 const defaultSettings: SettingsType = {
@@ -37,7 +37,7 @@ export default function Settings() {
   const [restoring, setRestoring] = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
   const [testingLLM, setTestingLLM] = useState(false);
-  const [llmTestResult, setLlmTestResult] = useState<{ success: boolean; response?: string | null; response_time_ms?: number; model?: string; error?: string } | null>(null);
+  const [llmTestResult, setLlmTestResult] = useState<LLMTestResult | null>(null);
   const restoreFileRef = useRef<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
