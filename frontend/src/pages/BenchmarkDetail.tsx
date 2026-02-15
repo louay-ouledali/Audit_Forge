@@ -64,6 +64,7 @@ export default function BenchmarkDetail() {
   const [verifyStatus, setVerifyStatus] = useState<VerifyStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
   const [expandedRule, setExpandedRule] = useState<number | null>(null);
@@ -124,6 +125,13 @@ export default function BenchmarkDetail() {
     const interval = setInterval(() => { fetchData(); fetchRules(); }, 3000);
     return () => clearInterval(interval);
   }, [benchmark, fetchData, fetchRules]);
+
+  // Auto-dismiss success message
+  useEffect(() => {
+    if (!successMsg) return;
+    const timer = setTimeout(() => setSuccessMsg(''), 5000);
+    return () => clearTimeout(timer);
+  }, [successMsg]);
 
   const handleEnrich = async () => {
     try {
@@ -219,9 +227,9 @@ export default function BenchmarkDetail() {
       setActionLoading(true);
       const result = await api.importRules(benchmarkId, file);
       setError('');
+      setSuccessMsg(result.message);
       await fetchData();
       await fetchRules();
-      alert(result.message);
     } catch (err: unknown) {
       setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to import rules');
     } finally {
@@ -247,9 +255,9 @@ export default function BenchmarkDetail() {
       setActionLoading(true);
       const result = await api.importCommands(benchmarkId, file);
       setError('');
+      setSuccessMsg(result.message);
       await fetchData();
       await fetchRules();
-      alert(result.message);
     } catch (err: unknown) {
       setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to import commands');
     } finally {
@@ -413,6 +421,14 @@ export default function BenchmarkDetail() {
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           <button onClick={() => setError('')} className="float-right text-red-400 hover:text-red-600">×</button>
           {error}
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+          <button onClick={() => setSuccessMsg('')} className="float-right text-green-400 hover:text-green-600">×</button>
+          <CheckCircle2 className="mr-2 inline h-4 w-4" />
+          {successMsg}
         </div>
       )}
 

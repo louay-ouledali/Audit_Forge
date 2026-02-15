@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
@@ -275,7 +276,6 @@ async def import_rules(
     db.query(Rule).filter(Rule.benchmark_id == benchmark_id).delete()
     db.flush()
 
-    from datetime import datetime, timezone
 
     created_count = 0
     for item in rules_list:
@@ -429,7 +429,6 @@ async def import_commands(
             detail="No rules exist for this benchmark. Import Phase 1 rules first.",
         )
 
-    from datetime import datetime, timezone
 
     now = datetime.now(timezone.utc)
     created = 0
@@ -744,7 +743,6 @@ def bulk_accept_commands(benchmark_id: int, db: Session = Depends(get_db)):
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
 
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
     updated = (
@@ -792,7 +790,6 @@ def bulk_protect_commands(benchmark_id: int, db: Session = Depends(get_db)):
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
 
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
 
     verified_commands = (
