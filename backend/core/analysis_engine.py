@@ -227,6 +227,7 @@ async def run_cross_target_analysis(mission_id: int, db: Session) -> dict[str, A
         prompt,
         system_prompt="You are a cybersecurity audit analyst providing post-mission analysis.",
         timeout=300.0,
+        task="analysis",
     )
     return result
 
@@ -248,6 +249,7 @@ async def run_category_analysis(mission_id: int, db: Session) -> dict[str, Any]:
         prompt,
         system_prompt="You are a cybersecurity audit analyst providing category-level analysis.",
         timeout=300.0,
+        task="analysis",
     )
     return result
 
@@ -269,6 +271,7 @@ async def run_cross_mission_analysis(
         prompt,
         system_prompt="You are a cybersecurity audit analyst comparing audit engagements.",
         timeout=300.0,
+        task="analysis",
     )
     return result
 

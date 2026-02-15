@@ -35,6 +35,7 @@ async def detect_benchmark_metadata(first_pages_text: str) -> dict[str, Any]:
         try:
             result = await llm_manager.invoke_json(
                 prompt, system_prompt=PHASE1_METADATA_SYSTEM, timeout=180.0,
+                task="phase1_parsing",
             )
             # LLM may return a list wrapping the dict — unwrap it
             if isinstance(result, list):
@@ -84,7 +85,7 @@ async def extract_rules_from_section(
     )
     system_prompt = PHASE1_RULES_SYSTEM.format(category_instruction=category_instruction)
     prompt = PHASE1_RULE_EXTRACTION.format(pdf_section_text=pdf_section_text)
-    result = await llm_manager.invoke_json(prompt, system_prompt=system_prompt, timeout=600.0)
+    result = await llm_manager.invoke_json(prompt, system_prompt=system_prompt, timeout=600.0, task="phase1_parsing")
     if isinstance(result, list):
         return result
     # Mistral sometimes wraps the array in a dict like {"rules": [...]}
@@ -123,6 +124,7 @@ async def _call_llm_for_batch(
     )
     result = await llm_manager.invoke_json(
         prompt, system_prompt=PHASE2_COMMAND_SYSTEM, timeout=240.0,
+        task="phase2_commands",
     )
     # Normalize: ensure we have a list
     if isinstance(result, dict):
@@ -444,7 +446,7 @@ async def regenerate_command(
         history_section=history_section,
     )
     system_prompt = COMMAND_REGENERATION_SYSTEM
-    result = await llm_manager.invoke_json(prompt, system_prompt=system_prompt, timeout=120.0)
+    result = await llm_manager.invoke_json(prompt, system_prompt=system_prompt, timeout=120.0, task="phase2_commands")
     if isinstance(result, dict):
         return result
     return {}

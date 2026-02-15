@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle } from 'lucide-react';
+import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle, Zap, Loader2 } from 'lucide-react';
 import type { Settings as SettingsType } from '@/types';
 import * as api from '@/services/api';
 
@@ -14,7 +14,20 @@ const defaultSettings: SettingsType = {
   verification_enabled: 'true',
   verification_auto_protect_passing: 'false',
   default_scan_mode: 'network',
+  llm_task_phase1_parsing_model: '',
+  llm_task_phase2_commands_model: '',
+  llm_task_verification_model: '',
+  llm_task_reports_model: '',
+  llm_task_analysis_model: '',
 };
+
+const TASK_FIELDS = [
+  { key: 'llm_task_phase1_parsing_model', label: 'Phase 1 — Rule Parsing', help: 'Extracts CIS rules from PDF benchmark' },
+  { key: 'llm_task_phase2_commands_model', label: 'Phase 2 — Command Generation', help: 'Generates audit commands and regex' },
+  { key: 'llm_task_verification_model', label: 'Verification', help: 'Verifies command quality' },
+  { key: 'llm_task_reports_model', label: 'Reports & AI Advice', help: 'Executive summaries, remediation advice' },
+  { key: 'llm_task_analysis_model', label: 'Post-Mission Analysis', help: 'Cross-target/mission comparison' },
+] as const;
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType>(defaultSettings);
@@ -23,6 +36,8 @@ export default function Settings() {
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [testingLLM, setTestingLLM] = useState(false);
+  const [llmTestResult, setLlmTestResult] = useState<{ success: boolean; response?: string | null; response_time_ms?: number; model?: string; error?: string } | null>(null);
   const restoreFileRef = useRef<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -59,6 +74,19 @@ export default function Settings() {
       setToast({ type: 'error', message: 'Failed to save settings' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestLLM = async () => {
+    setTestingLLM(true);
+    setLlmTestResult(null);
+    try {
+      const result = await api.testLLM();
+      setLlmTestResult(result);
+    } catch {
+      setLlmTestResult({ success: false, error: 'Failed to reach backend. Is the server running?' });
+    } finally {
+      setTestingLLM(false);
     }
   };
 
@@ -263,6 +291,70 @@ export default function Settings() {
             )}
           </>
         )}
+
+        {/* Test LLM Connection */}
+        <div className="border-t border-gray-200 pt-4">
+          <button
+            onClick={handleTestLLM}
+            disabled={testingLLM}
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+          >
+            {testingLLM ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            {testingLLM ? 'Testing…' : 'Test LLM Connection'}
+          </button>
+
+          {llmTestResult && (
+            <div
+              className={`mt-3 rounded-lg border p-3 text-sm ${
+                llmTestResult.success
+                  ? 'border-green-200 bg-green-50 text-green-700'
+                  : 'border-red-200 bg-red-50 text-red-700'
+              }`}
+            >
+              {llmTestResult.success ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 font-medium">
+                    <CheckCircle2 className="h-4 w-4" /> LLM is working
+                  </div>
+                  <div>Model: <code className="rounded bg-white/60 px-1">{llmTestResult.model}</code></div>
+                  <div>Response time: <strong>{llmTestResult.response_time_ms}ms</strong></div>
+                  <div className="text-xs text-green-600 italic">&quot;{llmTestResult.response}&quot;</div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4" />
+                  {llmTestResult.error || 'Connection failed'}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Per-Task Model Overrides */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900">Per-Task Model Overrides</h3>
+        <p className="text-sm text-gray-500">
+          Optionally use a different model for specific tasks. Leave empty to use the global model configured above.
+          {settings.llm_mode === 'offline'
+            ? ' Enter an Ollama model tag (e.g. qwen2.5:14b).'
+            : ' Enter a cloud model name (e.g. gpt-4o, mistral-large-latest).'}
+        </p>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {TASK_FIELDS.map((field) => (
+            <div key={field.key}>
+              <label className="block text-sm font-medium text-gray-700">{field.label}</label>
+              <input
+                value={settings[field.key] || ''}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                placeholder="(use global model)"
+              />
+              <p className="mt-1 text-xs text-gray-500">{field.help}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       {/* Verification */}

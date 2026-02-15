@@ -41,6 +41,12 @@ VALID_SETTING_KEYS = {
     "verification_auto_protect_passing",
     "default_scan_mode",
     "llm_category_detection",
+    # Per-task model overrides (optional — leave empty to use the global model)
+    "llm_task_phase1_parsing_model",
+    "llm_task_phase2_commands_model",
+    "llm_task_verification_model",
+    "llm_task_reports_model",
+    "llm_task_analysis_model",
 }
 
 

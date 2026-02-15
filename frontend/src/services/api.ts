@@ -273,6 +273,11 @@ export async function getLLMStatus(): Promise<LLMStatus> {
   return data;
 }
 
+export async function testLLM(): Promise<{ success: boolean; response: string | null; response_time_ms: number; model?: string; error?: string }> {
+  const { data } = await api.post('/llm/test');
+  return data;
+}
+
 // Script Export (USB)
 export async function generateScript(payload: GenerateScriptRequest): Promise<Blob> {
   const { data } = await api.post('/scans/generate-script', payload, {

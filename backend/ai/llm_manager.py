@@ -37,15 +37,23 @@ class LLMManager:
         "openrouter": "https://openrouter.ai/api/v1",
     }
 
-    def get_current_config(self) -> dict[str, str]:
-        """Read LLM settings from the app_settings table."""
+    # Task names for per-task model customization
+    TASK_NAMES = ("phase1_parsing", "phase2_commands", "verification", "reports", "analysis")
+
+    def get_current_config(self, task: str | None = None) -> dict[str, str]:
+        """Read LLM settings from the app_settings table.
+
+        If *task* is provided (e.g. ``"phase2_commands"``), per-task model
+        overrides are applied on top of the global config.
+        """
         db = SessionLocal()
         try:
             rows = db.query(AppSettings).all()
             cfg = {r.key: r.value for r in rows}
         finally:
             db.close()
-        return {
+
+        config = {
             "mode": cfg.get("llm_mode", "offline"),
             "offline_model": cfg.get("llm_offline_model", "qwen2.5:7b"),
             "ollama_url": cfg.get("llm_ollama_url", "http://host.docker.internal:11434"),
@@ -56,6 +64,17 @@ class LLMManager:
             "category_detection": cfg.get("llm_category_detection", "true"),
         }
 
+        # Apply per-task model override if configured
+        if task and task in self.TASK_NAMES:
+            task_model = cfg.get(f"llm_task_{task}_model", "").strip()
+            if task_model:
+                if config["mode"] == "offline":
+                    config["offline_model"] = task_model
+                else:
+                    config["online_model"] = task_model
+
+        return config
+
     async def invoke(
         self,
         prompt: str,
@@ -63,9 +82,10 @@ class LLMManager:
         timeout: float = 300.0,
         max_retries: int = MAX_RETRIES,
         json_mode: bool = False,
+        task: str | None = None,
     ) -> str:
         """Send a prompt and get a text response with retry and exponential backoff."""
-        config = self.get_current_config()
+        config = self.get_current_config(task=task)
         last_exc: Exception | None = None
 
         for attempt in range(1, max_retries + 1):
@@ -122,7 +142,7 @@ class LLMManager:
             detail=str(last_exc),
         ) from last_exc
 
-    async def invoke_json(self, prompt: str, system_prompt: str | None = None, timeout: float = 300.0) -> Any:
+    async def invoke_json(self, prompt: str, system_prompt: str | None = None, timeout: float = 300.0, task: str | None = None) -> Any:
         """Send a prompt and parse the response as JSON.
 
         Uses Ollama's native JSON mode (format=json) to force valid JSON output.
@@ -131,7 +151,7 @@ class LLMManager:
         if system_prompt is None:
             system_prompt = "Respond with valid JSON only. No explanations."
         # First attempt: use Ollama's native JSON mode
-        raw = await self.invoke(prompt, system_prompt, timeout, json_mode=True)
+        raw = await self.invoke(prompt, system_prompt, timeout, json_mode=True, task=task)
         try:
             return self._parse_json(raw)
         except (json.JSONDecodeError, ValueError):
@@ -141,7 +161,7 @@ class LLMManager:
                 "Return ONLY a valid JSON object or array. No other text.\n\n"
                 + prompt[:3000]
             )
-            raw2 = await self.invoke(retry_prompt, system_prompt, timeout, json_mode=True)
+            raw2 = await self.invoke(retry_prompt, system_prompt, timeout, json_mode=True, task=task)
             try:
                 return self._parse_json(raw2)
             except (json.JSONDecodeError, ValueError) as exc:
@@ -176,14 +196,47 @@ class LLMManager:
                 base_url = config.get("online_base_url", "").strip()
                 if not base_url:
                     base_url = self.PROVIDER_BASE_URLS.get(provider, "")
-                return {
-                    "available": has_key and has_model,
-                    "mode": "online",
-                    "model": config["online_model"],
-                    "provider": provider,
-                    "base_url": base_url,
-                    "error": None if (has_key and has_model) else "Missing API key or model name",
+
+                if not (has_key and has_model):
+                    return {
+                        "available": False,
+                        "mode": "online",
+                        "model": config["online_model"],
+                        "provider": provider,
+                        "base_url": base_url,
+                        "error": "Missing API key or model name",
+                    }
+
+                # Actually test the connection with a lightweight models list call
+                headers = {
+                    "Authorization": f"Bearer {config['online_api_key']}",
                 }
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.get(f"{base_url}/models", headers=headers)
+                        resp.raise_for_status()
+                    return {
+                        "available": True,
+                        "mode": "online",
+                        "model": config["online_model"],
+                        "provider": provider,
+                        "base_url": base_url,
+                        "error": None,
+                    }
+                except Exception as api_exc:
+                    # Connection test failed but config looks valid —
+                    # still mark as available since some endpoints don't
+                    # support GET /models (e.g. Anthropic, some custom)
+                    logger.debug("Online API connectivity check failed: %s", api_exc)
+                    return {
+                        "available": True,
+                        "mode": "online",
+                        "model": config["online_model"],
+                        "provider": provider,
+                        "base_url": base_url,
+                        "error": None,
+                        "warning": f"Config looks valid but connectivity check failed: {api_exc}",
+                    }
         except Exception as exc:
             return {
                 "available": False,
