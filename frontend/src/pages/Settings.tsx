@@ -172,7 +172,8 @@ export default function Settings() {
                 placeholder="e.g. qwen2.5:7b, mistral, llama3.1:8b"
               />
               <p className="mt-1 text-xs text-gray-500">
-                The model name as shown by <code className="rounded bg-gray-100 px-1">ollama list</code>
+                The model tag as shown by <code className="rounded bg-gray-100 px-1">ollama list</code>.
+                Default: <code className="rounded bg-gray-100 px-1">qwen2.5:7b</code>
               </p>
             </div>
 
