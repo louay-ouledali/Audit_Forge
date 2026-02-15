@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from backend.config import PROJECT_ROOT
@@ -16,6 +17,7 @@ from backend.database import get_db
 from backend.models.benchmark import Benchmark
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
+from backend.models.rule_tag import RuleTag
 from backend.models.verification_report import VerificationReport
 from backend.schemas.benchmark import (
     BenchmarkDetailEnvelope,
@@ -166,6 +168,330 @@ def list_benchmark_rules(
         result.append(rule_resp)
 
     return {"data": result, "total": len(result)}
+
+
+# ── Phase 1: Export / Import Rules ──
+
+
+@router.get("/{benchmark_id}/rules/export")
+def export_rules(benchmark_id: int, db: Session = Depends(get_db)):
+    """Export all Phase 1 rules as a downloadable JSON file."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    rules = (
+        db.query(Rule)
+        .filter(Rule.benchmark_id == benchmark_id)
+        .order_by(Rule.section_number)
+        .all()
+    )
+
+    export_data = {
+        "export_type": "phase1_rules",
+        "benchmark": {
+            "name": benchmark.name,
+            "version": benchmark.version,
+            "platform": benchmark.platform,
+            "platform_family": benchmark.platform_family,
+        },
+        "total_rules": len(rules),
+        "rules": [],
+    }
+    for r in rules:
+        tags = [{"tag_id": t.tag_id, "source": t.source} for t in r.tags]
+        export_data["rules"].append(
+            {
+                "section_number": r.section_number,
+                "title": r.title,
+                "description": r.description,
+                "rationale": r.rationale,
+                "profile_applicability": r.profile_applicability,
+                "assessment_type": r.assessment_type,
+                "default_value": r.default_value,
+                "references_json": r.references_json,
+                "cis_controls": r.cis_controls,
+                "audit_description_raw": r.audit_description_raw,
+                "remediation_description_raw": r.remediation_description_raw,
+                "severity": r.severity or "medium",
+                "enabled": r.enabled if r.enabled is not None else True,
+                "tags": tags,
+            }
+        )
+
+    content = json.dumps(export_data, indent=2, ensure_ascii=False)
+    safe_name = benchmark.name.replace(" ", "_")[:60]
+    filename = f"{safe_name}_phase1_rules.json"
+
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.post("/{benchmark_id}/rules/import")
+async def import_rules(
+    benchmark_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Import Phase 1 rules from a JSON file, replacing any existing rules."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    if not file.filename or not file.filename.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only JSON files are accepted")
+
+    raw = await file.read()
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+
+    if data.get("export_type") != "phase1_rules":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file: expected export_type 'phase1_rules'",
+        )
+
+    rules_list = data.get("rules", [])
+    if not rules_list:
+        raise HTTPException(status_code=400, detail="No rules found in file")
+
+    # Optionally update benchmark metadata from the export
+    bm_meta = data.get("benchmark", {})
+    if bm_meta.get("platform"):
+        benchmark.platform = bm_meta["platform"]
+    if bm_meta.get("platform_family"):
+        benchmark.platform_family = bm_meta["platform_family"]
+    if bm_meta.get("version"):
+        benchmark.version = bm_meta["version"]
+
+    # Delete existing rules (cascade deletes commands, tags, etc.)
+    db.query(Rule).filter(Rule.benchmark_id == benchmark_id).delete()
+    db.flush()
+
+    from datetime import datetime, timezone
+
+    created_count = 0
+    for item in rules_list:
+        section = item.get("section_number")
+        title = item.get("title")
+        if not section or not title:
+            continue  # skip malformed entries
+
+        rule = Rule(
+            benchmark_id=benchmark_id,
+            section_number=section,
+            title=title,
+            description=item.get("description"),
+            rationale=item.get("rationale"),
+            profile_applicability=item.get("profile_applicability"),
+            assessment_type=item.get("assessment_type"),
+            default_value=item.get("default_value"),
+            references_json=item.get("references_json"),
+            cis_controls=item.get("cis_controls"),
+            audit_description_raw=item.get("audit_description_raw"),
+            remediation_description_raw=item.get("remediation_description_raw"),
+            severity=item.get("severity", "medium"),
+            enabled=item.get("enabled", True),
+        )
+        db.add(rule)
+        db.flush()  # get rule.id for tags
+
+        for tag_data in item.get("tags", []):
+            tag = RuleTag(
+                rule_id=rule.id,
+                tag_id=tag_data.get("tag_id", ""),
+                source=tag_data.get("source", "imported"),
+            )
+            db.add(tag)
+
+        created_count += 1
+
+    benchmark.total_rules = created_count
+    benchmark.phase1_status = "completed"
+    db.commit()
+
+    return {
+        "message": f"Imported {created_count} rules",
+        "rules_imported": created_count,
+        "benchmark_id": benchmark_id,
+    }
+
+
+# ── Phase 2: Export / Import Commands ──
+
+
+@router.get("/{benchmark_id}/commands/export")
+def export_commands(benchmark_id: int, db: Session = Depends(get_db)):
+    """Export all Phase 2 commands (with their rule context) as a downloadable JSON file."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    rules = (
+        db.query(Rule)
+        .filter(Rule.benchmark_id == benchmark_id)
+        .order_by(Rule.section_number)
+        .all()
+    )
+
+    export_data = {
+        "export_type": "phase2_commands",
+        "benchmark": {
+            "name": benchmark.name,
+            "version": benchmark.version,
+            "platform": benchmark.platform,
+            "platform_family": benchmark.platform_family,
+        },
+        "total_rules": len(rules),
+        "rules": [],
+    }
+    for r in rules:
+        cmd = r.commands
+        rule_entry: dict = {
+            "section_number": r.section_number,
+            "title": r.title,
+        }
+        if cmd:
+            rule_entry["command"] = {
+                "audit_command": cmd.audit_command,
+                "expected_output_regex": cmd.expected_output_regex,
+                "expected_output_description": cmd.expected_output_description,
+                "remediation_command": cmd.remediation_command,
+                "remediation_description": cmd.remediation_description,
+                "source": cmd.source or "imported",
+                "status": cmd.status or "generated",
+            }
+        else:
+            rule_entry["command"] = None
+        export_data["rules"].append(rule_entry)
+
+    content = json.dumps(export_data, indent=2, ensure_ascii=False)
+    safe_name = benchmark.name.replace(" ", "_")[:60]
+    filename = f"{safe_name}_phase2_commands.json"
+
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.post("/{benchmark_id}/commands/import")
+async def import_commands(
+    benchmark_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Import Phase 2 commands from a JSON file, matching by section_number."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    if not file.filename or not file.filename.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only JSON files are accepted")
+
+    raw = await file.read()
+    try:
+        data = json.loads(raw)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+
+    if data.get("export_type") != "phase2_commands":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file: expected export_type 'phase2_commands'",
+        )
+
+    rules_list = data.get("rules", [])
+    if not rules_list:
+        raise HTTPException(status_code=400, detail="No rules found in file")
+
+    # Build lookup: section_number → Rule
+    existing_rules = (
+        db.query(Rule)
+        .filter(Rule.benchmark_id == benchmark_id)
+        .all()
+    )
+    rule_map = {r.section_number: r for r in existing_rules}
+
+    if not rule_map:
+        raise HTTPException(
+            status_code=400,
+            detail="No rules exist for this benchmark. Import Phase 1 rules first.",
+        )
+
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    created = 0
+    updated = 0
+    skipped = 0
+
+    for item in rules_list:
+        section = item.get("section_number")
+        cmd_data = item.get("command")
+        if not section or not cmd_data:
+            skipped += 1
+            continue
+
+        rule = rule_map.get(section)
+        if not rule:
+            skipped += 1
+            continue
+
+        if rule.commands:
+            # Update existing command (unless protected)
+            cmd = rule.commands
+            if cmd.is_protected:
+                skipped += 1
+                continue
+            cmd.audit_command = cmd_data.get("audit_command", cmd.audit_command)
+            cmd.expected_output_regex = cmd_data.get("expected_output_regex", cmd.expected_output_regex)
+            cmd.expected_output_description = cmd_data.get("expected_output_description", cmd.expected_output_description)
+            cmd.remediation_command = cmd_data.get("remediation_command", cmd.remediation_command)
+            cmd.remediation_description = cmd_data.get("remediation_description", cmd.remediation_description)
+            cmd.source = cmd_data.get("source", "imported")
+            cmd.status = cmd_data.get("status", "generated")
+            cmd.updated_at = now
+            updated += 1
+        else:
+            # Create new command
+            cmd = RuleCommand(
+                rule_id=rule.id,
+                audit_command=cmd_data.get("audit_command"),
+                expected_output_regex=cmd_data.get("expected_output_regex"),
+                expected_output_description=cmd_data.get("expected_output_description"),
+                remediation_command=cmd_data.get("remediation_command"),
+                remediation_description=cmd_data.get("remediation_description"),
+                source=cmd_data.get("source", "imported"),
+                status=cmd_data.get("status", "generated"),
+                created_at=now,
+            )
+            db.add(cmd)
+            created += 1
+
+    benchmark.phase2_status = "completed"
+    benchmark.enrichment_stats = json.dumps(
+        {"total": len(rule_map), "processed": len(rule_map)}
+    )
+    db.commit()
+
+    return {
+        "message": f"Imported commands: {created} created, {updated} updated, {skipped} skipped",
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "benchmark_id": benchmark_id,
+    }
 
 
 # ── Phase 2: Enrichment ──

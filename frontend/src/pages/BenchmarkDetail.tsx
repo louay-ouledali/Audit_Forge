@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Shield, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Shield, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload } from 'lucide-react';
 import type { Benchmark, Rule, EnrichStatus, VerifyStatus, RuleCommand, CommandHistoryEntry, VerificationReport } from '@/types';
 import * as api from '@/services/api';
 
@@ -77,6 +77,8 @@ export default function BenchmarkDetail() {
   const [unlockReason, setUnlockReason] = useState('');
   const [showUnlockForm, setShowUnlockForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const rulesImportRef = useRef<HTMLInputElement>(null);
+  const commandsImportRef = useRef<HTMLInputElement>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -184,6 +186,75 @@ export default function BenchmarkDetail() {
       setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to override');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // ── Export / Import handlers ──
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
+
+  const handleExportRules = async () => {
+    try {
+      const blob = await api.exportRules(benchmarkId);
+      const name = benchmark?.name?.replace(/ /g, '_') || 'benchmark';
+      downloadBlob(blob, `${name}_phase1_rules.json`);
+    } catch {
+      setError('Failed to export rules');
+    }
+  };
+
+  const handleImportRules = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setActionLoading(true);
+      const result = await api.importRules(benchmarkId, file);
+      setError('');
+      await fetchData();
+      await fetchRules();
+      alert(result.message);
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to import rules');
+    } finally {
+      setActionLoading(false);
+      if (rulesImportRef.current) rulesImportRef.current.value = '';
+    }
+  };
+
+  const handleExportCommands = async () => {
+    try {
+      const blob = await api.exportCommands(benchmarkId);
+      const name = benchmark?.name?.replace(/ /g, '_') || 'benchmark';
+      downloadBlob(blob, `${name}_phase2_commands.json`);
+    } catch {
+      setError('Failed to export commands');
+    }
+  };
+
+  const handleImportCommands = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setActionLoading(true);
+      const result = await api.importCommands(benchmarkId, file);
+      setError('');
+      await fetchData();
+      await fetchRules();
+      alert(result.message);
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to import commands');
+    } finally {
+      setActionLoading(false);
+      if (commandsImportRef.current) commandsImportRef.current.value = '';
     }
   };
 
@@ -361,6 +432,17 @@ export default function BenchmarkDetail() {
             {statusBadge(benchmark.phase1_status)}
           </div>
           <p className="mt-2 text-2xl font-bold text-gray-900">{benchmark.total_rules} <span className="text-sm font-normal text-gray-500">rules extracted</span></p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {benchmark.phase1_status === 'completed' && benchmark.total_rules > 0 && (
+              <button onClick={handleExportRules} className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                <Download className="h-3 w-3" /> Export Rules
+              </button>
+            )}
+            <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+              <Upload className="h-3 w-3" /> Import Rules
+              <input ref={rulesImportRef} type="file" accept=".json" className="hidden" onChange={handleImportRules} disabled={actionLoading} />
+            </label>
+          </div>
         </div>
 
         {/* Phase 2 */}
@@ -380,7 +462,7 @@ export default function BenchmarkDetail() {
               </div>
             </>
           )}
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex flex-wrap gap-2">
             {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && benchmark.phase2_status !== 'completed' && (
               <button onClick={handleEnrich} className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">
                 <Play className="h-3 w-3" /> {benchmark.phase2_status === 'paused' ? 'Resume' : 'Start'} Enrichment
@@ -390,6 +472,17 @@ export default function BenchmarkDetail() {
               <button onClick={handlePauseEnrich} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
                 <Pause className="h-3 w-3" /> Pause
               </button>
+            )}
+            {benchmark.phase1_status === 'completed' && benchmark.phase2_status === 'completed' && (
+              <button onClick={handleExportCommands} className="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                <Download className="h-3 w-3" /> Export Commands
+              </button>
+            )}
+            {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && (
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                <Upload className="h-3 w-3" /> Import Commands
+                <input ref={commandsImportRef} type="file" accept=".json" className="hidden" onChange={handleImportCommands} disabled={actionLoading} />
+              </label>
             )}
           </div>
         </div>
