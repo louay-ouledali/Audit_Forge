@@ -112,9 +112,9 @@ PLATFORM_PATTERNS: dict[str, list[tuple[str, str]]] = {
 # NOTE: \{...\} is excluded because auditpol GUIDs like {0cce923f-69ae-11d9-bed3-505054503030} are real.
 # Instead we match only obvious placeholders e.g. {PLACEHOLDER}, {your_value}, {VALUE_HERE}
 PLACEHOLDER_PATTERNS = [
-    r'\{[A-Z_]{3,}\}',         # {PLACEHOLDER}, {VALUE_HERE}
+    r'\{[A-Za-z_]{3,}\}',      # {PLACEHOLDER}, {VALUE_HERE}, {replace_this}, {path}
     r'\{your_\w+\}',           # {your_value}, {your_path}
-    r'<[A-Z_]{3,}>',             # <PLACEHOLDER>, <VALUE_HERE>
+    r'<[A-Za-z_]{3,}>',        # <PLACEHOLDER>, <VALUE_HERE>, <hostname>
     r'<your_\w+>',              # <your_value>
     r'\[REPLACE\]',
     r'\bTODO\b',
@@ -213,11 +213,11 @@ def verify_single_command(audit_command: str | None, platform_family: str) -> di
 
 def verify_regex(regex_str: str | None) -> dict:
     """Verify that a regex pattern is valid Python regex.
-    
-    Empty/None regex is acceptable — not every audit command needs a pass/fail pattern.
+
+    Returns ``{"valid": False}`` when *regex_str* is empty or ``None``.
     """
     if not regex_str or not regex_str.strip():
-        return {"valid": True, "error": None}  # optional field
+        return {"valid": False, "error": "Regex is empty"}
     try:
         re.compile(regex_str)
     except re.error as e:
@@ -244,6 +244,18 @@ _ENGLISH_REGEX_PATTERNS = [
     (re.compile(r"minutes?\s*$", re.I), "Regex ends with prose ('minutes')"),
     (re.compile(r"days?\s*$", re.I), "Regex ends with prose ('days')"),
     (re.compile(r"^(?:should|must|needs?\s+to|is\s+set\s+to)\b", re.I), "Regex is an English sentence"),
+    (re.compile(r"^(?:the\s+|this\s+|a\s+)", re.I), "Regex starts with an article (English prose)"),
+    (re.compile(r"\bshould\s+be\b", re.I), "Regex contains 'should be' (English prose)"),
+    (re.compile(r"\bmust\s+be\b", re.I), "Regex contains 'must be' (English prose)"),
+    (re.compile(r"\bor\s+higher\b", re.I), "Regex contains 'or higher' (English prose)"),
+    (re.compile(r"\bor\s+lower\b", re.I), "Regex contains 'or lower' (English prose)"),
+    (re.compile(r"\bor\s+above\b", re.I), "Regex contains 'or above' (English prose)"),
+    (re.compile(r"\bor\s+below\b", re.I), "Regex contains 'or below' (English prose)"),
+    (re.compile(r"^(?:PASS|FAIL|Compliant|Non-compliant|Yes|No)\s*$", re.I), "Regex is a compliance verdict, not command output"),
+    (re.compile(r"\bat\s+least\s+\d+", re.I), "Regex contains 'at least N' (English prose)"),
+    (re.compile(r"\bno\s+more\s+than\b", re.I), "Regex contains 'no more than' (English prose)"),
+    (re.compile(r"\bgreater\s+than\b", re.I), "Regex contains 'greater than' (English prose)"),
+    (re.compile(r"\bless\s+than\b", re.I), "Regex contains 'less than' (English prose)"),
 ]
 
 
@@ -302,11 +314,13 @@ def verify_command_full(cmd: RuleCommand, platform_family: str, db: Session) -> 
         run_at=now,
     ))
 
-    # Regex validation
+    # Regex validation — empty regex is acceptable (not every rule needs one)
     regex_result = verify_regex(cmd.expected_output_regex)
+    regex_is_empty = not cmd.expected_output_regex or not cmd.expected_output_regex.strip()
+    regex_ok = regex_result["valid"] or regex_is_empty
     regex_check = {
-        "result": "pass" if regex_result["valid"] else "fail",
-        "message": "Valid regex" if regex_result["valid"] else f"Invalid regex: {regex_result['error']}",
+        "result": "pass" if regex_ok else "fail",
+        "message": "Valid regex" if regex_ok else f"Invalid regex: {regex_result['error']}",
     }
     db.add(VerificationReport(
         rule_command_id=cmd.id,

@@ -28,23 +28,52 @@ RETRY_BASE_DELAY = 2.0  # seconds — multiplied by attempt number for backoff
 class LLMManager:
     """Single interface for all LLM operations."""
 
-    def get_current_config(self) -> dict[str, str]:
-        """Read LLM settings from the app_settings table."""
+    # Known provider base URLs (OpenAI-compatible chat/completions endpoints)
+    PROVIDER_BASE_URLS: dict[str, str] = {
+        "openai": "https://api.openai.com/v1",
+        "anthropic": "https://api.anthropic.com/v1",
+        "mistral": "https://api.mistral.ai/v1",
+        "groq": "https://api.groq.com/openai/v1",
+        "openrouter": "https://openrouter.ai/api/v1",
+    }
+
+    # Task names for per-task model customization
+    TASK_NAMES = ("phase1_parsing", "phase2_commands", "verification", "reports", "analysis")
+
+    def get_current_config(self, task: str | None = None) -> dict[str, str]:
+        """Read LLM settings from the app_settings table.
+
+        If *task* is provided (e.g. ``"phase2_commands"``), per-task model
+        overrides are applied on top of the global config.
+        """
         db = SessionLocal()
         try:
             rows = db.query(AppSettings).all()
             cfg = {r.key: r.value for r in rows}
         finally:
             db.close()
-        return {
+
+        config = {
             "mode": cfg.get("llm_mode", "offline"),
             "offline_model": cfg.get("llm_offline_model", "qwen2.5:7b"),
             "ollama_url": cfg.get("llm_ollama_url", "http://host.docker.internal:11434"),
             "online_provider": cfg.get("llm_online_provider", ""),
             "online_api_key": cfg.get("llm_online_api_key_encrypted", ""),
             "online_model": cfg.get("llm_online_model", ""),
+            "online_base_url": cfg.get("llm_online_base_url", ""),
             "category_detection": cfg.get("llm_category_detection", "true"),
         }
+
+        # Apply per-task model override if configured
+        if task and task in self.TASK_NAMES:
+            task_model = cfg.get(f"llm_task_{task}_model", "").strip()
+            if task_model:
+                if config["mode"] == "offline":
+                    config["offline_model"] = task_model
+                else:
+                    config["online_model"] = task_model
+
+        return config
 
     async def invoke(
         self,
@@ -53,9 +82,10 @@ class LLMManager:
         timeout: float = 300.0,
         max_retries: int = MAX_RETRIES,
         json_mode: bool = False,
+        task: str | None = None,
     ) -> str:
         """Send a prompt and get a text response with retry and exponential backoff."""
-        config = self.get_current_config()
+        config = self.get_current_config(task=task)
         last_exc: Exception | None = None
 
         for attempt in range(1, max_retries + 1):
@@ -63,7 +93,7 @@ class LLMManager:
                 if config["mode"] == "offline":
                     return await self._invoke_ollama(prompt, system_prompt, config, timeout, json_mode=json_mode)
                 else:
-                    return await self._invoke_online(prompt, system_prompt, config, timeout)
+                    return await self._invoke_online(prompt, system_prompt, config, timeout, json_mode=json_mode)
             except httpx.TimeoutException as exc:
                 last_exc = exc
                 logger.warning(
@@ -112,7 +142,7 @@ class LLMManager:
             detail=str(last_exc),
         ) from last_exc
 
-    async def invoke_json(self, prompt: str, system_prompt: str | None = None, timeout: float = 300.0) -> Any:
+    async def invoke_json(self, prompt: str, system_prompt: str | None = None, timeout: float = 300.0, task: str | None = None) -> Any:
         """Send a prompt and parse the response as JSON.
 
         Uses Ollama's native JSON mode (format=json) to force valid JSON output.
@@ -121,7 +151,7 @@ class LLMManager:
         if system_prompt is None:
             system_prompt = "Respond with valid JSON only. No explanations."
         # First attempt: use Ollama's native JSON mode
-        raw = await self.invoke(prompt, system_prompt, timeout, json_mode=True)
+        raw = await self.invoke(prompt, system_prompt, timeout, json_mode=True, task=task)
         try:
             return self._parse_json(raw)
         except (json.JSONDecodeError, ValueError):
@@ -131,7 +161,7 @@ class LLMManager:
                 "Return ONLY a valid JSON object or array. No other text.\n\n"
                 + prompt[:3000]
             )
-            raw2 = await self.invoke(retry_prompt, system_prompt, timeout, json_mode=True)
+            raw2 = await self.invoke(retry_prompt, system_prompt, timeout, json_mode=True, task=task)
             try:
                 return self._parse_json(raw2)
             except (json.JSONDecodeError, ValueError) as exc:
@@ -162,13 +192,51 @@ class LLMManager:
             else:
                 has_key = bool(config["online_api_key"])
                 has_model = bool(config["online_model"])
-                return {
-                    "available": has_key and has_model,
-                    "mode": "online",
-                    "model": config["online_model"],
-                    "provider": config["online_provider"],
-                    "error": None if (has_key and has_model) else "Missing API key or model name",
+                provider = config.get("online_provider", "")
+                base_url = config.get("online_base_url", "").strip()
+                if not base_url:
+                    base_url = self.PROVIDER_BASE_URLS.get(provider, "")
+
+                if not (has_key and has_model):
+                    return {
+                        "available": False,
+                        "mode": "online",
+                        "model": config["online_model"],
+                        "provider": provider,
+                        "base_url": base_url,
+                        "error": "Missing API key or model name",
+                    }
+
+                # Actually test the connection with a lightweight models list call
+                headers = {
+                    "Authorization": f"Bearer {config['online_api_key']}",
                 }
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        resp = await client.get(f"{base_url}/models", headers=headers)
+                        resp.raise_for_status()
+                    return {
+                        "available": True,
+                        "mode": "online",
+                        "model": config["online_model"],
+                        "provider": provider,
+                        "base_url": base_url,
+                        "error": None,
+                    }
+                except Exception as api_exc:
+                    # Connection test failed but config looks valid —
+                    # still mark as available since some endpoints don't
+                    # support GET /models (e.g. Anthropic, some custom)
+                    logger.debug("Online API /models endpoint check failed: %s", api_exc)
+                    return {
+                        "available": True,
+                        "mode": "online",
+                        "model": config["online_model"],
+                        "provider": provider,
+                        "base_url": base_url,
+                        "error": None,
+                        "warning": f"Config looks valid but connectivity check failed: {api_exc}",
+                    }
         except Exception as exc:
             return {
                 "available": False,
@@ -212,14 +280,23 @@ class LLMManager:
             # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
             return data.get("message", {}).get("content", "")
 
-    async def _invoke_online(self, prompt: str, system_prompt: str | None, config: dict, timeout: float) -> str:
-        """Call OpenAI-compatible API."""
+    async def _invoke_online(
+        self,
+        prompt: str,
+        system_prompt: str | None,
+        config: dict,
+        timeout: float,
+        *,
+        json_mode: bool = False,
+    ) -> str:
+        """Call OpenAI-compatible API (OpenAI, Mistral, Groq, OpenRouter, or custom)."""
         provider = config.get("online_provider", "openai")
-        base_urls = {
-            "openai": "https://api.openai.com/v1",
-            "anthropic": "https://api.anthropic.com/v1",
-        }
-        base_url = base_urls.get(provider, "https://api.openai.com/v1")
+
+        # Use custom base URL if configured, otherwise look up by provider name
+        base_url = config.get("online_base_url", "").strip()
+        if not base_url:
+            base_url = self.PROVIDER_BASE_URLS.get(provider, "https://api.openai.com/v1")
+
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -228,13 +305,17 @@ class LLMManager:
             "Authorization": f"Bearer {config['online_api_key']}",
             "Content-Type": "application/json",
         }
-        payload = {
+        payload: dict[str, Any] = {
             "model": config["online_model"],
             "messages": messages,
             "temperature": LLM_TEMPERATURE,
             "max_tokens": LLM_MAX_TOKENS,
         }
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
+
+        timeouts = httpx.Timeout(timeout, connect=30.0)
+        async with httpx.AsyncClient(timeout=timeouts) as client:
             resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()

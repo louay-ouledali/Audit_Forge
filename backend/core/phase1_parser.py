@@ -99,7 +99,6 @@ def extract_first_pages_text(pages: list[dict[str, Any]], n: int = 5) -> str:
 # Patterns that indicate a page is a cover / TOC / front-matter page
 _TOC_INDICATORS = re.compile(
     r"table\s+of\s+contents|"
-    r"\.{4,}|"  # dotted leaders in TOC
     r"^contents$|"
     r"all\s+rights\s+reserved|"
     r"terms\s+of\s+use|"
@@ -108,8 +107,25 @@ _TOC_INDICATORS = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+# Dotted leaders (e.g. "1.1.1 Ensure ........ 42") are checked separately
+# so we can count them more carefully — pages with real rule *bodies* often
+# mention "CIS Controls" which previously matched the appendix filter.
+_DOTTED_LEADER_LINE = re.compile(r"\.{5,}")
+
 _APPENDIX_INDICATORS = re.compile(
-    r"^appendix\b|^annex\b|^cis\s+controls|^references$|^bibliography$",
+    r"^appendix\b|^annex\b|^references$|^bibliography$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+# Pattern to detect a real CIS rule heading anywhere on a page
+_RULE_HEADING_ON_PAGE = re.compile(
+    r"^\d+\.\d+(?:\.\d+)+\s+",
+    re.MULTILINE,
+)
+
+# Pattern to detect CIS field markers (indicates real rule content)
+_FIELD_MARKER_ON_PAGE = re.compile(
+    r"^(?:Profile\s+Applicability|Description|Rationale|Audit|Remediation|Default\s+Value)\s*:?\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -118,20 +134,31 @@ def _is_skippable_page(text: str, page_num: int) -> bool:
     """Return True if this page is cover, TOC, front-matter, or appendix."""
     stripped = text.strip()
     # Very short pages (footers only, blank)
-    if len(stripped) < 80:
+    if len(stripped) < 60:
         return True
     # First few pages are almost always cover/TOC
     if page_num <= 2:
         return True
-    # TOC-style pages
-    if _TOC_INDICATORS.search(stripped):
-        # But only if the page does NOT contain an actual rule heading
-        if not re.search(r"^\d+\.\d+(?:\.\d+)+\s+", stripped, re.MULTILINE):
+
+    has_rule_heading = bool(_RULE_HEADING_ON_PAGE.search(stripped))
+    has_field_marker = bool(_FIELD_MARKER_ON_PAGE.search(stripped))
+    has_rule_content = has_rule_heading or has_field_marker
+
+    # TOC-style pages — skip only if there's no rule content
+    if _TOC_INDICATORS.search(stripped) and not has_rule_content:
+        return True
+
+    # Pages that are mostly dotted leaders (TOC lines like "1.1.1 Ensure .. 42")
+    # Count lines with dotted leaders vs total lines
+    lines = stripped.splitlines()
+    if len(lines) > 3:
+        dotted_lines = sum(1 for ln in lines if _DOTTED_LEADER_LINE.search(ln))
+        if dotted_lines / len(lines) > 0.4 and not has_field_marker:
             return True
-    # Appendix / back-matter pages
-    if _APPENDIX_INDICATORS.search(stripped):
-        if not re.search(r"^\d+\.\d+(?:\.\d+)+\s+", stripped, re.MULTILINE):
-            return True
+
+    # Appendix / back-matter pages — skip only if there's no rule content
+    if _APPENDIX_INDICATORS.search(stripped) and not has_rule_content:
+        return True
     return False
 
 
@@ -152,6 +179,7 @@ def filter_content_pages(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 # CIS rule heading:  "1.1.1 Ensure …" or "18.9.4.2 (L1) Ensure …"
 # Must have at least 3 numeric parts (X.Y.Z) to distinguish from chapter headings.
+# Also handles profile markers like (L1), (L2), (BL), (NG), and (Automated)/(Manual).
 _RULE_HEADING = re.compile(
     r"^(\d{1,2}(?:\.\d{1,3}){2,})\s+"   # section number with ≥3 levels
     r"(?:\((?:L[12]|BL|NG)\)\s+)?"       # optional profile marker like (L1)
@@ -179,6 +207,8 @@ def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
         return []
 
     rules: list[dict[str, str]] = []
+    seen_sections: set[str] = set()
+
     for idx, match in enumerate(headings):
         section = match.group(1)
         title = match.group(2).strip()
@@ -188,7 +218,7 @@ def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
 
         # ── Filter out TOC entries and noise ──
         # Skip empty or very short bodies (TOC line items)
-        if len(body) < 80:
+        if len(body) < 40:
             continue
         # Skip bodies that are mostly dots (TOC dotted leaders)
         dots_ratio = body.count(".") / max(len(body), 1)
@@ -196,10 +226,14 @@ def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
             continue
         # Must contain at least one CIS field marker to be a real rule
         if not re.search(
-            r"Profile Applicability|Description|Audit|Remediation",
+            r"Profile Applicability|Description|Audit|Remediation|Default\s+Value|Rationale",
             body, re.IGNORECASE,
         ):
             continue
+        # Deduplicate: keep only the first (richest) occurrence
+        if section in seen_sections:
+            continue
+        seen_sections.add(section)
 
         rules.append({"section": section, "title": title, "body": body})
     return rules

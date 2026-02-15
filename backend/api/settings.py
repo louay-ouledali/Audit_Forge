@@ -36,10 +36,17 @@ VALID_SETTING_KEYS = {
     "llm_online_provider",
     "llm_online_api_key_encrypted",
     "llm_online_model",
+    "llm_online_base_url",
     "verification_enabled",
     "verification_auto_protect_passing",
     "default_scan_mode",
     "llm_category_detection",
+    # Per-task model overrides (optional — leave empty to use the global model)
+    "llm_task_phase1_parsing_model",
+    "llm_task_phase2_commands_model",
+    "llm_task_verification_model",
+    "llm_task_reports_model",
+    "llm_task_analysis_model",
 }
 
 

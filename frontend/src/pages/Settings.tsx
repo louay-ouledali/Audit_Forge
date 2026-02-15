@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle } from 'lucide-react';
-import type { Settings as SettingsType } from '@/types';
+import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle, Zap, Loader2 } from 'lucide-react';
+import type { Settings as SettingsType, LLMTestResult } from '@/types';
 import * as api from '@/services/api';
 
 const defaultSettings: SettingsType = {
@@ -9,10 +9,25 @@ const defaultSettings: SettingsType = {
   llm_ollama_url: '',
   llm_online_provider: '',
   llm_online_model: '',
+  llm_online_base_url: '',
+  llm_online_api_key_encrypted: '',
   verification_enabled: 'true',
   verification_auto_protect_passing: 'false',
   default_scan_mode: 'network',
+  llm_task_phase1_parsing_model: '',
+  llm_task_phase2_commands_model: '',
+  llm_task_verification_model: '',
+  llm_task_reports_model: '',
+  llm_task_analysis_model: '',
 };
+
+const TASK_FIELDS = [
+  { key: 'llm_task_phase1_parsing_model', label: 'Phase 1 — Rule Parsing', help: 'Extracts CIS rules from PDF benchmark' },
+  { key: 'llm_task_phase2_commands_model', label: 'Phase 2 — Command Generation', help: 'Generates audit commands and regex' },
+  { key: 'llm_task_verification_model', label: 'Verification', help: 'Verifies command quality' },
+  { key: 'llm_task_reports_model', label: 'Reports & AI Advice', help: 'Executive summaries, remediation advice' },
+  { key: 'llm_task_analysis_model', label: 'Post-Mission Analysis', help: 'Cross-target/mission comparison' },
+] as const;
 
 export default function Settings() {
   const [settings, setSettings] = useState<SettingsType>(defaultSettings);
@@ -21,6 +36,8 @@ export default function Settings() {
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
+  const [testingLLM, setTestingLLM] = useState(false);
+  const [llmTestResult, setLlmTestResult] = useState<LLMTestResult | null>(null);
   const restoreFileRef = useRef<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -57,6 +74,19 @@ export default function Settings() {
       setToast({ type: 'error', message: 'Failed to save settings' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestLLM = async () => {
+    setTestingLLM(true);
+    setLlmTestResult(null);
+    try {
+      const result = await api.testLLM();
+      setLlmTestResult(result);
+    } catch {
+      setLlmTestResult({ success: false, error: 'Failed to reach backend. Is the server running?' });
+    } finally {
+      setTestingLLM(false);
     }
   };
 
@@ -147,50 +177,183 @@ export default function Settings() {
                   onChange={() => handleChange('llm_mode', mode)}
                   className="text-blue-600 focus:ring-blue-500"
                 />
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                {mode === 'offline' ? 'Offline (Ollama)' : 'Online (Cloud API)'}
               </label>
             ))}
           </div>
+          <p className="text-xs text-gray-500">
+            {settings.llm_mode === 'offline'
+              ? 'Uses a local Ollama instance. You can run cloud models through Ollama too — see the setup guide.'
+              : 'Connects directly to a cloud API (OpenAI, Mistral, Groq, OpenRouter, or any OpenAI-compatible endpoint).'}
+          </p>
         </fieldset>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Offline Model</label>
-          <input
-            value={settings.llm_offline_model}
-            onChange={(e) => handleChange('llm_offline_model', e.target.value)}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-            placeholder="e.g. mistral"
-          />
-        </div>
+        {/* ── Offline (Ollama) Settings ── */}
+        {settings.llm_mode === 'offline' && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Ollama Model</label>
+              <input
+                value={settings.llm_offline_model}
+                onChange={(e) => handleChange('llm_offline_model', e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                placeholder="e.g. qwen2.5:7b, mistral, llama3.1:8b"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                The model tag as shown by <code className="rounded bg-gray-100 px-1">ollama list</code>.
+                Default: <code className="rounded bg-gray-100 px-1">qwen2.5:7b</code>
+              </p>
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Ollama URL</label>
-          <input
-            value={settings.llm_ollama_url}
-            onChange={(e) => handleChange('llm_ollama_url', e.target.value)}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-            placeholder="http://localhost:11434"
-          />
-        </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Ollama URL</label>
+              <input
+                value={settings.llm_ollama_url}
+                onChange={(e) => handleChange('llm_ollama_url', e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                placeholder="http://localhost:11434"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Default: <code className="rounded bg-gray-100 px-1">http://localhost:11434</code>.
+                Use <code className="rounded bg-gray-100 px-1">http://host.docker.internal:11434</code> if
+                running inside Docker.
+              </p>
+            </div>
+          </>
+        )}
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Online Provider</label>
-          <input
-            value={settings.llm_online_provider}
-            onChange={(e) => handleChange('llm_online_provider', e.target.value)}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-            placeholder="e.g. openai"
-          />
-        </div>
+        {/* ── Online (Cloud API) Settings ── */}
+        {settings.llm_mode === 'online' && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Provider</label>
+              <select
+                value={settings.llm_online_provider}
+                onChange={(e) => handleChange('llm_online_provider', e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              >
+                <option value="">Select a provider…</option>
+                <option value="openai">OpenAI</option>
+                <option value="mistral">Mistral AI</option>
+                <option value="groq">Groq</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="custom">Custom (OpenAI-compatible)</option>
+              </select>
+            </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Online Model</label>
-          <input
-            value={settings.llm_online_model}
-            onChange={(e) => handleChange('llm_online_model', e.target.value)}
-            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-            placeholder="e.g. gpt-4o"
-          />
+            <div>
+              <label className="block text-sm font-medium text-gray-700">API Key</label>
+              <input
+                type="password"
+                value={settings.llm_online_api_key_encrypted}
+                onChange={(e) => handleChange('llm_online_api_key_encrypted', e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                placeholder="sk-…"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Your API key for the selected provider. Stored in the local database.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Model</label>
+              <input
+                value={settings.llm_online_model}
+                onChange={(e) => handleChange('llm_online_model', e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                placeholder={
+                  settings.llm_online_provider === 'openai'
+                    ? 'e.g. gpt-4o, gpt-4o-mini'
+                    : settings.llm_online_provider === 'mistral'
+                    ? 'e.g. mistral-large-latest'
+                    : settings.llm_online_provider === 'groq'
+                    ? 'e.g. llama-3.1-70b-versatile'
+                    : settings.llm_online_provider === 'openrouter'
+                    ? 'e.g. meta-llama/llama-3.1-70b-instruct'
+                    : 'e.g. gpt-4o'
+                }
+              />
+            </div>
+
+            {settings.llm_online_provider === 'custom' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Custom Base URL</label>
+                <input
+                  value={settings.llm_online_base_url}
+                  onChange={(e) => handleChange('llm_online_base_url', e.target.value)}
+                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  placeholder="https://your-endpoint.com/v1"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Full base URL for the OpenAI-compatible API (must support <code className="rounded bg-gray-100 px-1">/chat/completions</code>).
+                </p>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Test LLM Connection */}
+        <div className="border-t border-gray-200 pt-4">
+          <button
+            onClick={handleTestLLM}
+            disabled={testingLLM}
+            className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+          >
+            {testingLLM ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            {testingLLM ? 'Testing…' : 'Test LLM Connection'}
+          </button>
+
+          {llmTestResult && (
+            <div
+              className={`mt-3 rounded-lg border p-3 text-sm ${
+                llmTestResult.success
+                  ? 'border-green-200 bg-green-50 text-green-700'
+                  : 'border-red-200 bg-red-50 text-red-700'
+              }`}
+            >
+              {llmTestResult.success ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 font-medium">
+                    <CheckCircle2 className="h-4 w-4" /> LLM is working
+                  </div>
+                  <div>Model: <code className="rounded bg-white/60 px-1">{llmTestResult.model}</code></div>
+                  <div>Response time: <strong>{llmTestResult.response_time_ms}ms</strong></div>
+                  <div className="text-xs text-green-600 italic">&quot;{llmTestResult.response}&quot;</div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4" />
+                  {llmTestResult.error || 'Connection failed'}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Per-Task Model Overrides */}
+      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900">Per-Task Model Overrides</h3>
+        <p className="text-sm text-gray-500">
+          Optionally use a different model for specific tasks. Leave empty to use the global model configured above.
+          {settings.llm_mode === 'offline'
+            ? ' Enter an Ollama model tag (e.g. qwen2.5:14b).'
+            : ' Enter a cloud model name (e.g. gpt-4o, mistral-large-latest).'}
+        </p>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {TASK_FIELDS.map((field) => (
+            <div key={field.key}>
+              <label className="block text-sm font-medium text-gray-700">{field.label}</label>
+              <input
+                value={settings[field.key] || ''}
+                onChange={(e) => handleChange(field.key, e.target.value)}
+                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                placeholder="(use global model)"
+              />
+              <p className="mt-1 text-xs text-gray-500">{field.help}</p>
+            </div>
+          ))}
         </div>
       </section>
 

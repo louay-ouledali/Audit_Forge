@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -181,6 +181,39 @@ export async function bulkRegenerateCommands(benchmarkId: number): Promise<{ mes
   return data;
 }
 
+// Phase Export / Import
+export async function exportRules(benchmarkId: number): Promise<Blob> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/rules/export`, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function importRules(benchmarkId: number, file: File): Promise<{ message: string; rules_imported: number }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/rules/import`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function exportCommands(benchmarkId: number): Promise<Blob> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/commands/export`, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function importCommands(benchmarkId: number, file: File): Promise<{ message: string; created: number; updated: number; skipped: number }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/commands/import`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
 // Rules
 export async function getRule(id: number): Promise<Rule> {
   const { data } = await api.get(`/rules/${id}`);
@@ -237,6 +270,11 @@ export async function getCommandVerificationReports(ruleId: number): Promise<Ver
 // LLM
 export async function getLLMStatus(): Promise<LLMStatus> {
   const { data } = await api.get('/llm/status');
+  return data;
+}
+
+export async function testLLM(): Promise<LLMTestResult> {
+  const { data } = await api.post('/llm/test');
   return data;
 }
 

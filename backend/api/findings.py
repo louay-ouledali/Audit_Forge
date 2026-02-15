@@ -141,7 +141,7 @@ Keep the response practical and concise."""
 
     try:
         from backend.ai.llm_manager import llm_manager
-        advice = await llm_manager.invoke(prompt, system_prompt="You are a cybersecurity remediation advisor.")
+        advice = await llm_manager.invoke(prompt, system_prompt="You are a cybersecurity remediation advisor.", task="reports")
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"LLM unavailable: {exc}")
 

@@ -633,7 +633,7 @@ Write 3-5 paragraphs summarising the findings, highlighting critical risks, and 
     system_prompt = "You are a cybersecurity audit report writer. Produce clear, professional executive summaries."
 
     try:
-        return await llm_manager.invoke(prompt, system_prompt=system_prompt)
+        return await llm_manager.invoke(prompt, system_prompt=system_prompt, task="reports")
     except Exception:
         logger.exception("AI summary generation failed")
         return "AI executive summary could not be generated. Please check LLM configuration."

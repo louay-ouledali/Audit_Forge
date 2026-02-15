@@ -35,6 +35,7 @@ async def detect_benchmark_metadata(first_pages_text: str) -> dict[str, Any]:
         try:
             result = await llm_manager.invoke_json(
                 prompt, system_prompt=PHASE1_METADATA_SYSTEM, timeout=180.0,
+                task="phase1_parsing",
             )
             # LLM may return a list wrapping the dict — unwrap it
             if isinstance(result, list):
@@ -84,7 +85,7 @@ async def extract_rules_from_section(
     )
     system_prompt = PHASE1_RULES_SYSTEM.format(category_instruction=category_instruction)
     prompt = PHASE1_RULE_EXTRACTION.format(pdf_section_text=pdf_section_text)
-    result = await llm_manager.invoke_json(prompt, system_prompt=system_prompt, timeout=600.0)
+    result = await llm_manager.invoke_json(prompt, system_prompt=system_prompt, timeout=600.0, task="phase1_parsing")
     if isinstance(result, list):
         return result
     # Mistral sometimes wraps the array in a dict like {"rules": [...]}
@@ -123,6 +124,7 @@ async def _call_llm_for_batch(
     )
     result = await llm_manager.invoke_json(
         prompt, system_prompt=PHASE2_COMMAND_SYSTEM, timeout=240.0,
+        task="phase2_commands",
     )
     # Normalize: ensure we have a list
     if isinstance(result, dict):
@@ -255,6 +257,13 @@ def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
     """Clean up common LLM mistakes in generated commands and regex patterns."""
     from backend.core.verification_engine import _check_regex_quality
 
+    # --- Fix commands that test compliance instead of retrieving values ---
+    cmd = result.get("audit_command", "")
+    if cmd:
+        cmd = _fix_compliance_testing_command(cmd)
+        result["audit_command"] = cmd
+
+    # --- Fix regex quality ---
     regex = result.get("expected_output_regex", "")
     if regex:
         # Check if regex is a bad English-phrase pattern (reuse verification logic)
@@ -279,6 +288,112 @@ def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
                 result["expected_output_regex"] = ""
 
     return result
+
+
+# Patterns that indicate the command is testing compliance rather than retrieving a value
+_COMPLIANCE_TEST_PATTERNS = [
+    # PowerShell if/else blocks
+    re.compile(r'\bif\s*\(.*-(?:ge|le|gt|lt|eq|ne)\b', re.IGNORECASE),
+    # PowerShell ternary-style pass/fail
+    re.compile(r'["\'](?:PASS|FAIL|Compliant|Non-compliant)["\']', re.IGNORECASE),
+    # Bash test constructs
+    re.compile(r'\btest\s+.*(?:&&|;\s*then)\b'),
+    # Bash if/then blocks
+    re.compile(r'\bif\s+\[.*\]\s*;\s*then\b'),
+    # echo PASS/FAIL pattern
+    re.compile(r'\becho\s+["\']?(?:PASS|FAIL|Compliant)["\']?\b', re.IGNORECASE),
+]
+
+# Known substitution rules: bad pattern → fixed command
+_WINDOWS_CMD_FIXES: list[tuple[re.Pattern, str]] = [
+    # PowerShell password policy via complex if/else → just use net accounts
+    (re.compile(r'.*net\s+accounts.*-(?:ge|le|gt|lt).*', re.IGNORECASE | re.DOTALL), "net accounts"),
+    # PowerShell registry query wrapped in if/else → just the reg query
+    (re.compile(r'.*if\s*\(\s*\(reg\s+query\s+([^)]+)\)', re.IGNORECASE), None),  # handled specially
+]
+
+
+def _fix_compliance_testing_command(cmd: str) -> str:
+    """Strip compliance-testing logic from commands, keeping only the retrieval part.
+
+    Also converts multi-value commands to single-value extraction where
+    possible.
+    """
+    if not cmd:
+        return cmd
+
+    # Check if command contains compliance-testing patterns
+    has_compliance_test = any(p.search(cmd) for p in _COMPLIANCE_TEST_PATTERNS)
+    if not has_compliance_test:
+        return cmd
+
+    # Try to extract the underlying retrieval command
+    original = cmd
+
+    # Pattern: "net accounts" somewhere in a larger if/else block
+    # Extract just the relevant Select-String line if possible
+    net_field_match = re.search(
+        r"net\s+accounts.*Select-String\s+['\"]([^'\"]+)['\"]",
+        cmd, re.IGNORECASE,
+    )
+    if net_field_match:
+        field = net_field_match.group(1)
+        cmd = f"(net accounts | Select-String '{field}').Line -replace '\\D',''"
+    elif re.search(r'\bnet\s+accounts\b', cmd, re.IGNORECASE):
+        cmd = "net accounts"
+
+    # Pattern: Get-ItemProperty extraction wrapped in if/else
+    gip_match = re.search(
+        r"\(Get-ItemProperty\s+-Path\s+'([^']+)'\s+-Name\s+'?(\w+)'?\)\.(\w+)",
+        cmd, re.IGNORECASE,
+    )
+    if gip_match:
+        path, name, prop = gip_match.group(1), gip_match.group(2), gip_match.group(3)
+        cmd = f"(Get-ItemProperty -Path '{path}' -Name '{name}').{prop}"
+
+    # Pattern: "reg query HKLM\..." somewhere in a larger if/else block
+    # Convert to Get-ItemProperty for single-value output
+    reg_match = re.search(
+        r'reg\s+query\s+(HKLM\\[^\s|;"]+)\s+/v\s+(\S+)',
+        cmd, re.IGNORECASE,
+    )
+    if reg_match:
+        key_path = reg_match.group(1)
+        value_name = reg_match.group(2)
+        ps_path = key_path.replace("HKLM\\", "HKLM:\\", 1)
+        cmd = f"(Get-ItemProperty -Path '{ps_path}' -Name '{value_name}').{value_name}"
+
+    # Pattern: "sysctl ..." in a test block — use -n for value only
+    sysctl_match = re.search(r'sysctl\s+(?:-n\s+)?([\w.]+)', cmd)
+    if sysctl_match:
+        param = sysctl_match.group(1)
+        cmd = f"sysctl -n {param}"
+
+    # Pattern: "systemctl is-enabled ..." in a test block
+    systemctl_match = re.search(r'(systemctl\s+is-enabled\s+[\w@.-]+)', cmd)
+    if systemctl_match:
+        cmd = systemctl_match.group(1) + " 2>/dev/null || echo not-found"
+
+    # Pattern: "auditpol /get ..." in a test block
+    auditpol_match = re.search(r'(auditpol\s+/get\s+/subcategory:\S+)', cmd)
+    if auditpol_match:
+        cmd = auditpol_match.group(1)
+
+    # Pattern: "grep ..." in a test block
+    grep_match = re.search(
+        r"""(grep\s+(?:-[A-Za-z]+\s+)?(?:'[^']+'|"[^"]+"|[\w^$.\\]+)\s+/[\w/._-]+)""",
+        cmd,
+    )
+    if grep_match:
+        cmd = grep_match.group(1)
+
+    if cmd != original:
+        logger.info(
+            "Fixed compliance-testing command → single-value retrieval: %s",
+            cmd[:80],
+        )
+
+    return cmd
 
 
 async def regenerate_command(
@@ -331,7 +446,7 @@ async def regenerate_command(
         history_section=history_section,
     )
     system_prompt = COMMAND_REGENERATION_SYSTEM
-    result = await llm_manager.invoke_json(prompt, system_prompt=system_prompt, timeout=120.0)
+    result = await llm_manager.invoke_json(prompt, system_prompt=system_prompt, timeout=120.0, task="phase2_commands")
     if isinstance(result, dict):
         return result
     return {}
