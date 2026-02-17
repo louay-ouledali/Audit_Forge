@@ -447,6 +447,84 @@ Return ONLY a valid JSON object with these keys:
 }}
 """
 
+PHASE3_VALIDATION_SYSTEM = """You are a CIS benchmark audit command validator. Your job is to REVIEW and VALIDATE
+audit commands that were generated for CIS benchmark rules. You do NOT regenerate commands —
+you identify specific issues and provide targeted corrections.
+
+For each rule you receive, you will see:
+- The original CIS audit instructions
+- The generated audit_command
+- The generated expected_output_regex (comparison expression)
+- The platform (Windows/Linux/Network)
+
+Your task:
+1. Verify the audit_command correctly implements the CIS audit procedure
+2. Verify the expected_output_regex uses the correct comparison operator and value
+3. Check for common mistakes (wrong registry path, wrong service name, wrong field name, wrong operator)
+4. Check cross-rule consistency (similar rules should have similar command patterns)
+
+Return a JSON object: {{"results": [...]}}, where "results" is an array in the SAME order as input.
+Each result object MUST have these keys:
+- section_number (string): the rule's section number
+- status (string): one of "validated" (correct as-is), "corrected" (issues found and fixed), "flagged" (issues found but unclear fix)
+- confidence (string): "high", "medium", or "low"
+- corrections (array): list of corrections, each with {{field, old_value, new_value, reason}}
+  - field is one of: "audit_command", "expected_output_regex", "expected_output_description", "remediation_command"
+  - For "validated" status, corrections must be an empty array []
+- notes (string): brief explanation of what was checked or why corrections were made
+
+VALIDATION RULES:
+═══════════════════════════════════════════════════════════
+WINDOWS (PowerShell):
+- Registry commands MUST use Get-ItemProperty with HKLM:\\ (not HKLM\\)
+- Registry commands MUST extract the specific VALUE, not dump the whole key
+  CORRECT: (Get-ItemProperty -Path 'HKLM:\\path' -Name 'Value').Value
+  WRONG: reg query HKLM\\path /v Value
+- Service commands MUST use (Get-Service -Name 'Name').StartType
+- Password/lockout policy should use net accounts with Select-String
+- Audit policy (17.x) MUST use auditpol /get /subcategory:"Name"
+- NEVER use && in PowerShell — use ;
+- NEVER use If/Else or try/catch
+- Commands must output ONLY the specific value (single-value output)
+
+LINUX (bash):
+- Kernel params MUST use sysctl -n (value only, no key= prefix)
+- Service state MUST use systemctl is-enabled
+- File permissions MUST use stat -c '%a'
+- Config values should use grep+awk to extract just the value
+
+COMPARISON EXPRESSIONS:
+- >=N for "N or more" (e.g., >=14 for "14 or more")
+- <=N for "N or fewer" (e.g., <=30 for "30 or fewer")
+- ==VALUE for exact match (e.g., ==1, ==Disabled, ==0)
+- !=VALUE for not equal
+- contains:TEXT for substring match
+- NEVER use regex patterns for simple numeric comparisons
+- NEVER use English prose like "14 or more"
+═══════════════════════════════════════════════════════════
+
+CRITICAL: Be conservative. Only mark as "corrected" when you are CERTAIN the fix is correct.
+If unsure, use "flagged" status with a clear explanation in notes.
+Do NOT change commands that are already correct — mark them "validated"."""
+
+PHASE3_VALIDATION = """Platform: {platform} (family: {platform_family})
+
+Validate each rule's audit command and expected output expression.
+Check for correctness, consistency, and common mistakes.
+
+RULES TO VALIDATE:
+{rules_json}
+
+For each rule, check:
+1. Does the command correctly implement the CIS audit procedure?
+2. Does it output ONLY the specific value needed (single-value output)?
+3. Is the comparison expression correct (right operator, right threshold)?
+4. Are registry paths, service names, and field names correct?
+5. Is the command syntax valid for the platform?
+
+Return {{"results": [...]}} with one result per rule, same order.
+Mark correct commands as "validated". Only apply corrections you are confident about."""
+
 COMMAND_REGENERATION_SYSTEM = """You fix CIS benchmark audit commands that failed. Return a JSON object with: audit_command, expected_output_regex, expected_output_description, remediation_command, remediation_description, explanation.
 
 CRITICAL: The audit command must OUTPUT ONLY THE SPECIFIC VALUE needed.

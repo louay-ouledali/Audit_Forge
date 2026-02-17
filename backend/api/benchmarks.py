@@ -13,6 +13,14 @@ from sqlalchemy.orm import Session
 from backend.config import PROJECT_ROOT
 from backend.core.phase1_parser import compute_pdf_hash, run_phase1
 from backend.core.phase2_enricher import is_paused, request_pause, run_phase2
+from backend.core.phase3_validator import (
+    apply_corrections as phase3_apply,
+    clear_pause as phase3_clear_pause,
+    dismiss_corrections as phase3_dismiss,
+    is_paused as phase3_is_paused,
+    request_pause as phase3_request_pause,
+    run_phase3,
+)
 from backend.core.verification_engine import run_verification
 from backend.database import get_db
 from backend.models.benchmark import Benchmark
@@ -27,6 +35,10 @@ from backend.schemas.benchmark import (
     BenchmarkResponse,
     BenchmarkStatusResponse,
     EnrichStatusResponse,
+    ValidateStatusResponse,
+    ValidationResultsResponse,
+    ValidationResultItem,
+    ValidationCorrection,
     VerifyStatusResponse,
 )
 from backend.schemas.rule import VerificationReportResponse, VerificationResultsResponse
@@ -813,3 +825,211 @@ def bulk_protect_commands(benchmark_id: int, db: Session = Depends(get_db)):
 
     db.commit()
     return {"message": f"Protected {count} commands", "protected_count": count}
+
+
+# ── Phase 3: Validate & Correct (optional) ──
+
+@router.post("/{benchmark_id}/validate")
+async def start_validation(
+    benchmark_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Start Phase 3 validation — optional LLM review of generated commands."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    if benchmark.phase2_status != "completed":
+        raise HTTPException(status_code=400, detail="Phase 2 must be completed before validation")
+
+    # Allow re-triggering from any state except active processing
+    if benchmark.phase3_status == "processing":
+        benchmark.phase3_status = "pending"
+        db.commit()
+
+    background_tasks.add_task(run_phase3, benchmark.id)
+    return {"message": "Phase 3 validation started", "benchmark_id": benchmark_id}
+
+
+@router.post("/{benchmark_id}/validate/pause")
+def pause_validation(benchmark_id: int, db: Session = Depends(get_db)):
+    """Pause an in-progress Phase 3 validation."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    if benchmark.phase3_status != "processing":
+        raise HTTPException(status_code=400, detail="Phase 3 is not currently running")
+    phase3_request_pause(benchmark_id)
+    return {"message": "Phase 3 pause requested", "benchmark_id": benchmark_id}
+
+
+@router.get("/{benchmark_id}/validate/status", response_model=ValidateStatusResponse)
+def get_validation_status(benchmark_id: int, db: Session = Depends(get_db)):
+    """Get Phase 3 validation progress."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    stats: dict = {}
+    if benchmark.phase3_stats:
+        try:
+            stats = json.loads(benchmark.phase3_stats)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return ValidateStatusResponse(
+        status=benchmark.phase3_status or "not_started",
+        total=stats.get("total", 0),
+        processed=stats.get("processed", 0),
+        validated=stats.get("validated", 0),
+        corrected=stats.get("corrected", 0),
+        flagged=stats.get("flagged", 0),
+    )
+
+
+@router.get("/{benchmark_id}/validate/results", response_model=ValidationResultsResponse)
+def get_validation_results(
+    benchmark_id: int,
+    status_filter: str | None = Query(None, description="Filter by: corrected, flagged, validated"),
+    db: Session = Depends(get_db),
+):
+    """Get Phase 3 validation results with corrections."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    query = (
+        db.query(RuleCommand, Rule)
+        .join(Rule, RuleCommand.rule_id == Rule.id)
+        .filter(
+            Rule.benchmark_id == benchmark_id,
+            RuleCommand.validation_status.isnot(None),
+        )
+    )
+    if status_filter:
+        query = query.filter(RuleCommand.validation_status == status_filter)
+
+    rows = query.order_by(Rule.section_number).all()
+
+    items: list[ValidationResultItem] = []
+    for cmd, rule in rows:
+        corrections: list[ValidationCorrection] = []
+        if cmd.validation_corrections:
+            try:
+                raw = json.loads(cmd.validation_corrections)
+                corrections = [ValidationCorrection(**c) for c in raw]
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        items.append(ValidationResultItem(
+            rule_command_id=cmd.id,
+            rule_id=rule.id,
+            section_number=rule.section_number or "",
+            title=rule.title or "",
+            validation_status=cmd.validation_status,
+            validation_confidence=cmd.validation_confidence,
+            corrections=corrections,
+            notes=cmd.validation_notes,
+            audit_command=cmd.audit_command,
+            expected_output_regex=cmd.expected_output_regex,
+        ))
+
+    return ValidationResultsResponse(
+        data=items,
+        total=len(items),
+    )
+
+
+@router.post("/{benchmark_id}/validate/apply/{rule_command_id}")
+def apply_validation_correction(
+    benchmark_id: int,
+    rule_command_id: int,
+    db: Session = Depends(get_db),
+):
+    """Apply LLM-suggested corrections for a specific rule command."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    try:
+        cmd = phase3_apply(db, rule_command_id)
+        return {"message": "Corrections applied", "rule_command_id": cmd.id, "status": cmd.validation_status}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/{benchmark_id}/validate/dismiss/{rule_command_id}")
+def dismiss_validation_correction(
+    benchmark_id: int,
+    rule_command_id: int,
+    db: Session = Depends(get_db),
+):
+    """Dismiss LLM corrections for a specific rule command (keep original)."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    try:
+        cmd = phase3_dismiss(db, rule_command_id)
+        return {"message": "Corrections dismissed", "rule_command_id": cmd.id, "status": cmd.validation_status}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/{benchmark_id}/validate/bulk-apply")
+def bulk_apply_corrections(benchmark_id: int, db: Session = Depends(get_db)):
+    """Apply all high-confidence corrections at once."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    commands = (
+        db.query(RuleCommand)
+        .join(Rule)
+        .filter(
+            Rule.benchmark_id == benchmark_id,
+            RuleCommand.validation_status == "corrected",
+            RuleCommand.validation_confidence == "high",
+            RuleCommand.validation_corrections.isnot(None),
+        )
+        .all()
+    )
+
+    count = 0
+    for cmd in commands:
+        try:
+            phase3_apply(db, cmd.id)
+            count += 1
+        except (ValueError, Exception):
+            continue
+
+    return {"message": f"Applied corrections to {count} commands", "count": count}
+
+
+@router.post("/{benchmark_id}/validate/bulk-dismiss")
+def bulk_dismiss_corrections(benchmark_id: int, db: Session = Depends(get_db)):
+    """Dismiss all pending corrections."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    now = datetime.now(timezone.utc)
+    commands = (
+        db.query(RuleCommand)
+        .join(Rule)
+        .filter(
+            Rule.benchmark_id == benchmark_id,
+            RuleCommand.validation_status.in_(["corrected", "flagged"]),
+        )
+        .all()
+    )
+
+    count = 0
+    for cmd in commands:
+        cmd.validation_status = "dismissed"
+        cmd.updated_at = now
+        count += 1
+
+    db.commit()
+    return {"message": f"Dismissed corrections for {count} commands", "count": count}
+

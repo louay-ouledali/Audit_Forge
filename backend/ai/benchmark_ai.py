@@ -20,6 +20,8 @@ from backend.ai.prompts import (
     PHASE1_RULES_SYSTEM,
     PHASE2_COMMAND_GENERATION,
     PHASE2_COMMAND_SYSTEM,
+    PHASE3_VALIDATION,
+    PHASE3_VALIDATION_SYSTEM,
 )
 from backend.core.command_templates import match_template
 
@@ -446,6 +448,89 @@ def _fix_compliance_testing_command(cmd: str) -> str:
         )
 
     return cmd
+
+
+async def validate_commands_batch(
+    rules_with_commands: list[dict[str, Any]],
+    platform: str,
+    platform_family: str,
+) -> list[dict[str, Any]]:
+    """Validate a batch of rules + generated commands via LLM (Phase 3).
+
+    Each item in rules_with_commands should have:
+      section_number, title, audit_description_raw,
+      audit_command, expected_output_regex, expected_output_description
+
+    Returns a list of validation results, one per rule.
+    """
+    # Build compact representation for the LLM
+    compact = []
+    for r in rules_with_commands:
+        from backend.core.command_templates import _fix_line_breaks
+        audit_raw = r.get("audit_description_raw") or ""
+        audit = _fix_line_breaks(audit_raw)[:500]
+        compact.append({
+            "section_number": r.get("section_number", ""),
+            "title": r.get("title", ""),
+            "audit_instructions": audit if audit else "See remediation.",
+            "audit_command": r.get("audit_command", ""),
+            "expected_output_regex": r.get("expected_output_regex", ""),
+            "expected_output_description": r.get("expected_output_description", ""),
+        })
+
+    rules_json = json.dumps(compact, indent=1)
+    prompt = PHASE3_VALIDATION.format(
+        platform=platform,
+        platform_family=platform_family,
+        rules_json=rules_json,
+    )
+
+    result = await llm_manager.invoke_json(
+        prompt,
+        system_prompt=PHASE3_VALIDATION_SYSTEM,
+        timeout=300.0,
+        task="phase3_validation",
+    )
+
+    # Normalize response
+    if isinstance(result, dict):
+        for key in ("results", "rules", "data", "validations"):
+            if key in result and isinstance(result[key], list):
+                result = result[key]
+                break
+        else:
+            result = [result]
+    if not isinstance(result, list):
+        return []
+
+    # Normalize each item
+    normalized = []
+    for item in result:
+        if not isinstance(item, dict):
+            continue
+        # Ensure corrections is always a list
+        corr = item.get("corrections", [])
+        if not isinstance(corr, list):
+            corr = []
+        # Validate each correction has required fields
+        clean_corr = []
+        for c in corr:
+            if isinstance(c, dict) and c.get("field") and c.get("new_value") is not None:
+                clean_corr.append({
+                    "field": str(c["field"]),
+                    "old_value": str(c.get("old_value", "")),
+                    "new_value": str(c["new_value"]),
+                    "reason": str(c.get("reason", "")),
+                })
+        normalized.append({
+            "section_number": str(item.get("section_number", "")),
+            "status": str(item.get("status", "validated")),
+            "confidence": str(item.get("confidence", "medium")),
+            "corrections": clean_corr,
+            "notes": str(item.get("notes", "")),
+        })
+
+    return normalized
 
 
 async def regenerate_command(

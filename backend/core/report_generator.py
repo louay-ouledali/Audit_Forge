@@ -6,6 +6,8 @@ import io
 import logging
 from datetime import datetime, timezone
 
+import json
+
 from jinja2 import Environment, FileSystemLoader
 import re as _re
 
@@ -207,6 +209,33 @@ def aggregate_report_data(
     else:
         date_range = "N/A"
 
+    # Per-target compliance summary
+    by_target: list[dict] = []
+    for _tid, tdata in targets_map.items():
+        t_p = sum(s["passed"] for s in tdata["scans"])
+        t_f = sum(s["failed"] for s in tdata["scans"])
+        t_e = sum(s["errors"] for s in tdata["scans"])
+        t_total = t_p + t_f + t_e
+        by_target.append({
+            "hostname": tdata["hostname"],
+            "ip_address": tdata["ip_address"],
+            "compliance": round((t_p / t_total) * 100, 1) if t_total > 0 else 0,
+            "passed": t_p, "failed": t_f, "errors": t_e, "total": t_total,
+        })
+
+    # Category-level stats (group by 1st section number)
+    by_category: dict[str, dict] = {}
+    for f in findings_rows:
+        sec = f.get("section_number", "")
+        cat = sec.split(".")[0] if sec else "Other"
+        if cat not in by_category:
+            by_category[cat] = {"total": 0, "passed": 0, "failed": 0, "label": f"Section {cat}"}
+        by_category[cat]["total"] += 1
+        if f["status"] == "PASS":
+            by_category[cat]["passed"] += 1
+        elif f["status"] == "FAIL":
+            by_category[cat]["failed"] += 1
+
     return {
         "title": "",
         "client_name": client_name,
@@ -234,6 +263,8 @@ def aggregate_report_data(
             }
             for s in scans
         ],
+        "by_target": by_target,
+        "by_category": by_category,
         "ai_summary": None,
     }
 
@@ -245,12 +276,36 @@ def aggregate_report_data(
 def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
     """Render an HTML template with Jinja2 and convert to PDF via WeasyPrint."""
     from weasyprint import HTML  # imported here to isolate heavy dep
+    from backend.core.chart_helpers import generate_donut_svg, generate_hbar_svg
 
     env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
     template = env.get_template("report.html.j2")
 
     if not include_passed:
         data = {**data, "findings": [f for f in data["findings"] if f["status"] != "PASS"]}
+
+    # Generate SVG charts for the PDF
+    summary = data["summary"]
+    data["chart_donut"] = generate_donut_svg([
+        {"label": "Passed", "value": summary["passed"], "color": "#22c55e"},
+        {"label": "Failed", "value": summary["failed"], "color": "#ef4444"},
+        {"label": "Errors", "value": summary["errors"], "color": "#8b5cf6"},
+    ], title="Results Distribution")
+
+    sev_items = []
+    for sev in ("critical", "high", "medium", "low"):
+        info = summary["by_severity"].get(sev, {"total": 0, "passed": 0})
+        comp = round((info["passed"] / info["total"]) * 100, 1) if info["total"] > 0 else 0
+        colors = {"critical": "#dc2626", "high": "#ea580c", "medium": "#d97706", "low": "#2563eb"}
+        sev_items.append({"label": sev.capitalize(), "value": comp, "color": colors[sev]})
+    data["chart_severity"] = generate_hbar_svg(sev_items, title="Compliance by Severity")
+
+    target_items = []
+    for t in data.get("by_target", []):
+        c = t["compliance"]
+        color = "#22c55e" if c >= 80 else "#f59e0b" if c >= 50 else "#ef4444"
+        target_items.append({"label": t["hostname"] or t["ip_address"], "value": c, "color": color})
+    data["chart_targets"] = generate_hbar_svg(target_items, title="Compliance by Target") if len(target_items) > 1 else ""
 
     html_string = template.render(**data, include_passed=include_passed)
 
@@ -433,176 +488,70 @@ def generate_csv_report(data: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def generate_html_report(data: dict, include_passed: bool) -> str:
-    """Self-contained interactive HTML report with embedded CSS/JS."""
+    """Self-contained interactive HTML dashboard — pure inline SVG charts, zero external deps."""
+    from backend.core.chart_helpers import (
+        generate_donut_svg,
+        generate_hbar_svg,
+        generate_stacked_hbar_svg,
+    )
+
     findings = data["findings"]
     if not include_passed:
         findings = [f for f in findings if f["status"] != "PASS"]
 
     summary = data["summary"]
-    severity_order = ["critical", "high", "medium", "low"]
 
-    # Build findings table rows
-    finding_rows = ""
-    for idx, f in enumerate(findings):
-        sev_class = _esc(f["severity"])
-        status_class = _esc(f["status"].lower())
-        finding_rows += f"""
-        <tr class="finding-row" data-severity="{_esc(f['severity'])}" data-status="{_esc(f['status'])}">
-            <td>{f['scan_id']}</td>
-            <td>{_esc(f['target_hostname'])}</td>
-            <td>{_esc(f['benchmark_name'])}</td>
-            <td>{_esc(f['section_number'])}</td>
-            <td>{_esc(f['rule_title'])}</td>
-            <td><span class="badge sev-{sev_class}">{_esc(f['severity'].upper())}</span></td>
-            <td><span class="badge st-{status_class}">{_esc(f['status'])}</span></td>
-            <td><button class="toggle-btn" onclick="toggleDetail('detail-{idx}')">&#9660;</button></td>
-        </tr>
-        <tr id="detail-{idx}" class="detail-row" style="display:none">
-            <td colspan="8">
-                <div class="detail-content">
-                    <p><strong>Description:</strong> {_esc(f.get('description', ''))}</p>
-                    <p><strong>Actual Output:</strong> <code>{_esc(f['actual_output'])}</code></p>
-                    <p><strong>Expected Output:</strong> <code>{_esc(f['expected_output'])}</code></p>
-                    <p><strong>Remediation:</strong> {_esc(f.get('remediation', ''))}</p>
-                    <p><strong>Auditor Notes:</strong> {_esc(f.get('auditor_notes', ''))}</p>
-                </div>
-            </td>
-        </tr>"""
+    # ── SVG Charts (generated server-side, embedded inline) ──
+    chart_donut = generate_donut_svg([
+        {"label": "Passed", "value": summary["passed"], "color": "#22c55e"},
+        {"label": "Failed", "value": summary["failed"], "color": "#ef4444"},
+        {"label": "Errors", "value": summary["errors"], "color": "#8b5cf6"},
+    ], title="Results Distribution")
 
-    # Severity summary rows
-    sev_rows = ""
-    for sev in severity_order:
-        info = summary["by_severity"].get(sev, {"total": 0, "passed": 0, "failed": 0})
-        comp = round((info["passed"] / info["total"]) * 100, 1) if info["total"] > 0 else 0.0
-        sev_rows += f"<tr><td class='sev-{sev}'>{sev.capitalize()}</td><td>{info['total']}</td><td>{info['passed']}</td><td>{info['failed']}</td><td>{comp}%</td></tr>\n"
+    sev_items = []
+    for sev in ("critical", "high", "medium", "low"):
+        info = summary["by_severity"].get(sev, {"total": 0, "passed": 0})
+        comp = round((info["passed"] / info["total"]) * 100, 1) if info["total"] > 0 else 0
+        colors = {"critical": "#dc2626", "high": "#ea580c", "medium": "#d97706", "low": "#2563eb"}
+        sev_items.append({"label": sev.capitalize(), "value": comp, "color": colors[sev]})
+    chart_severity = generate_hbar_svg(sev_items, title="Compliance by Severity")
 
-    ai_section = ""
-    if data.get("ai_summary"):
-        ai_section = f"""<div class="section"><h2>AI Executive Summary</h2><p>{_esc(data['ai_summary'])}</p></div>"""
+    target_items = []
+    for t in data.get("by_target", []):
+        c = t["compliance"]
+        color = "#22c55e" if c >= 80 else "#f59e0b" if c >= 50 else "#ef4444"
+        target_items.append({"label": t["hostname"] or t["ip_address"], "value": c, "color": color})
+    chart_targets = generate_hbar_svg(target_items, title="Compliance by Target") if len(target_items) > 1 else ""
 
-    title = data.get("title") or f"Audit Report — {data.get('mission_name', '')}"
+    cat_items = []
+    by_cat = data.get("by_category", {})
+    for cat_name, cat_info in by_cat.items():
+        cat_items.append({"label": cat_name, "passed": cat_info.get("passed", 0), "failed": cat_info.get("failed", 0)})
+    chart_categories = generate_stacked_hbar_svg(cat_items, title="Findings by Category") if cat_items else ""
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{_esc(title)}</title>
-<style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-body{{font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#222;background:#f5f7fa;padding:20px}}
-.container{{max-width:1200px;margin:0 auto;background:#fff;padding:30px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1)}}
-h1{{font-size:1.6rem;margin-bottom:4px;color:#1a237e}}
-h2{{font-size:1.2rem;margin:20px 0 10px;color:#283593}}
-.meta{{color:#666;font-size:.9rem;margin-bottom:16px}}
-.section{{margin-bottom:24px}}
-.stats{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}}
-.stat-card{{background:#f0f4ff;padding:14px 20px;border-radius:6px;min-width:140px;text-align:center}}
-.stat-card .val{{font-size:1.6rem;font-weight:700;color:#1a237e}}
-.stat-card .lbl{{font-size:.8rem;color:#555}}
-table{{width:100%;border-collapse:collapse;font-size:.85rem;margin-top:8px}}
-th,td{{padding:8px 10px;border:1px solid #ddd;text-align:left}}
-th{{background:#e8eaf6;position:sticky;top:0}}
-.badge{{padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:600;color:#fff}}
-.sev-critical{{background:#d32f2f}}.sev-high{{background:#e65100}}.sev-medium{{background:#f9a825;color:#333}}.sev-low{{background:#1565c0}}
-.st-pass{{background:#2e7d32}}.st-fail{{background:#c62828}}.st-error{{background:#6a1b9a}}.st-manual_review{{background:#555}}
-.toggle-btn{{cursor:pointer;background:none;border:1px solid #aaa;border-radius:4px;padding:2px 6px;font-size:.8rem}}
-.detail-content{{padding:10px;background:#fafafa;border-radius:4px}}
-.detail-content p{{margin:4px 0}}
-code{{background:#eee;padding:2px 4px;border-radius:3px;font-size:.82rem}}
-.filters{{margin:10px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap}}
-.filters select,.filters button{{padding:4px 10px;border-radius:4px;border:1px solid #aaa;font-size:.85rem}}
-</style>
-</head>
-<body>
-<div class="container">
-    <h1>{_esc(title)}</h1>
-    <p class="meta">{_esc(data.get('client_name',''))} &mdash; {_esc(data.get('date_range',''))} &mdash; Generated {_esc(data.get('generated_at',''))}</p>
+    # ── Findings JSON for JS filtering/sorting engine ──
+    # Escape </script> to prevent XSS when embedding in <script> tag
+    findings_json = json.dumps(findings, default=str).replace("</", "<\\/")
 
-    {ai_section}
+    env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
+    template = env.get_template("report_dashboard.html.j2")
 
-    <div class="section">
-        <h2>Compliance Overview</h2>
-        <div class="stats">
-            <div class="stat-card"><div class="val">{summary['overall_compliance']}%</div><div class="lbl">Overall Compliance</div></div>
-            <div class="stat-card"><div class="val">{summary['total_rules']}</div><div class="lbl">Total Rules</div></div>
-            <div class="stat-card"><div class="val">{summary['passed']}</div><div class="lbl">Passed</div></div>
-            <div class="stat-card"><div class="val">{summary['failed']}</div><div class="lbl">Failed</div></div>
-            <div class="stat-card"><div class="val">{summary['errors']}</div><div class="lbl">Errors</div></div>
-        </div>
-    </div>
-
-    <div class="section">
-        <h2>Compliance by Severity</h2>
-        <table><thead><tr><th>Severity</th><th>Total</th><th>Passed</th><th>Failed</th><th>Compliance</th></tr></thead>
-        <tbody>{sev_rows}</tbody></table>
-    </div>
-
-    <div class="section">
-        <h2>Findings</h2>
-        <div class="filters">
-            <label>Severity: <select id="fltSev"><option value="">All</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
-            <label>Status: <select id="fltSt"><option value="">All</option><option value="PASS">Pass</option><option value="FAIL">Fail</option><option value="ERROR">Error</option></select></label>
-            <button onclick="applyFilters()">Apply</button>
-            <button onclick="expandAll()">Expand All</button>
-            <button onclick="collapseAll()">Collapse All</button>
-        </div>
-        <table>
-        <thead><tr><th onclick="sortTable(0)">Scan</th><th onclick="sortTable(1)">Target</th><th onclick="sortTable(2)">Benchmark</th><th onclick="sortTable(3)">Section</th><th onclick="sortTable(4)">Rule</th><th onclick="sortTable(5)">Severity</th><th onclick="sortTable(6)">Status</th><th></th></tr></thead>
-        <tbody id="findingsBody">{finding_rows}</tbody>
-        </table>
-    </div>
-</div>
-<script>
-function toggleDetail(id){{var el=document.getElementById(id);el.style.display=el.style.display==='none'?'table-row':'none'}}
-function expandAll(){{document.querySelectorAll('.detail-row').forEach(r=>r.style.display='table-row')}}
-function collapseAll(){{document.querySelectorAll('.detail-row').forEach(r=>r.style.display='none')}}
-function applyFilters(){{
-    var sev=document.getElementById('fltSev').value;
-    var st=document.getElementById('fltSt').value;
-    document.querySelectorAll('.finding-row').forEach(r=>{{
-        var show=true;
-        if(sev&&r.dataset.severity!==sev)show=false;
-        if(st&&r.dataset.status!==st)show=false;
-        r.style.display=show?'':'none';
-        var next=r.nextElementSibling;
-        if(next&&next.classList.contains('detail-row'))next.style.display='none';
-    }});
-}}
-var sortDir={{}};
-function sortTable(col){{
-    var body=document.getElementById('findingsBody');
-    var rows=Array.from(body.querySelectorAll('.finding-row'));
-    sortDir[col]=!sortDir[col];
-    rows.sort(function(a,b){{
-        var at=a.children[col].textContent.trim();
-        var bt=b.children[col].textContent.trim();
-        return sortDir[col]?at.localeCompare(bt):bt.localeCompare(at);
-    }});
-    rows.forEach(function(r){{
-        var detail=r.nextElementSibling;
-        body.appendChild(r);
-        if(detail&&detail.classList.contains('detail-row'))body.appendChild(detail);
-    }});
-}}
-</script>
-</body>
-</html>"""
-    return html
-
-
-def _esc(text: str | None) -> str:
-    """HTML escaping for safe output in element content and attribute values."""
-    if not text:
-        return ""
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#39;")
+    return template.render(
+        title=data.get("title") or f"Audit Report — {data.get('mission_name', '')}",
+        client_name=data.get("client_name", ""),
+        date_range=data.get("date_range", ""),
+        generated_at=data.get("generated_at", ""),
+        ai_summary=data.get("ai_summary", ""),
+        summary=summary,
+        targets=data.get("targets", []),
+        findings=findings,
+        chart_donut=chart_donut,
+        chart_severity=chart_severity,
+        chart_targets=chart_targets,
+        chart_categories=chart_categories,
+        findings_json=findings_json,
     )
+
 
 
 # ---------------------------------------------------------------------------

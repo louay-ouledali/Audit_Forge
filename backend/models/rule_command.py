@@ -38,6 +38,13 @@ class RuleCommand(Base):
     last_regenerated_at = Column(DateTime)
     previous_commands = Column(Text)
 
+    # Phase 3: LLM validation results (optional)
+    validation_status = Column(String)  # null=not validated, validated/corrected/flagged
+    validation_confidence = Column(String)  # null, high/medium/low
+    validation_corrections = Column(Text)  # JSON array of {field, old_value, new_value, reason}
+    validation_notes = Column(Text)
+    validated_at = Column(DateTime)
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime)
 

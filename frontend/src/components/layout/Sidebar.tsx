@@ -30,7 +30,7 @@ export default function Sidebar() {
     <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-gray-900 text-white">
       <div className="flex h-16 items-center gap-2 border-b border-gray-800 px-6">
         <Shield className="h-7 w-7 text-blue-400" />
-        <span className="text-xl font-bold tracking-tight">AditForge</span>
+        <span className="text-xl font-bold tracking-tight">AuditForge</span>
       </div>
 
       <nav className="mt-4 flex flex-1 flex-col gap-1 px-3">
@@ -60,7 +60,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-gray-800 p-4 text-xs text-gray-500">
-        AditForge v0.1.0
+        AuditForge v0.1.0
       </div>
     </aside>
   );

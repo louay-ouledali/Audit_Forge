@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveryProgress } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveryProgress } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -178,6 +178,46 @@ export async function overrideVerification(benchmarkId: number): Promise<void> {
 
 export async function bulkRegenerateCommands(benchmarkId: number): Promise<{ message: string; count: number }> {
   const { data } = await api.post(`/benchmarks/${benchmarkId}/commands/bulk-regenerate`);
+  return data;
+}
+
+// Phase 3: Validate & Correct (optional)
+export async function startValidation(benchmarkId: number): Promise<void> {
+  await api.post(`/benchmarks/${benchmarkId}/validate`);
+}
+
+export async function pauseValidation(benchmarkId: number): Promise<void> {
+  await api.post(`/benchmarks/${benchmarkId}/validate/pause`);
+}
+
+export async function getValidationStatus(benchmarkId: number): Promise<ValidateStatus> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/validate/status`);
+  return data;
+}
+
+export async function getValidationResults(
+  benchmarkId: number,
+  params?: { status_filter?: string },
+): Promise<{ data: ValidationResultItem[]; total: number }> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/validate/results`, { params });
+  return data;
+}
+
+export async function applyCorrection(benchmarkId: number, ruleCommandId: number): Promise<void> {
+  await api.post(`/benchmarks/${benchmarkId}/validate/apply/${ruleCommandId}`);
+}
+
+export async function dismissCorrection(benchmarkId: number, ruleCommandId: number): Promise<void> {
+  await api.post(`/benchmarks/${benchmarkId}/validate/dismiss/${ruleCommandId}`);
+}
+
+export async function bulkApplyCorrections(benchmarkId: number): Promise<{ message: string; count: number }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/validate/bulk-apply`);
+  return data;
+}
+
+export async function bulkDismissCorrections(benchmarkId: number): Promise<{ message: string; count: number }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/validate/bulk-dismiss`);
   return data;
 }
 

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Play,
   Square,
@@ -12,6 +13,7 @@ import {
   Download,
   Usb,
   Plus,
+  Trash2,
 } from 'lucide-react';
 import type { Benchmark, Target, Mission, Client, ScanStatus, ImportResultsResponse, ScriptPreviewResponse, DiscoveredHost } from '@/types';
 import * as api from '@/services/api';
@@ -88,15 +90,23 @@ export default function Scans() {
   const [targetNotes, setTargetNotes] = useState('');
   const [creatingTarget, setCreatingTarget] = useState(false);
 
+  // Credential edit state for existing targets
+  const [showCredentialEdit, setShowCredentialEdit] = useState(false);
+  const [editCredUsername, setEditCredUsername] = useState('');
+  const [editCredPassword, setEditCredPassword] = useState('');
+  const [savingCredentials, setSavingCredentials] = useState(false);
+
   // Network discovery state
   const [discoverySubnet, setDiscoverySubnet] = useState('');
   const [discovering, setDiscovering] = useState(false);
   const [discoveredHosts, setDiscoveredHosts] = useState<DiscoveredHost[]>([]);
   const [discoveryError, setDiscoveryError] = useState('');
   const [discoveryDone, setDiscoveryDone] = useState(false);
+  const location = useLocation();
 
-  // Load initial data
+  // Load initial data (refetch when page becomes visible via KeepAlive)
   useEffect(() => {
+    if (location.pathname !== '/scans') return;
     async function load() {
       try {
         const [c, b] = await Promise.all([api.getClients(), api.getBenchmarks()]);
@@ -109,7 +119,7 @@ export default function Scans() {
       }
     }
     load();
-  }, []);
+  }, [location.pathname]);
 
   // Load missions when client changes
   useEffect(() => {
@@ -306,6 +316,10 @@ export default function Scans() {
       const updatedTargets = await api.getTargets(selectedMissionId as number);
       setTargets(updatedTargets);
       setSelectedTargetId(created.id);
+      // Mark discovered host as added (if applicable)
+      if (targetIp) {
+        setDiscoveredHosts(prev => prev.map(h => h.ip === targetIp.trim() ? { ...h, _added: true } as any : h));
+      }
       setShowTargetForm(false);
       setTargetHostname('');
       setTargetIp('');
@@ -319,6 +333,31 @@ export default function Scans() {
       setError('Failed to create target');
     } finally {
       setCreatingTarget(false);
+    }
+  }
+
+  // Save credentials on an existing target
+  async function handleSaveCredentials() {
+    if (!selectedTargetId || !editCredPassword) return;
+    setSavingCredentials(true);
+    setError('');
+    try {
+      await api.updateTarget(selectedTargetId as number, {
+        ssh_username: editCredUsername.trim() || undefined,
+        ssh_password: editCredPassword,
+      } as any);
+      // Refresh targets
+      if (selectedMissionId) {
+        const updatedTargets = await api.getTargets(selectedMissionId as number);
+        setTargets(updatedTargets);
+      }
+      setShowCredentialEdit(false);
+      setEditCredUsername('');
+      setEditCredPassword('');
+    } catch {
+      setError('Failed to update target credentials');
+    } finally {
+      setSavingCredentials(false);
     }
   }
 
@@ -340,32 +379,30 @@ export default function Scans() {
     }
   }
 
-  async function handleAddDiscoveredTarget(host: DiscoveredHost) {
+  function handleAddDiscoveredTarget(host: DiscoveredHost) {
     if (!selectedMissionId) {
       setError('Please select a Client and Mission first to add discovered targets');
       return;
     }
-    setCreatingTarget(true);
-    setError('');
-    try {
-      const created = await api.createTarget({
-        mission_id: selectedMissionId as number,
-        hostname: host.hostname || undefined,
-        ip_address: host.ip,
-        target_type: host.os_guess === 'unknown' ? 'windows' : host.os_guess,
-        connection_method: host.connection_methods[0] || undefined,
-        notes: `Discovered via network scan. Open ports: ${host.open_ports.map(p => `${p.port}/${p.service}`).join(', ')}`,
-      } as Partial<Target>);
-      const updatedTargets = await api.getTargets(selectedMissionId as number);
-      setTargets(updatedTargets);
-      setSelectedTargetId(created.id);
-      // Mark as added in the discovered list
-      setDiscoveredHosts(prev => prev.map(h => h.ip === host.ip ? { ...h, _added: true } as any : h));
-    } catch {
-      setError('Failed to add target');
-    } finally {
-      setCreatingTarget(false);
-    }
+    // Pre-fill the target form with discovered host data so user can add credentials
+    setTargetHostname(host.hostname || '');
+    setTargetIp(host.ip);
+    setTargetType(host.os_guess === 'unknown' ? 'windows' : host.os_guess);
+    const connMethod = host.connection_methods[0] || '';
+    setTargetConnectionMethod(connMethod || (host.os_guess === 'windows' ? 'winrm' : 'ssh'));
+    setTargetPort(
+      host.open_ports.find(p => p.service === 'WinRM-HTTPS')?.port?.toString() ||
+      (connMethod === 'winrm' ? '5986' :
+      connMethod === 'ssh' ? '22' :
+      host.open_ports.find(p => p.service === 'WinRM-HTTP')?.port?.toString() ||
+      host.open_ports.find(p => p.service === 'SSH')?.port?.toString() || '')
+    );
+    setTargetSshUsername('');
+    setTargetSshPassword('');
+    setTargetNotes(`Discovered via network scan. Open ports: ${host.open_ports.map(p => `${p.port}/${p.service}`).join(', ')}`);
+    setShowTargetForm(true);
+    // Scroll to the target form
+    setTimeout(() => document.getElementById('target-form')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
   }
 
   const isFinished = scanStatus && ['completed', 'failed', 'cancelled'].includes(scanStatus.status);
@@ -538,7 +575,7 @@ export default function Scans() {
                                     disabled={!selectedMissionId || creatingTarget}
                                     className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
                                   >
-                                    <Plus className="h-3 w-3" /> Add as Target
+                                    <Plus className="h-3 w-3" /> Add &amp; Configure
                                   </button>
                                 )}
                               </td>
@@ -607,19 +644,39 @@ export default function Scans() {
               {/* Target */}
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Target</label>
-                <select
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                  value={selectedTargetId}
-                  onChange={(e) => setSelectedTargetId(e.target.value ? Number(e.target.value) : '')}
-                  disabled={!selectedMissionId || (!!activeScanId && !isFinished)}
-                >
-                  <option value="">Select target...</option>
-                  {targets.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.hostname || t.ip_address} ({t.target_type})
-                    </option>
-                  ))}
-                </select>
+                <div className="flex gap-2">
+                  <select
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    value={selectedTargetId}
+                    onChange={(e) => { setSelectedTargetId(e.target.value ? Number(e.target.value) : ''); setShowCredentialEdit(false); }}
+                    disabled={!selectedMissionId || (!!activeScanId && !isFinished)}
+                  >
+                    <option value="">Select target...</option>
+                    {targets.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.hostname || t.ip_address} ({t.target_type})
+                      </option>
+                    ))}
+                  </select>
+                  {selectedTargetId && !(!!activeScanId && !isFinished) && (
+                    <button
+                      onClick={async () => {
+                        const t = targets.find(x => x.id === selectedTargetId);
+                        if (!confirm(`Delete target "${t?.hostname || t?.ip_address}"? This will also delete all its scans and findings.`)) return;
+                        try {
+                          await api.deleteTarget(selectedTargetId as number);
+                          setTargets(prev => prev.filter(x => x.id !== selectedTargetId));
+                          setSelectedTargetId('');
+                          setShowCredentialEdit(false);
+                        } catch { setError('Failed to delete target'); }
+                      }}
+                      className="flex-shrink-0 rounded-lg border border-red-200 bg-red-50 p-2 text-red-600 hover:bg-red-100 hover:text-red-700"
+                      title="Delete this target"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
                 {selectedMissionId && !showTargetForm && (
                   <button
                     type="button"
@@ -699,8 +756,13 @@ export default function Scans() {
 
             {/* Inline Target Creation Form */}
             {showTargetForm && (
-              <form onSubmit={handleCreateTarget} className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
+              <form id="target-form" onSubmit={handleCreateTarget} className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
                 <h4 className="text-sm font-semibold text-gray-900">Quick Create Target</h4>
+                {targetConnectionMethod === 'winrm' && targetPort === '5985' && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                    <strong>Tip:</strong> Port 5985 uses unencrypted HTTP which is blocked on public network profiles. Switch to port <button type="button" className="font-bold underline" onClick={() => setTargetPort('5986')}>5986 (HTTPS)</button> for encrypted connections.
+                  </div>
+                )}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-700">Hostname</label>
@@ -796,7 +858,82 @@ export default function Scans() {
               </form>
             )}
 
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex items-center gap-3 flex-wrap">
+              {/* Credential warning */}
+              {selectedTargetId && !showCredentialEdit && (() => {
+                const t = targets.find(x => x.id === selectedTargetId);
+                if (t && !t.ssh_username) {
+                  return (
+                    <div className="w-full mb-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                      <span>
+                        <strong>No credentials configured</strong> for this target.
+                        The scan requires a username and password to connect.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const tgt = targets.find(x => x.id === selectedTargetId);
+                          setEditCredUsername(tgt?.ssh_username || (tgt?.target_type === 'windows' ? 'Administrator' : 'root'));
+                          setEditCredPassword('');
+                          setShowCredentialEdit(true);
+                        }}
+                        className="ml-auto text-xs font-medium bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-lg px-3 py-1.5 flex-shrink-0"
+                      >
+                        Set Credentials
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Inline credential editor */}
+              {showCredentialEdit && (
+                <div className="w-full mb-2 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                  <h4 className="text-sm font-semibold text-gray-900">Set Target Credentials</h4>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">Username</label>
+                      <input
+                        value={editCredUsername}
+                        onChange={(e) => setEditCredUsername(e.target.value)}
+                        placeholder="Administrator"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-gray-700">Password *</label>
+                      <input
+                        type="password"
+                        value={editCredPassword}
+                        onChange={(e) => setEditCredPassword(e.target.value)}
+                        placeholder="Required for scan"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                      />
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveCredentials}
+                        disabled={!editCredPassword || savingCredentials}
+                        className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {savingCredentials ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setShowCredentialEdit(false); setEditCredUsername(''); setEditCredPassword(''); }}
+                        className="rounded-lg bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {!activeScanId || isFinished ? (
                 <button
                   onClick={handleLaunch}
@@ -847,6 +984,14 @@ export default function Scans() {
                   </span>
                 )}
               </div>
+
+              {/* Error message for failed scans */}
+              {scanStatus.status === 'failed' && scanStatus.error_message && (
+                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  <p className="font-medium">Scan failed</p>
+                  <p className="mt-1">{scanStatus.error_message}</p>
+                </div>
+              )}
 
               {/* Progress bar */}
               {scanStatus.total > 0 && (
@@ -1149,6 +1294,11 @@ export default function Scans() {
             {showTargetForm && scanMode === 'script_export' && (
               <form onSubmit={handleCreateTarget} className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
                 <h4 className="text-sm font-semibold text-gray-900">Quick Create Target</h4>
+                {targetConnectionMethod === 'winrm' && targetPort === '5985' && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                    <strong>Tip:</strong> Port 5985 uses unencrypted HTTP which is blocked on public network profiles. Switch to port <button type="button" className="font-bold underline" onClick={() => setTargetPort('5986')}>5986 (HTTPS)</button> for encrypted connections.
+                  </div>
+                )}
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-gray-700">Hostname</label>
@@ -1188,7 +1338,7 @@ export default function Scans() {
                     <label className="mb-1 block text-xs font-medium text-gray-700">Connection</label>
                     <select
                       value={targetConnectionMethod}
-                      onChange={(e) => setTargetConnectionMethod(e.target.value)}
+                      onChange={(e) => { setTargetConnectionMethod(e.target.value); setTargetPort(e.target.value === 'winrm' ? '5986' : '22'); }}
                       className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"
                     >
                       <option value="ssh">SSH</option>
@@ -1219,7 +1369,7 @@ export default function Scans() {
                     <input
                       value={targetPort}
                       onChange={(e) => setTargetPort(e.target.value)}
-                      placeholder={targetConnectionMethod === 'winrm' ? '5985' : '22'}
+                      placeholder={targetConnectionMethod === 'winrm' ? '5986' : '22'}
                       className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
                     />
                   </div>

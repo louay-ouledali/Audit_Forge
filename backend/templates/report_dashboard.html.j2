@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ title or "AuditForge Report" }}</title>
+<style>
+/* ── Reset & Base ── */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f0f4f8; color: #1e293b; line-height: 1.5; }
+
+/* ── Header ── */
+.report-header {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #1e40af 100%);
+  color: #fff; padding: 32px 40px; position: relative; overflow: hidden;
+}
+.report-header::after {
+  content:''; position:absolute; top:0; right:0; width:400px; height:100%;
+  background: radial-gradient(circle at 80% 50%, rgba(59,130,246,0.12) 0%, transparent 70%);
+}
+.report-header .brand { font-size: 0.7rem; letter-spacing: 4px; text-transform: uppercase; opacity: 0.55; margin-bottom: 6px; }
+.report-header h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; position: relative; z-index: 1; }
+.report-header .meta { font-size: 0.85rem; opacity: 0.8; display: flex; gap: 18px; flex-wrap: wrap; position: relative; z-index: 1; }
+
+/* ── Container ── */
+.container { max-width: 1400px; margin: 0 auto; padding: 24px 32px 48px; }
+
+/* ── Section Titles ── */
+.section-title {
+  font-size: 1.1rem; font-weight: 700; color: #1e293b; margin: 32px 0 16px;
+  padding-bottom: 8px; border-bottom: 2px solid #3b82f6;
+  display: flex; align-items: center; gap: 8px;
+}
+.badge-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 22px; border-radius: 11px;
+  background: #3b82f6; color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0 8px;
+}
+
+/* ── Stats Grid ── */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.stat-card {
+  background: #fff; border-radius: 12px; padding: 20px; text-align: center;
+  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+.stat-card .value { font-size: 2rem; font-weight: 800; line-height: 1.1; }
+.stat-card .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-top: 4px; }
+.stat-card.compliance .value { color: #1e40af; }
+.stat-card.pass .value { color: #16a34a; }
+.stat-card.fail .value { color: #dc2626; }
+.stat-card.error .value { color: #7c3aed; }
+
+/* ── Compliance Bar ── */
+.compliance-bar { height: 6px; background: #fee2e2; border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.compliance-bar .fill { height: 100%; border-radius: 3px; }
+.fill-good { background: linear-gradient(90deg, #22c55e, #16a34a); }
+.fill-warn { background: linear-gradient(90deg, #f59e0b, #d97706); }
+.fill-bad  { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+/* ── Charts Grid ── */
+.charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.chart-card {
+  background: #fff; border-radius: 12px; padding: 20px;
+  border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  display: flex; flex-direction: column; align-items: center;
+}
+.chart-card h3 {
+  font-size: 0.82rem; font-weight: 600; color: #475569; margin-bottom: 12px;
+  text-transform: uppercase; letter-spacing: 0.3px; align-self: flex-start;
+}
+.chart-card svg { max-width: 100%; height: auto; }
+
+/* ── AI Summary ── */
+.ai-summary {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe); border-left: 4px solid #1e40af;
+  padding: 20px 24px; border-radius: 0 12px 12px 0; margin-bottom: 24px;
+  white-space: pre-wrap; font-size: 0.9rem; line-height: 1.7; color: #334155;
+}
+
+/* ── Filter Toolbar ── */
+.filters-bar {
+  background: #fff; border-radius: 12px; padding: 14px 18px; border: 1px solid #e2e8f0;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04); position: sticky; top: 0; z-index: 10;
+}
+.filters-bar input[type="text"] {
+  flex: 1; min-width: 180px; padding: 7px 12px; border-radius: 8px; border: 1px solid #cbd5e1;
+  font-size: 0.82rem; outline: none; transition: border-color 0.15s;
+}
+.filters-bar input[type="text"]:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+.filters-bar select {
+  padding: 7px 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 0.8rem;
+  background: #fff; cursor: pointer; outline: none; max-width: 160px;
+}
+.filters-bar select:focus { border-color: #3b82f6; }
+.filter-btn {
+  padding: 7px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff;
+  font-size: 0.8rem; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.filter-btn:hover { background: #f1f5f9; }
+.result-count { font-size: 0.78rem; color: #64748b; white-space: nowrap; margin-left: auto; }
+
+/* ── Data Tables ── */
+.data-table {
+  width: 100%; border-collapse: collapse; font-size: 0.82rem;
+  background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;
+  margin-bottom: 24px;
+}
+.data-table th {
+  background: #f1f5f9; padding: 10px 14px; text-align: left; font-weight: 600;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.3px; color: #475569;
+}
+.data-table td { padding: 10px 14px; border-top: 1px solid #f1f5f9; }
+.data-table tr:hover td { background: #f8fafc; }
+
+/* ── Findings Table ── */
+.findings-table {
+  width: 100%; border-collapse: collapse; font-size: 0.82rem;
+  background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;
+}
+.findings-table th {
+  background: #f8fafc; padding: 10px 14px; text-align: left; font-weight: 600;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.3px; color: #475569;
+  border-bottom: 2px solid #e2e8f0; cursor: pointer; user-select: none;
+}
+.findings-table th:hover { background: #e2e8f0; }
+.findings-table th .sort-icon { font-size: 0.6rem; margin-left: 4px; opacity: 0.4; }
+.findings-table td { padding: 8px 14px; border-top: 1px solid #f1f5f9; vertical-align: middle; }
+.findings-table tbody tr:hover td { background: #eff6ff; }
+.findings-table tbody tr.detail-row td { background: #f8fafc; padding: 0; }
+.findings-table tbody tr.detail-row:hover td { background: #f8fafc; }
+
+/* ── Group Headers ── */
+.group-header { background: linear-gradient(90deg, #f1f5f9, #fff) !important; cursor: pointer; user-select: none; }
+.group-header td {
+  padding: 12px 14px !important; font-weight: 700; font-size: 0.88rem; color: #1e293b;
+  border-top: 2px solid #3b82f6 !important;
+}
+.group-header .group-count { font-size: 0.72rem; font-weight: 500; color: #64748b; margin-left: 8px; }
+.group-header .toggle { float: right; font-size: 0.75rem; }
+
+/* ── Badges ── */
+.badge { display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 0.68rem; font-weight: 700; color: #fff; letter-spacing: 0.3px; }
+.sev-critical { background: #dc2626; } .sev-high { background: #ea580c; }
+.sev-medium { background: #d97706; }  .sev-low { background: #2563eb; }
+.sev-informational { background: #6b7280; }
+.st-pass { background: #16a34a; } .st-fail { background: #dc2626; }
+.st-error { background: #7c3aed; } .st-manual_review { background: #64748b; }
+
+/* ── Detail Content ── */
+.detail-content {
+  padding: 16px 20px; border-left: 3px solid #3b82f6; margin: 8px 14px;
+  background: #fff; border-radius: 0 8px 8px 0;
+}
+.detail-content p { margin: 4px 0; font-size: 0.82rem; }
+.detail-content .field-label { font-weight: 600; color: #475569; display: inline-block; min-width: 100px; }
+.detail-content code {
+  background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.78rem;
+  font-family: 'Cascadia Code', 'Consolas', monospace; word-break: break-all;
+}
+.toggle-btn {
+  cursor: pointer; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px;
+  padding: 3px 8px; font-size: 0.7rem; transition: all 0.15s; line-height: 1;
+}
+.toggle-btn:hover { background: #dbeafe; border-color: #93c5fd; }
+.toggle-btn.open { background: #dbeafe; }
+
+/* ── Footer ── */
+.report-footer {
+  text-align: center; padding: 24px; font-size: 0.75rem; color: #94a3b8;
+  border-top: 1px solid #e2e8f0; margin-top: 40px;
+}
+
+/* ── Print ── */
+@media print {
+  body { background: #fff; }
+  .filters-bar, .toggle-btn, .filter-btn { display: none !important; }
+  .container { padding: 0; max-width: 100%; }
+  .chart-card { break-inside: avoid; }
+  .detail-row { display: table-row !important; }
+  .report-header { padding: 16px 20px; }
+}
+@media (max-width: 768px) {
+  .container { padding: 16px; }
+  .report-header { padding: 20px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .charts-grid { grid-template-columns: 1fr; }
+  .filters-bar { gap: 8px; }
+  .filters-bar select { max-width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ Header ═══ -->
+<div class="report-header">
+  <div class="brand">AuditForge</div>
+  <h1>{{ title or "Configuration Audit Report" }}</h1>
+  <div class="meta">
+    {% if client_name %}<span>{{ client_name }}</span>{% endif %}
+    {% if date_range %}<span>{{ date_range }}</span>{% endif %}
+    <span>Generated {{ generated_at }}</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- ═══ Stats Cards ═══ -->
+  <div class="stats-grid">
+    <div class="stat-card compliance">
+      <div class="value">{{ summary.overall_compliance }}%</div>
+      <div class="label">Overall Compliance</div>
+      <div class="compliance-bar">
+        <div class="fill {% if summary.overall_compliance >= 80 %}fill-good{% elif summary.overall_compliance >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ summary.overall_compliance }}%"></div>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="value">{{ summary.total_rules }}</div>
+      <div class="label">Total Rules</div>
+    </div>
+    <div class="stat-card pass">
+      <div class="value">{{ summary.passed }}</div>
+      <div class="label">Passed</div>
+    </div>
+    <div class="stat-card fail">
+      <div class="value">{{ summary.failed }}</div>
+      <div class="label">Failed</div>
+    </div>
+    <div class="stat-card error">
+      <div class="value">{{ summary.errors }}</div>
+      <div class="label">Errors</div>
+    </div>
+  </div>
+
+  <!-- ═══ SVG Charts (fully offline, zero external dependencies) ═══ -->
+  <div class="charts-grid">
+    {% if chart_donut %}
+    <div class="chart-card">
+      <h3>Results Distribution</h3>
+      {{ chart_donut|safe }}
+    </div>
+    {% endif %}
+    {% if chart_severity %}
+    <div class="chart-card">
+      <h3>Compliance by Severity</h3>
+      {{ chart_severity|safe }}
+    </div>
+    {% endif %}
+    {% if chart_targets %}
+    <div class="chart-card">
+      <h3>Compliance by Target</h3>
+      {{ chart_targets|safe }}
+    </div>
+    {% endif %}
+    {% if chart_categories %}
+    <div class="chart-card">
+      <h3>Findings by Category</h3>
+      {{ chart_categories|safe }}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ═══ AI Summary ═══ -->
+  {% if ai_summary %}
+  <div class="section-title">AI Executive Summary</div>
+  <div class="ai-summary">{{ ai_summary }}</div>
+  {% endif %}
+
+  <!-- ═══ Audit Scope ═══ -->
+  <div class="section-title">Audit Scope</div>
+  <table class="data-table">
+    <thead>
+      <tr><th>Target</th><th>IP</th><th>Type</th><th>OS</th><th>Benchmark</th><th>Compliance</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      {% for t in targets %}
+        {% for s in t.scans %}
+        <tr>
+          <td>{{ t.hostname }}</td><td>{{ t.ip_address }}</td><td>{{ t.target_type }}</td>
+          <td>{{ t.os_details }}</td><td>{{ s.benchmark_name }}</td>
+          <td>
+            {{ s.compliance_percentage }}%
+            <div class="compliance-bar">
+              <div class="fill {% if s.compliance_percentage >= 80 %}fill-good{% elif s.compliance_percentage >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ s.compliance_percentage }}%"></div>
+            </div>
+          </td>
+          <td>{{ s.completed_at }}</td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- ═══ Findings ═══ -->
+  <div class="section-title">Detailed Findings <span class="badge-count" id="findingCount">{{ findings|length }}</span></div>
+
+  <div class="filters-bar">
+    <input type="text" id="searchInput" placeholder="Search rules, targets, descriptions...">
+    <select id="filterSeverity"><option value="">All Severities</option></select>
+    <select id="filterStatus"><option value="">All Statuses</option></select>
+    <select id="filterTarget"><option value="">All Targets</option></select>
+    <select id="filterBenchmark"><option value="">All Benchmarks</option></select>
+    <select id="groupBy">
+      <option value="none">No Grouping</option>
+      <option value="target">Group by Target</option>
+      <option value="severity">Group by Severity</option>
+      <option value="benchmark">Group by Benchmark</option>
+      <option value="status">Group by Status</option>
+    </select>
+    <button class="filter-btn" id="expandAllBtn">Expand All</button>
+    <button class="filter-btn" id="collapseAllBtn">Collapse All</button>
+    <button class="filter-btn" id="clearFiltersBtn">Clear Filters</button>
+    <span class="result-count" id="resultCount"></span>
+  </div>
+
+  <table class="findings-table" id="findingsTable">
+    <thead>
+      <tr>
+        <th data-col="target_hostname">Target <span class="sort-icon">&updownarrow;</span></th>
+        <th data-col="section_number">Section <span class="sort-icon">&updownarrow;</span></th>
+        <th data-col="rule_title">Rule <span class="sort-icon">&updownarrow;</span></th>
+        <th data-col="severity">Severity <span class="sort-icon">&updownarrow;</span></th>
+        <th data-col="status">Status <span class="sort-icon">&updownarrow;</span></th>
+        <th data-col="benchmark_name">Benchmark <span class="sort-icon">&updownarrow;</span></th>
+        <th style="width:40px"></th>
+      </tr>
+    </thead>
+    <tbody id="findingsBody"></tbody>
+  </table>
+
+</div>
+
+<div class="report-footer">Generated by <strong>AuditForge</strong> &mdash; {{ generated_at }} &mdash; Fully self-contained, no external dependencies</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   Findings data (injected server-side, zero external deps)
+   ══════════════════════════════════════════════════════════════ */
+var allFindings = {{ findings_json|safe }};
+var sortCol = null, sortAsc = true;
+var currentFilters = { search: '', severity: '', status: '', target: '', benchmark: '' };
+var currentGroupBy = 'none';
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function sevOrder(s) {
+  return {critical:0,high:1,medium:2,low:3,informational:4}[s] || 5;
+}
+
+/* Populate filter dropdowns from data */
+(function() {
+  var tSet={}, bSet={}, sSet={}, svSet={};
+  var targets=[], benchmarks=[], statuses=[], sevs=[];
+  allFindings.forEach(function(f) {
+    if (!tSet[f.target_hostname]) { tSet[f.target_hostname]=1; targets.push(f.target_hostname); }
+    if (!bSet[f.benchmark_name])  { bSet[f.benchmark_name]=1; benchmarks.push(f.benchmark_name); }
+    if (!sSet[f.status])          { sSet[f.status]=1; statuses.push(f.status); }
+    if (!svSet[f.severity])       { svSet[f.severity]=1; sevs.push(f.severity); }
+  });
+  targets.sort(); benchmarks.sort(); statuses.sort();
+  sevs.sort(function(a,b) { return sevOrder(a)-sevOrder(b); });
+  function addOpts(id, items) {
+    var sel=document.getElementById(id);
+    items.forEach(function(i) { var o=document.createElement('option'); o.value=i; o.textContent=i; sel.appendChild(o); });
+  }
+  addOpts('filterSeverity', sevs);
+  addOpts('filterStatus', statuses);
+  addOpts('filterTarget', targets);
+  addOpts('filterBenchmark', benchmarks);
+})();
+
+function getFiltered() {
+  return allFindings.filter(function(f) {
+    if (currentFilters.severity && f.severity !== currentFilters.severity) return false;
+    if (currentFilters.status && f.status !== currentFilters.status) return false;
+    if (currentFilters.target && f.target_hostname !== currentFilters.target) return false;
+    if (currentFilters.benchmark && f.benchmark_name !== currentFilters.benchmark) return false;
+    if (currentFilters.search) {
+      var q = currentFilters.search.toLowerCase();
+      var hay = [f.target_hostname, f.section_number, f.rule_title, f.description,
+                 f.severity, f.status, f.benchmark_name, f.actual_output,
+                 f.expected_output, f.remediation].join(' ').toLowerCase();
+      if (hay.indexOf(q) === -1) return false;
+    }
+    return true;
+  });
+}
+
+function sortFindings(list) {
+  if (!sortCol) return list;
+  var copy = list.slice();
+  copy.sort(function(a, b) {
+    var va = a[sortCol] || '', vb = b[sortCol] || '';
+    if (sortCol === 'severity') return sortAsc ? sevOrder(va)-sevOrder(vb) : sevOrder(vb)-sevOrder(va);
+    return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+  });
+  return copy;
+}
+
+function buildRow(f, idx, groupAttr) {
+  var ga = groupAttr ? ' data-group="' + groupAttr + '"' : '';
+  return '<tr class="finding-row"' + ga + '>' +
+    '<td>' + esc(f.target_hostname) + '</td>' +
+    '<td>' + esc(f.section_number) + '</td>' +
+    '<td>' + esc(f.rule_title) + '</td>' +
+    '<td><span class="badge sev-' + f.severity + '">' + f.severity.toUpperCase() + '</span></td>' +
+    '<td><span class="badge st-' + f.status.toLowerCase().replace(/ /g,'_') + '">' + f.status + '</span></td>' +
+    '<td>' + esc(f.benchmark_name) + '</td>' +
+    '<td><button class="toggle-btn" onclick="toggleDetail(this,\'det-' + idx + '\')">&#9660;</button></td>' +
+    '</tr>' +
+    '<tr id="det-' + idx + '" class="detail-row" style="display:none"' + ga + '>' +
+      '<td colspan="7"><div class="detail-content">' +
+        (f.description ? '<p><span class="field-label">Description:</span> ' + esc(f.description) + '</p>' : '') +
+        '<p><span class="field-label">Expected:</span> <code>' + esc(f.expected_output) + '</code></p>' +
+        '<p><span class="field-label">Actual:</span> <code>' + esc(f.actual_output) + '</code></p>' +
+        (f.remediation ? '<p><span class="field-label">Remediation:</span> ' + esc(f.remediation) + '</p>' : '') +
+        (f.auditor_notes ? '<p><span class="field-label">Notes:</span> ' + esc(f.auditor_notes) + '</p>' : '') +
+        (f.auditor_override ? '<p><span class="field-label">Override:</span> ' + esc(f.auditor_override) + '</p>' : '') +
+      '</div></td>' +
+    '</tr>';
+}
+
+function renderFindings() {
+  var filtered = sortFindings(getFiltered());
+  var body = document.getElementById('findingsBody');
+  document.getElementById('findingCount').textContent = filtered.length;
+  document.getElementById('resultCount').textContent = filtered.length + ' of ' + allFindings.length + ' findings';
+
+  if (currentGroupBy === 'none') {
+    var html = '';
+    filtered.forEach(function(f, i) { html += buildRow(f, i, ''); });
+    body.innerHTML = html;
+  } else {
+    var groups = {};
+    var groupKey = currentGroupBy === 'target' ? 'target_hostname'
+                 : currentGroupBy === 'severity' ? 'severity'
+                 : currentGroupBy === 'benchmark' ? 'benchmark_name'
+                 : 'status';
+    filtered.forEach(function(f) {
+      var k = f[groupKey] || 'Unknown';
+      if (!groups[k]) groups[k] = [];
+      groups[k].push(f);
+    });
+    var keys = Object.keys(groups);
+    if (currentGroupBy === 'severity') keys.sort(function(a,b) { return sevOrder(a)-sevOrder(b); });
+    else keys.sort();
+
+    var html = '', idx = 0;
+    keys.forEach(function(key) {
+      var items = groups[key];
+      var safeKey = esc(key).replace(/'/g,'').replace(/"/g,'');
+      var label = currentGroupBy === 'severity' ? key.toUpperCase() : key;
+      html += '<tr class="group-header" onclick="toggleGroup(\'' + safeKey + '\')">' +
+        '<td colspan="7"><span class="toggle" id="gi-' + safeKey + '">&#9660;</span> ' +
+        esc(label) + ' <span class="group-count">(' + items.length + ' findings)</span></td></tr>';
+      items.forEach(function(f) { html += buildRow(f, idx++, safeKey); });
+    });
+    body.innerHTML = html;
+  }
+}
+
+function toggleDetail(btn, id) {
+  var el = document.getElementById(id);
+  var show = el.style.display === 'none';
+  el.style.display = show ? 'table-row' : 'none';
+  btn.classList.toggle('open', show);
+}
+
+function toggleGroup(grpId) {
+  var rows = document.querySelectorAll('[data-group="' + grpId + '"]');
+  var icon = document.getElementById('gi-' + grpId);
+  if (!icon) return;
+  var hide = icon.innerHTML === '\u25BC';
+  rows.forEach(function(r) { r.style.display = hide ? 'none' : ''; });
+  icon.innerHTML = hide ? '\u25B6' : '\u25BC';
+}
+
+/* Event listeners */
+document.getElementById('searchInput').addEventListener('input', function(e) { currentFilters.search = e.target.value; renderFindings(); });
+document.getElementById('filterSeverity').addEventListener('change', function(e) { currentFilters.severity = e.target.value; renderFindings(); });
+document.getElementById('filterStatus').addEventListener('change', function(e) { currentFilters.status = e.target.value; renderFindings(); });
+document.getElementById('filterTarget').addEventListener('change', function(e) { currentFilters.target = e.target.value; renderFindings(); });
+document.getElementById('filterBenchmark').addEventListener('change', function(e) { currentFilters.benchmark = e.target.value; renderFindings(); });
+document.getElementById('groupBy').addEventListener('change', function(e) { currentGroupBy = e.target.value; renderFindings(); });
+document.getElementById('expandAllBtn').addEventListener('click', function() {
+  document.querySelectorAll('.detail-row').forEach(function(r) { r.style.display = 'table-row'; });
+  document.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.add('open'); });
+});
+document.getElementById('collapseAllBtn').addEventListener('click', function() {
+  document.querySelectorAll('.detail-row').forEach(function(r) { r.style.display = 'none'; });
+  document.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('open'); });
+});
+document.getElementById('clearFiltersBtn').addEventListener('click', function() {
+  currentFilters = { search:'', severity:'', status:'', target:'', benchmark:'' };
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filterSeverity').value = '';
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('filterTarget').value = '';
+  document.getElementById('filterBenchmark').value = '';
+  document.getElementById('groupBy').value = 'none';
+  currentGroupBy = 'none'; sortCol = null;
+  renderFindings();
+});
+
+/* Sortable headers */
+document.querySelectorAll('.findings-table th[data-col]').forEach(function(th) {
+  th.addEventListener('click', function() {
+    var col = th.getAttribute('data-col');
+    if (sortCol === col) sortAsc = !sortAsc;
+    else { sortCol = col; sortAsc = true; }
+    renderFindings();
+  });
+});
+
+renderFindings();
+</script>
+</body>
+</html>

@@ -275,6 +275,7 @@ def get_scan_status(scan_id: int, db: Session = Depends(get_db)):
         failed=scan.failed or 0,
         errors=scan.errors or 0,
         compliance_percentage=scan.compliance_percentage or 0.0,
+        error_message=scan.notes if scan.status == "failed" else None,
     )
 
 

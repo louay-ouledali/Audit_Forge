@@ -4,60 +4,96 @@
 <meta charset="UTF-8">
 <title>{{ title or "Audit Report" }}</title>
 <style>
-  @page { size: A4; margin: 20mm; }
+  @page { size: A4; margin: 18mm 20mm 22mm 20mm; @bottom-center { content: "AuditForge — Page " counter(page) " of " counter(pages); font-size: 8px; color: #999; } }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; color: #222; line-height: 1.5; }
-  .cover { text-align: center; padding: 80px 40px 60px; page-break-after: always; }
-  .cover h1 { font-size: 28px; color: #1a237e; margin-bottom: 10px; }
-  .cover .subtitle { font-size: 14px; color: #555; margin-bottom: 30px; }
-  .cover .meta-line { font-size: 12px; color: #444; margin: 4px 0; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 10.5px; color: #1e293b; line-height: 1.6; }
 
-  h2 { font-size: 16px; color: #283593; margin: 20px 0 8px; border-bottom: 2px solid #c5cae9; padding-bottom: 4px; }
-  h3 { font-size: 13px; color: #37474f; margin: 12px 0 6px; }
+  /* ── Cover page ── */
+  .cover { text-align: center; padding: 100px 50px 60px; page-break-after: always; position: relative; }
+  .cover::before { content: ''; display: block; width: 80px; height: 4px; background: linear-gradient(90deg, #1e40af, #3b82f6, #93c5fd); border-radius: 2px; margin: 0 auto 40px; }
+  .cover .brand { font-size: 14px; letter-spacing: 3px; text-transform: uppercase; color: #64748b; margin-bottom: 12px; }
+  .cover h1 { font-size: 26px; color: #0f172a; margin-bottom: 8px; font-weight: 700; }
+  .cover .subtitle { font-size: 15px; color: #475569; margin-bottom: 40px; }
+  .cover .meta-block { display: inline-block; text-align: left; border-top: 1px solid #e2e8f0; padding-top: 20px; }
+  .cover .meta-line { font-size: 11px; color: #334155; margin: 5px 0; }
+  .cover .meta-line strong { color: #0f172a; min-width: 90px; display: inline-block; }
+  .cover::after { content: ''; display: block; width: 60px; height: 3px; background: #3b82f6; border-radius: 2px; margin: 50px auto 0; }
 
-  .section { margin-bottom: 20px; }
+  h2 { font-size: 15px; color: #1e40af; margin: 24px 0 10px; border-bottom: 2px solid #dbeafe; padding-bottom: 5px; letter-spacing: 0.3px; }
+  h3 { font-size: 12px; color: #334155; margin: 14px 0 6px; font-weight: 600; }
+
+  .section { margin-bottom: 22px; }
 
   /* Statistics cards */
-  .stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-  .stat-card { background: #e8eaf6; padding: 10px 16px; border-radius: 6px; text-align: center; min-width: 110px; }
-  .stat-card .val { font-size: 22px; font-weight: 700; color: #1a237e; }
-  .stat-card .lbl { font-size: 9px; color: #555; text-transform: uppercase; }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .stat-card { background: linear-gradient(135deg, #eff6ff, #dbeafe); padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 100px; flex: 1; border: 1px solid #bfdbfe; }
+  .stat-card .val { font-size: 24px; font-weight: 700; color: #1e40af; }
+  .stat-card .lbl { font-size: 8px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
 
-  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 10px; }
-  th, td { padding: 5px 8px; border: 1px solid #ccc; text-align: left; }
-  th { background: #e8eaf6; font-weight: 600; }
+  /* Compliance bar */
+  .compliance-bar { height: 8px; background: #fee2e2; border-radius: 4px; overflow: hidden; margin: 6px 0; }
+  .compliance-bar .fill { height: 100%; border-radius: 4px; }
+  .compliance-bar .fill-good { background: linear-gradient(90deg, #22c55e, #16a34a); }
+  .compliance-bar .fill-warn { background: linear-gradient(90deg, #f59e0b, #d97706); }
+  .compliance-bar .fill-bad { background: linear-gradient(90deg, #ef4444, #dc2626); }
 
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 9px; font-weight: 700; color: #fff; }
-  .sev-critical { background: #d32f2f; }
-  .sev-high { background: #e65100; }
-  .sev-medium { background: #f9a825; color: #333; }
-  .sev-low { background: #1565c0; }
-  .st-pass { background: #2e7d32; }
-  .st-fail { background: #c62828; }
-  .st-error { background: #6a1b9a; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 9.5px; }
+  th, td { padding: 6px 8px; border: 1px solid #e2e8f0; text-align: left; }
+  th { background: #f1f5f9; font-weight: 600; color: #334155; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; }
+  tbody tr:nth-child(even) { background: #f8fafc; }
 
-  .finding-card { border: 1px solid #ddd; border-radius: 6px; padding: 10px; margin-bottom: 10px; page-break-inside: avoid; }
-  .finding-card .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .finding-card .header .rule-id { font-weight: 700; }
-  .finding-card p { margin: 3px 0; }
-  .finding-card code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 10px; }
-  .finding-card .field-label { font-weight: 600; color: #444; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 8.5px; font-weight: 700; color: #fff; letter-spacing: 0.3px; }
+  .sev-critical { background: #dc2626; }
+  .sev-high { background: #ea580c; }
+  .sev-medium { background: #d97706; color: #fff; }
+  .sev-low { background: #2563eb; }
+  .st-pass { background: #16a34a; }
+  .st-fail { background: #dc2626; }
+  .st-error { background: #7c3aed; }
+
+  .finding-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; page-break-inside: avoid; background: #fff; }
+  .finding-card .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; }
+  .finding-card .header .rule-id { font-weight: 700; font-size: 11px; color: #0f172a; }
+  .finding-card p { margin: 4px 0; font-size: 10px; }
+  .finding-card code { background: #f1f5f9; padding: 2px 5px; border-radius: 3px; font-size: 9.5px; font-family: 'Consolas', 'Courier New', monospace; color: #334155; }
+  .finding-card .field-label { font-weight: 600; color: #475569; display: inline-block; min-width: 80px; }
 
   .passed-summary { margin-top: 12px; }
   .passed-summary li { margin-left: 18px; font-size: 10px; }
 
-  .ai-summary { background: #f0f4ff; border-left: 4px solid #1a237e; padding: 10px 14px; margin-bottom: 16px; white-space: pre-wrap; }
+  .ai-summary { background: #eff6ff; border-left: 4px solid #1e40af; padding: 12px 16px; margin-bottom: 16px; white-space: pre-wrap; font-size: 10px; border-radius: 0 6px 6px 0; line-height: 1.7; }
+
+  .toc { page-break-after: always; }
+  .toc h2 { border-bottom: none; }
+  .toc ul { list-style: none; margin-top: 12px; }
+  .toc li { padding: 4px 0; font-size: 11px; border-bottom: 1px dotted #e2e8f0; }
 </style>
 </head>
 <body>
 
 <!-- Cover -->
 <div class="cover">
+  <div class="brand">AuditForge</div>
   <h1>{{ title or "Configuration Audit Report" }}</h1>
   <div class="subtitle">{{ mission_name }}</div>
-  <div class="meta-line"><strong>Client:</strong> {{ client_name }}</div>
-  <div class="meta-line"><strong>Date Range:</strong> {{ date_range }}</div>
-  <div class="meta-line"><strong>Generated:</strong> {{ generated_at }}</div>
+  <div class="meta-block">
+    <div class="meta-line"><strong>Client:</strong> {{ client_name }}</div>
+    <div class="meta-line"><strong>Date Range:</strong> {{ date_range }}</div>
+    <div class="meta-line"><strong>Generated:</strong> {{ generated_at }}</div>
+    <div class="meta-line"><strong>Total Rules:</strong> {{ summary.total_rules }} &nbsp; | &nbsp; <strong>Compliance:</strong> {{ summary.overall_compliance }}%</div>
+  </div>
+</div>
+
+<!-- Table of Contents -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ul>
+    {% if ai_summary %}<li>1. AI Executive Summary</li>{% endif %}
+    <li>{% if ai_summary %}2{% else %}1{% endif %}. Executive Summary & Compliance Overview</li>
+    <li>{% if ai_summary %}3{% else %}2{% endif %}. Audit Scope</li>
+    <li>{% if ai_summary %}4{% else %}3{% endif %}. Detailed Findings — Failed Rules</li>
+    {% if include_passed %}<li>{% if ai_summary %}5{% else %}4{% endif %}. Passed Rules Summary</li>{% endif %}
+  </ul>
 </div>
 
 <!-- AI Summary -->
@@ -68,15 +104,35 @@
 </div>
 {% endif %}
 
+<!-- Visual Dashboard -->
+<div class="section">
+  <h2>Visual Dashboard</h2>
+  <div style="display: flex; gap: 40px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 20px 0;">
+    {% if chart_donut %}{{ chart_donut|safe }}{% endif %}
+    {% if chart_severity %}{{ chart_severity|safe }}{% endif %}
+  </div>
+  {% if chart_targets %}
+  <div style="margin-top: 16px; text-align: center;">
+    {{ chart_targets|safe }}
+  </div>
+  {% endif %}
+</div>
+
 <!-- Executive Summary -->
 <div class="section">
   <h2>Executive Summary</h2>
   <div class="stats">
-    <div class="stat-card"><div class="val">{{ summary.overall_compliance }}%</div><div class="lbl">Compliance</div></div>
+    <div class="stat-card">
+      <div class="val">{{ summary.overall_compliance }}%</div>
+      <div class="lbl">Compliance</div>
+      <div class="compliance-bar">
+        <div class="fill {% if summary.overall_compliance >= 80 %}fill-good{% elif summary.overall_compliance >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ summary.overall_compliance }}%"></div>
+      </div>
+    </div>
     <div class="stat-card"><div class="val">{{ summary.total_rules }}</div><div class="lbl">Total Rules</div></div>
-    <div class="stat-card"><div class="val">{{ summary.passed }}</div><div class="lbl">Passed</div></div>
-    <div class="stat-card"><div class="val">{{ summary.failed }}</div><div class="lbl">Failed</div></div>
-    <div class="stat-card"><div class="val">{{ summary.errors }}</div><div class="lbl">Errors</div></div>
+    <div class="stat-card"><div class="val" style="color:#16a34a">{{ summary.passed }}</div><div class="lbl">Passed</div></div>
+    <div class="stat-card"><div class="val" style="color:#dc2626">{{ summary.failed }}</div><div class="lbl">Failed</div></div>
+    <div class="stat-card"><div class="val" style="color:#7c3aed">{{ summary.errors }}</div><div class="lbl">Errors</div></div>
   </div>
 
   <h3>Findings by Severity</h3>
@@ -90,7 +146,13 @@
         <td>{{ info.total }}</td>
         <td>{{ info.passed }}</td>
         <td>{{ info.failed }}</td>
-        <td>{{ "%.1f" | format(info.passed / info.total * 100) if info.total > 0 else "0.0" }}%</td>
+        <td>
+          {{ "%.1f" | format(info.passed / info.total * 100) if info.total > 0 else "0.0" }}%
+          <div class="compliance-bar">
+            {% set comp = (info.passed / info.total * 100) if info.total > 0 else 0 %}
+            <div class="fill {% if comp >= 80 %}fill-good{% elif comp >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ comp }}%"></div>
+          </div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -134,7 +196,12 @@
           <td>{{ t.target_type }}</td>
           <td>{{ t.os_details }}</td>
           <td>{{ s.benchmark_name }}</td>
-          <td>{{ s.compliance_percentage }}%</td>
+          <td>
+            {{ s.compliance_percentage }}%
+            <div class="compliance-bar">
+              <div class="fill {% if s.compliance_percentage >= 80 %}fill-good{% elif s.compliance_percentage >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ s.compliance_percentage }}%"></div>
+            </div>
+          </td>
           <td>{{ s.completed_at }}</td>
         </tr>
         {% endfor %}
@@ -156,7 +223,7 @@
     <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
     <p><span class="field-label">Actual:</span> <code>{{ f.actual_output }}</code></p>
     {% if f.remediation %}<p><span class="field-label">Remediation:</span> {{ f.remediation }}</p>{% endif %}
-    {% if f.auditor_notes %}<p><span class="field-label">Auditor Notes:</span> {{ f.auditor_notes }}</p>{% endif %}
+    {% if f.auditor_notes %}<p><span class="field-label">Notes:</span> {{ f.auditor_notes }}</p>{% endif %}
     {% if f.auditor_override %}<p><span class="field-label">Override:</span> {{ f.auditor_override }}</p>{% endif %}
   </div>
   {% endfor %}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle, Zap, Loader2 } from 'lucide-react';
 import type { Settings as SettingsType, LLMTestResult } from '@/types';
 import * as api from '@/services/api';
@@ -41,8 +42,10 @@ export default function Settings() {
   const restoreFileRef = useRef<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const location = useLocation();
 
   useEffect(() => {
+    if (location.pathname !== '/settings') return;
     (async () => {
       try {
         const data = await api.getSettings();
@@ -53,7 +56,7 @@ export default function Settings() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!toast) return;
@@ -415,7 +418,7 @@ export default function Settings() {
           <h3 className="text-lg font-semibold text-gray-900">Database Backup &amp; Restore</h3>
         </div>
         <p className="text-sm text-gray-500">
-          Create a full backup of your AditForge database or restore from a previous backup.
+          Create a full backup of your AuditForge database or restore from a previous backup.
         </p>
 
         <div className="flex flex-col gap-3 sm:flex-row">

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
   Search,
   Eye,
+  Trash2,
 } from 'lucide-react';
 import type { Finding, ScanDetail } from '@/types';
 import * as api from '@/services/api';
@@ -50,10 +51,16 @@ export default function Findings() {
   const [selectedScanId, setSelectedScanId] = useState<number | ''>('');
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
+  const [deleting, setDeleting] = useState(false);
 
+  const location = useLocation();
+
+  // Refetch scans whenever this page becomes visible (KeepAlive means mount-only effects go stale)
   useEffect(() => {
-    api.getScans().then((res) => setScans(res.data)).catch(() => setError('Failed to load scans'));
-  }, []);
+    if (location.pathname === '/findings') {
+      api.getScans().then((res) => setScans(res.data)).catch(() => setError('Failed to load scans'));
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!selectedScanId) {
@@ -93,18 +100,44 @@ export default function Findings() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Scan</label>
-            <select
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              value={selectedScanId}
-              onChange={(e) => setSelectedScanId(e.target.value ? Number(e.target.value) : '')}
-            >
-              <option value="">Select scan...</option>
-              {scans.map((s) => (
-                <option key={s.id} value={s.id}>
-                  Scan #{s.id} — {s.scan_mode} ({s.status})
-                </option>
-              ))}
-            </select>
+            <div className="flex gap-2">
+              <select
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                value={selectedScanId}
+                onChange={(e) => setSelectedScanId(e.target.value ? Number(e.target.value) : '')}
+              >
+                <option value="">Select scan...</option>
+                {scans.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    Scan #{s.id} — {s.scan_mode} ({s.status})
+                  </option>
+                ))}
+              </select>
+              {selectedScanId && (
+                <button
+                  onClick={async () => {
+                    if (!confirm(`Delete Scan #${selectedScanId} and all its findings? This cannot be undone.`)) return;
+                    setDeleting(true);
+                    setError('');
+                    try {
+                      await api.deleteScan(selectedScanId as number);
+                      setScans(prev => prev.filter(s => s.id !== selectedScanId));
+                      setSelectedScanId('');
+                      setFindings([]);
+                    } catch (err: any) {
+                      const msg = err?.response?.data?.detail || err?.message || 'Unknown error';
+                      setError(`Failed to delete scan: ${msg}`);
+                    }
+                    finally { setDeleting(false); }
+                  }}
+                  disabled={deleting}
+                  className="flex-shrink-0 rounded-lg border border-red-200 bg-red-50 p-2 text-red-600 hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
+                  title="Delete this scan"
+                >
+                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>

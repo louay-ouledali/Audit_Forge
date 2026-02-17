@@ -1,6 +1,6 @@
 #!/bin/bash
 # ══════════════════════════════════════════════════════════════
-# AditForge — Automated Configuration Review
+# AuditForge — Automated Configuration Review
 # Benchmark: {{ benchmark.name }} {{ benchmark.version }}
 # Generated: {{ generation_date }}
 # Rules: {{ rules|length }} enabled rules
@@ -21,7 +21,7 @@ TOTAL=0; PASSED=0; FAILED=0; ERRORS=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 
 echo "══════════════════════════════════════════════════════════"
-echo "  AditForge Audit Starting"
+echo "  AuditForge Audit Starting"
 echo "  Benchmark: {{ benchmark.name }} {{ benchmark.version }}"
 echo "  Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "══════════════════════════════════════════════════════════"

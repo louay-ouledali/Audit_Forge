@@ -57,6 +57,7 @@ class ScanStatusResponse(BaseModel):
     failed: int = 0
     errors: int = 0
     compliance_percentage: float = 0.0
+    error_message: str | None = None
 
 
 class ScanCancelResponse(BaseModel):

@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Shield, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload } from 'lucide-react';
-import type { Benchmark, Rule, EnrichStatus, VerifyStatus, RuleCommand, CommandHistoryEntry, VerificationReport } from '@/types';
+import { ArrowLeft, Play, Pause, Shield, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X } from 'lucide-react';
+import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport } from '@/types';
 import * as api from '@/services/api';
 
 function severityBadge(severity: string) {
@@ -31,6 +31,11 @@ function statusBadge(status: string) {
     flagged: 'bg-red-100 text-red-800',
     generated: 'bg-blue-100 text-blue-800',
     pending_review: 'bg-yellow-100 text-yellow-800',
+    not_started: 'bg-gray-100 text-gray-500',
+    validated: 'bg-green-100 text-green-800',
+    corrected: 'bg-amber-100 text-amber-800',
+    applied: 'bg-green-100 text-green-800',
+    dismissed: 'bg-gray-100 text-gray-500',
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] || styles.pending}`}>
@@ -62,6 +67,10 @@ export default function BenchmarkDetail() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [enrichStatus, setEnrichStatus] = useState<EnrichStatus | null>(null);
   const [verifyStatus, setVerifyStatus] = useState<VerifyStatus | null>(null);
+  const [validateStatus, setValidateStatus] = useState<ValidateStatus | null>(null);
+  const [validationResults, setValidationResults] = useState<ValidationResultItem[]>([]);
+  const [showValidationResults, setShowValidationResults] = useState(false);
+  const [validationFilter, setValidationFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -83,14 +92,16 @@ export default function BenchmarkDetail() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [bm, es, vs] = await Promise.all([
+      const [bm, es, vs, vds] = await Promise.all([
         api.getBenchmark(benchmarkId),
         api.getEnrichmentStatus(benchmarkId),
         api.getVerificationStatus(benchmarkId),
+        api.getValidationStatus(benchmarkId),
       ]);
       setBenchmark(bm);
       setEnrichStatus(es);
       setVerifyStatus(vs);
+      setValidateStatus(vds);
     } catch {
       setError('Failed to load benchmark');
     } finally {
@@ -120,7 +131,8 @@ export default function BenchmarkDetail() {
     if (!benchmark) return;
     const isProcessing = ['processing'].includes(benchmark.phase1_status) ||
       ['processing'].includes(benchmark.phase2_status) ||
-      ['processing'].includes(benchmark.verification_status);
+      ['processing'].includes(benchmark.verification_status) ||
+      (benchmark.phase3_status === 'processing');
     if (!isProcessing) return;
     const interval = setInterval(() => { fetchData(); fetchRules(); }, 3000);
     return () => clearInterval(interval);
@@ -192,6 +204,104 @@ export default function BenchmarkDetail() {
       await fetchData();
     } catch (err: unknown) {
       setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to override');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // ── Phase 3: Validate & Correct handlers ──
+
+  const handleStartValidation = async () => {
+    try {
+      await api.startValidation(benchmarkId);
+      await fetchData();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start validation');
+    }
+  };
+
+  const handlePauseValidation = async () => {
+    try {
+      await api.pauseValidation(benchmarkId);
+      await fetchData();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to pause validation');
+    }
+  };
+
+  const handleShowValidationResults = async () => {
+    if (showValidationResults) {
+      setShowValidationResults(false);
+      return;
+    }
+    try {
+      const params = validationFilter ? { status_filter: validationFilter } : undefined;
+      const result = await api.getValidationResults(benchmarkId, params);
+      setValidationResults(result.data);
+      setShowValidationResults(true);
+    } catch {
+      setValidationResults([]);
+    }
+  };
+
+  const fetchValidationResults = async () => {
+    try {
+      const params = validationFilter ? { status_filter: validationFilter } : undefined;
+      const result = await api.getValidationResults(benchmarkId, params);
+      setValidationResults(result.data);
+    } catch {
+      /* silent */
+    }
+  };
+
+  const handleApplyCorrection = async (ruleCommandId: number) => {
+    try {
+      setActionLoading(true);
+      await api.applyCorrection(benchmarkId, ruleCommandId);
+      await fetchValidationResults();
+      setSuccessMsg('Correction applied');
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to apply correction');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDismissCorrection = async (ruleCommandId: number) => {
+    try {
+      setActionLoading(true);
+      await api.dismissCorrection(benchmarkId, ruleCommandId);
+      await fetchValidationResults();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to dismiss correction');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkApplyCorrections = async () => {
+    try {
+      setActionLoading(true);
+      const result = await api.bulkApplyCorrections(benchmarkId);
+      setSuccessMsg(result.message);
+      await fetchValidationResults();
+      await fetchData();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to bulk apply');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkDismissCorrections = async () => {
+    try {
+      setActionLoading(true);
+      const result = await api.bulkDismissCorrections(benchmarkId);
+      setSuccessMsg(result.message);
+      await fetchValidationResults();
+      await fetchData();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to bulk dismiss');
     } finally {
       setActionLoading(false);
     }
@@ -440,7 +550,7 @@ export default function BenchmarkDetail() {
       )}
 
       {/* Phase Status Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Phase 1 */}
         <div className="rounded-lg border border-gray-200 bg-white p-4">
           <div className="flex items-center justify-between">
@@ -544,7 +654,173 @@ export default function BenchmarkDetail() {
             )}
           </div>
         </div>
+
+        {/* Phase 3: Validate & Correct (optional) */}
+        {benchmark.phase2_status === 'completed' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/30 p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-gray-700">
+                <Sparkles className="mr-1 inline h-3.5 w-3.5 text-amber-500" />
+                Validate & Correct
+              </h3>
+              {validateStatus && validateStatus.status !== 'not_started' && statusBadge(validateStatus.status)}
+              {(!validateStatus || validateStatus.status === 'not_started') && (
+                <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">optional</span>
+              )}
+            </div>
+            {validateStatus && validateStatus.total > 0 && (
+              <>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  <div>
+                    <span className="text-lg font-bold text-green-600">{validateStatus.validated}</span>
+                    <span className="text-xs text-gray-500"> ok</span>
+                  </div>
+                  <div>
+                    <span className="text-lg font-bold text-amber-600">{validateStatus.corrected}</span>
+                    <span className="text-xs text-gray-500"> corrected</span>
+                  </div>
+                  <div>
+                    <span className="text-lg font-bold text-red-600">{validateStatus.flagged}</span>
+                    <span className="text-xs text-gray-500"> flagged</span>
+                  </div>
+                </div>
+                {validateStatus.status === 'processing' && validateStatus.total > 0 && (
+                  <div className="mt-2 h-2 w-full rounded-full bg-gray-200">
+                    <div className="h-2 rounded-full bg-amber-500 transition-all" style={{ width: `${Math.round((validateStatus.processed / validateStatus.total) * 100)}%` }} />
+                  </div>
+                )}
+              </>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {benchmark.phase3_status !== 'processing' && (
+                <button onClick={handleStartValidation} className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+                  <Sparkles className="h-3 w-3" /> {benchmark.phase3_status === 'paused' ? 'Resume' : benchmark.phase3_status === 'completed' ? 'Re-run' : 'Run'} Validation
+                </button>
+              )}
+              {benchmark.phase3_status === 'processing' && (
+                <button onClick={handlePauseValidation} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
+                  <Pause className="h-3 w-3" /> Pause
+                </button>
+              )}
+              {validateStatus && (validateStatus.corrected > 0 || validateStatus.flagged > 0) && (
+                <button onClick={handleShowValidationResults} className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-50">
+                  <Search className="h-3 w-3" /> {showValidationResults ? 'Hide' : 'View'} Results
+                </button>
+              )}
+              {validateStatus && validateStatus.corrected > 0 && (
+                <button onClick={handleBulkApplyCorrections} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50">
+                  <Check className="h-3 w-3" /> Apply All (High)
+                </button>
+              )}
+            </div>
+            <p className="mt-2 text-xs text-gray-400">LLM reviews generated commands for accuracy. Completely optional.</p>
+          </div>
+        )}
       </div>
+
+      {/* Phase 3: Validation Results */}
+      {showValidationResults && validationResults.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-white">
+          <div className="border-b border-amber-200 bg-amber-50/50 p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900">
+                <Sparkles className="mr-2 inline h-4 w-4 text-amber-500" />
+                Validation Results ({validationResults.length})
+              </h3>
+              <div className="flex items-center gap-2">
+                <select
+                  value={validationFilter}
+                  onChange={(e) => { setValidationFilter(e.target.value); }}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="">All statuses</option>
+                  <option value="corrected">Corrected</option>
+                  <option value="flagged">Flagged</option>
+                  <option value="validated">Validated</option>
+                </select>
+                <button onClick={fetchValidationResults} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
+                  <RefreshCw className="h-3 w-3" />
+                </button>
+                <button onClick={handleBulkDismissCorrections} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-300 disabled:opacity-50">
+                  <X className="h-3 w-3" /> Dismiss All
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {validationResults.map((item) => (
+              <div key={item.rule_command_id} className="px-4 py-3 space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="min-w-[60px] text-sm font-mono text-gray-500">{item.section_number}</span>
+                  <span className="flex-1 text-sm font-medium text-gray-900">{item.title}</span>
+                  {statusBadge(item.validation_status || 'pending')}
+                  {item.validation_confidence && (
+                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${
+                      item.validation_confidence === 'high' ? 'bg-green-50 text-green-700' :
+                      item.validation_confidence === 'medium' ? 'bg-yellow-50 text-yellow-700' :
+                      'bg-red-50 text-red-700'
+                    }`}>
+                      {item.validation_confidence}
+                    </span>
+                  )}
+                </div>
+                {item.notes && (
+                  <p className="text-xs text-gray-500 italic">{item.notes}</p>
+                )}
+                {item.corrections.length > 0 && (
+                  <div className="space-y-1.5">
+                    {item.corrections.map((corr, idx) => (
+                      <div key={idx} className="rounded border border-amber-200 bg-amber-50 p-2">
+                        <div className="text-xs font-medium text-amber-800 mb-1">{corr.field}</div>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <span className="text-gray-500">Before: </span>
+                            <code className="rounded bg-red-50 px-1 py-0.5 text-red-700">{corr.old_value || '(empty)'}</code>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">After: </span>
+                            <code className="rounded bg-green-50 px-1 py-0.5 text-green-700">{corr.new_value}</code>
+                          </div>
+                        </div>
+                        {corr.reason && <p className="mt-1 text-xs text-gray-500">{corr.reason}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {item.validation_status === 'corrected' && (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => handleApplyCorrection(item.rule_command_id)}
+                      disabled={actionLoading}
+                      className="inline-flex items-center gap-1 rounded-md bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                    >
+                      <Check className="h-3 w-3" /> Apply
+                    </button>
+                    <button
+                      onClick={() => handleDismissCorrection(item.rule_command_id)}
+                      disabled={actionLoading}
+                      className="inline-flex items-center gap-1 rounded-md bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                    >
+                      <X className="h-3 w-3" /> Dismiss
+                    </button>
+                  </div>
+                )}
+                {item.validation_status === 'flagged' && (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => handleDismissCorrection(item.rule_command_id)}
+                      disabled={actionLoading}
+                      className="inline-flex items-center gap-1 rounded-md bg-gray-200 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                    >
+                      <X className="h-3 w-3" /> Dismiss
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Rules Section */}
       {benchmark.phase1_status === 'completed' && (

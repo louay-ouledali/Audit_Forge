@@ -1,17 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Building2, Crosshair, FileText, Play, ArrowRight, Shield } from 'lucide-react';
 import { getDashboardStats } from '../services/api';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({ clients: 0, active_missions: 0, benchmarks: 0, scans: 0 });
   const [error, setError] = useState('');
+  const location = useLocation();
 
   useEffect(() => {
-    getDashboardStats().then(setStats).catch(() => {
-      setError('Failed to load dashboard stats. Is the backend running?');
-    });
-  }, []);
+    if (location.pathname === '/') {
+      getDashboardStats().then(setStats).catch(() => {
+        setError('Failed to load dashboard stats. Is the backend running?');
+      });
+    }
+  }, [location.pathname]);
 
   const cards = [
     { label: 'Clients', value: stats.clients, icon: Building2, color: 'text-blue-600 bg-blue-50', link: '/clients' },
@@ -24,7 +27,7 @@ export default function Dashboard() {
     <div className="space-y-8">
       <div className="rounded-lg border border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50 p-8 text-center">
         <Shield className="mx-auto h-10 w-10 text-blue-600 mb-3" />
-        <h2 className="text-2xl font-bold text-gray-900">Welcome to AditForge</h2>
+        <h2 className="text-2xl font-bold text-gray-900">Welcome to AuditForge</h2>
         <p className="mt-2 text-gray-600">
           Automated Configuration Review Platform — Offline-first security auditing
         </p>

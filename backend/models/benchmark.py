@@ -26,6 +26,8 @@ class Benchmark(Base):
     is_ready = Column(Boolean, default=False)
     status = Column(String, default="active")
     enrichment_stats = Column(Text)
+    phase3_status = Column(String)  # null=never started, pending/processing/completed/failed/paused
+    phase3_stats = Column(Text)  # JSON: {total, processed, validated, corrected, flagged}
     notes = Column(Text)
 
     rules = relationship("Rule", back_populates="benchmark", cascade="all, delete-orphan")

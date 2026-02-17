@@ -54,6 +54,7 @@ export interface Benchmark {
   phase1_status: string;
   phase2_status: string;
   verification_status: string;
+  phase3_status: string | null;
   is_ready: boolean;
   status: string;
   notes: string | null;
@@ -223,6 +224,7 @@ export interface ScanStatus {
   failed: number;
   errors: number;
   compliance_percentage: number;
+  error_message?: string;
 }
 
 export interface ScanCancelResponse {
@@ -325,4 +327,35 @@ export interface ComparableMission {
   start_date: string | null;
   end_date: string | null;
   compliance: number | null;
+}
+
+// ── Phase 3: Validate & Correct types ────────────────────────
+
+export interface ValidateStatus {
+  status: string;
+  total: number;
+  processed: number;
+  validated: number;
+  corrected: number;
+  flagged: number;
+}
+
+export interface ValidationCorrection {
+  field: string;
+  old_value: string;
+  new_value: string;
+  reason: string;
+}
+
+export interface ValidationResultItem {
+  rule_command_id: number;
+  rule_id: number;
+  section_number: string;
+  title: string;
+  validation_status: string | null;
+  validation_confidence: string | null;
+  corrections: ValidationCorrection[];
+  notes: string | null;
+  audit_command: string | null;
+  expected_output_regex: string | null;
 }

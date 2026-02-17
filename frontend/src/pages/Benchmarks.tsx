@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Upload, Trash2, FileText, CheckCircle2, Clock, Loader2 } from 'lucide-react';
 import type { Benchmark } from '@/types';
 import * as api from '@/services/api';
@@ -22,6 +22,7 @@ function statusBadge(status: string) {
 
 export default function Benchmarks() {
   const navigate = useNavigate();
+  const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [benchmarks, setBenchmarks] = useState<Benchmark[]>([]);
   const [loading, setLoading] = useState(true);
@@ -41,10 +42,11 @@ export default function Benchmarks() {
   };
 
   useEffect(() => {
+    if (location.pathname !== '/benchmarks') return;
     fetchBenchmarks();
     const interval = setInterval(fetchBenchmarks, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [location.pathname]);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
