@@ -7,10 +7,15 @@ import logging
 from datetime import datetime, timezone
 
 from jinja2 import Environment, FileSystemLoader
+import re as _re
+
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from sqlalchemy.orm import Session, joinedload
+
+# Regex matching characters illegal in Excel/openpyxl cells (ASCII control chars except tab/newline/CR)
+_ILLEGAL_XLSX_RE = _re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
 
 from backend.ai.llm_manager import llm_manager
 from backend.models.benchmark import Benchmark
@@ -316,21 +321,27 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     for col_idx in range(1, len(columns) + 1):
         ws2.cell(row=1, column=col_idx).font = label_font
 
+    def _clean(val):
+        """Strip illegal XML/Excel control characters from a string value."""
+        if isinstance(val, str):
+            return _ILLEGAL_XLSX_RE.sub('', val)
+        return val
+
     for f in data["findings"]:
         if not include_passed and f["status"] == "PASS":
             continue
         row_idx = ws2.max_row + 1
         ws2.append([
             f["scan_id"],
-            f["target_hostname"],
-            f["benchmark_name"],
+            _clean(f["target_hostname"]),
+            _clean(f["benchmark_name"]),
             f["section_number"],
-            f["rule_title"],
+            _clean(f["rule_title"]),
             f["severity"],
             f["status"],
-            f["actual_output"],
-            f["expected_output"],
-            f["remediation"],
+            _clean(f["actual_output"]),
+            _clean(f["expected_output"]),
+            _clean(f["remediation"]),
         ])
         # Color-code severity
         sev_fill = SEVERITY_FILLS.get(f["severity"])

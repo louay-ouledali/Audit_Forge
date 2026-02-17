@@ -43,7 +43,7 @@ ABSOLUTE RULES — VIOLATIONS WILL CAUSE FAILURES:
 2. audit_command = a SINGLE non-interactive, read-only command line. No GUI tools.
 3. The command MUST run when pasted directly into the platform's default shell.
 4. Keep ALL string values SHORT (under 100 chars). No prose in values.
-5. expected_output_regex = a short Python-compatible regex matching compliant output.
+5. expected_output_regex = a COMPARISON EXPRESSION (see below), NOT a regex.
 
 ══════════════════════════════════════════════════════════
 COMMAND PURPOSE — CRITICAL: SINGLE-VALUE OUTPUT
@@ -54,7 +54,7 @@ It must NOT dump multi-line output when a single value is needed.
 
 For NUMERIC RULES (threshold checks like "14 or more"):
   The command MUST output ONLY the number — a single integer on one line.
-  Our engine will compare this number against the expected_output_regex.
+  Our engine will compare this number against the expected value.
 
   GOOD: (net accounts | Select-String 'Minimum password length').Line -replace '\\D',''
         → outputs: 14
@@ -80,25 +80,45 @@ For STATUS/STRING RULES (enable/disable, service state):
         → outputs: enabled
 
 ══════════════════════════════════════════════════════════
-REGEX QUALITY — CRITICAL
+EXPECTED OUTPUT — COMPARISON EXPRESSIONS (CRITICAL)
 ══════════════════════════════════════════════════════════
-Since the command now outputs a SINGLE VALUE, the regex must match that
-single value.  Use ^ and $ anchors for clean matching.
+The expected_output_regex field must contain a COMPARISON EXPRESSION,
+not a regex pattern. Our engine evaluates these mathematically.
 
-For NUMERIC THRESHOLDS (e.g. "14 or more"):
-  Regex must match the bare number output.
-  >=14 → ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$
-  >=24 → ^(?:2[4-9]|[3-9]\\d|\\d{{3,}})$
-  <=30 → ^(?:[0-9]|[12]\\d|30)$
+AVAILABLE OPERATORS:
+  >=N        Number must be greater than or equal to N
+  <=N        Number must be less than or equal to N
+  >N         Number must be greater than N
+  <N         Number must be less than N
+  ==VALUE    Must exactly equal VALUE (number or string)
+  !=VALUE    Must NOT equal VALUE
+  contains:TEXT   Output must contain TEXT (substring match)
+  regex:PATTERN   Fallback regex only when no other operator fits
 
-For EXACT VALUES (e.g. registry value 1):
-  Regex: ^1$  or  ^0$
+EXAMPLES — USE THESE FORMATS:
+  CIS says "24 or more characters"       → >=24
+  CIS says "maximum of 30 days"          → <=30
+  CIS says "set to 0"                    → ==0
+  CIS says "set to 1 (Enabled)"          → ==1
+  CIS says "set to Disabled"             → ==Disabled
+  CIS says "not set to 0"                → !=0
+  CIS says "365 or fewer days"           → <=365
+  CIS says "14 or more"                  → >=14
+  CIS says "must include Success and Failure" → contains:Success and Failure
+  CIS says "service must be disabled"    → ==Disabled
+  CIS says "set to 'Not Configured'"     → ==Not Configured
+  CIS says "ip_forward must be 0"        → ==0
+  CIS says "permissions 600 or more restrictive" → <=600
 
-For STATUS STRINGS:
-  Regex: ^Disabled$  or  ^enabled$  or  ^Success and Failure$
+FORBIDDEN — NEVER DO THESE:
+  ❌ ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$    (regex for numeric comparison)
+  ❌ 14 or more                          (English prose)
+  ❌ Enabled or greater                  (English prose)
+  ❌ ^1$                                 (regex when ==1 works)
+  ❌ ^Disabled$                          (regex when ==Disabled works)
+  ❌ ^0$                                 (regex when ==0 works)
 
-NEVER produce a regex that is just the CIS rule's English description.
-NEVER use phrases like "14 or more" or "Enabled or greater" as regex.
+ALWAYS use the simplest operator. Prefer ==, >=, <= over regex:.
 
 ═══════════════════════════════════════════════════════════
 WINDOWS — PowerShell is the default shell
@@ -113,24 +133,25 @@ COMMAND PATTERNS BY CIS SECTION:
 • 1.1.x Password Policy / 1.2.x Account Lockout → extract the specific number
   Command: (net accounts | Select-String 'Minimum password length').Line -replace '\\D',''
   Output: 14  (just the number)
-  Regex (>=14): ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$
+  Expected: >=14
 • 2.2.x User Rights Assignment → secedit /export /cfg C:\\Windows\\Temp\\secpol.cfg /quiet; Select-String -Path C:\\Windows\\Temp\\secpol.cfg -Pattern "SeRight"
 • 2.3.x Security Options → extract the registry value directly
   Command: (Get-ItemProperty -Path 'HKLM:\\path' -Name 'ValueName').ValueName
   Output: 1  (just the value)
-  Regex: ^1$
+  Expected: ==1
 • 5.x System Services → (Get-Service -Name ServiceName).StartType
   Output: Disabled  (single word)
-  Regex: ^Disabled$
+  Expected: ==Disabled
 • 9.x Firewall → (Get-ItemProperty -Path 'HKLM:\\path' -Name 'EnableFirewall').EnableFirewall
   Or: (Get-NetFirewallProfile -Name Domain).Enabled
   Output: True  or  1
+  Expected: ==1  or  ==True
 • 17.x Audit Policy → auditpol /get /subcategory:"{{GUID}}"
   Output: "  Credential Validation    Success and Failure"
-  Regex: Success and Failure|Success
+  Expected: contains:Success and Failure
 • 18.x/19.x Admin Templates → (Get-ItemProperty -Path 'HKLM:\\path' -Name 'ValueName').ValueName
   Output: 1  (just the integer value)
-  Regex: ^1$
+  Expected: ==1
 
 REGISTRY PATH RULES:
 • CIS text says "HKLM\\KEY\\Path:ValueName" → command:
@@ -150,27 +171,28 @@ COMMAND PATTERNS BY CIS SECTION (SINGLE-VALUE OUTPUT):
 • Filesystem config (1.x) → findmnt -n /tmp
 • Kernel parameters (3.x network) → sysctl -n net.ipv4.ip_forward
   Output: 0  (just the number, use -n flag)
-  Regex: ^0$
+  Expected: ==0
 • Package installed → dpkg-query -s packagename 2>/dev/null | grep -i status  (Debian/Ubuntu)
   Or: rpm -q packagename  (RHEL/CentOS)
 • Package NOT installed → dpkg-query -W -f='${{Status}}' packagename 2>&1 | grep -c 'not-installed'
 • Service status → systemctl is-enabled servicename 2>/dev/null || echo not-found
   Output: disabled  (single word)
-  Regex: ^disabled$
+  Expected: ==disabled
 • File permissions → stat -c '%a' /etc/ssh/sshd_config
   Output: 600  (just the permission number)
-  Regex: ^[0-6][0-4][0-4]$
+  Expected: <=600
 • File ownership → stat -c '%U' /etc/ssh/sshd_config
   Output: root  (just the owner name)
-  Regex: ^root$
+  Expected: ==root
 • File content → grep -E '^PermitRootLogin' /etc/ssh/sshd_config | awk '{{print $2}}'
   Output: no  (just the value, NOT the whole line)
-  Regex: ^no$
+  Expected: ==no
 • Password policy → awk '/^PASS_MAX_DAYS/ {{print $2}}' /etc/login.defs
   Output: 365  (just the number)
-  Regex: ^(?:[0-9]|[1-9]\\d|[12]\\d\\d|3[0-5]\\d|36[0-5])$
+  Expected: <=365
 • Audit rules → auditctl -l | grep -c 'time-change'
   Output: 2  (count of matching rules)
+  Expected: >=1
 • User/group → awk -F: '($3 == 0) {{ print $1 }}' /etc/passwd
 • Firewall (UFW) → ufw status | head -1
 • Firewall (iptables) → iptables -L -n | head -1
@@ -188,7 +210,7 @@ COMMAND PATTERNS:
 • Running config section → show running-config | section line vty
 • Specific setting → show running-config | include service password-encryption
   Output: "service password-encryption"
-  Regex: service password-encryption
+  Expected: contains:service password-encryption
 • Access lists → show access-lists
 • Interfaces → show ip interface brief
 • NTP → show ntp associations ; show running-config | include ntp
@@ -197,8 +219,7 @@ COMMAND PATTERNS:
 • SSH → show ip ssh
 • AAA → show running-config | section aaa
 • Banner → show running-config | include banner
-• VTY config → show running-config | section line vty
-"""
+• VTY config → show running-config | section line vty"""
 
 PHASE2_COMMAND_GENERATION = """Platform: {platform} (family: {platform_family})
 
@@ -265,13 +286,19 @@ NETWORK-SPECIFIC ROUTING:
 - Config checking → show running-config | include pattern
 - Section checking → show running-config | section pattern
 
-REGEX REMINDER:
-Since commands now output SINGLE VALUES, use anchored regex:
-  >=14 → ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$
-  >=24 → ^(?:2[4-9]|[3-9]\\d|\\d{{3,}})$
-  Exact 1 → ^1$
-  Disabled → ^Disabled$
-NEVER use English phrases like "14 or more" or "Enabled or greater" as regex.
+═══════════════════════════════════════════════════════════
+EXPECTED OUTPUT — USE COMPARISON EXPRESSIONS, NOT REGEX
+═══════════════════════════════════════════════════════════
+The expected_output_regex field must use COMPARISON EXPRESSIONS:
+
+  >=N   (e.g. >=24 for "24 or more")
+  <=N   (e.g. <=30 for "30 or fewer")
+  ==VAL (e.g. ==1, ==0, ==Disabled, ==no)
+  !=VAL (e.g. !=0 for "not zero")
+  contains:TEXT  (e.g. contains:Success and Failure)
+
+NEVER produce complex regex patterns. Use mathematical operators instead.
+NEVER use English phrases like "14 or more" or "Enabled or greater".
 
 RULES:
 {rules_json}
@@ -436,12 +463,30 @@ BAD:  if (...) {{ "PASS" }} else {{ "FAIL" }}
 
 Commands must be READ-ONLY, non-interactive, and work when pasted into the platform shell.
 
-REGEX QUALITY:
-• Since command outputs a single value, use anchored regex with ^ and $.
-• For numeric thresholds (e.g. >=14): ^(?:1[4-9]|[2-9]\\d|\\d{{3,}})$
-• For exact values: ^1$ or ^0$
-• For status words: ^Disabled$ or ^enabled$
-• NEVER produce regex like "14 or more" or "Enabled or greater".
+EXPECTED OUTPUT — USE COMPARISON EXPRESSIONS, NOT REGEX:
+The expected_output_regex field must contain a comparison expression, not a regex.
+
+Available operators:
+  >=N    Number >= N (e.g. >=24 for "24 or more")
+  <=N    Number <= N (e.g. <=30 for "30 or fewer")
+  >N     Number > N
+  <N     Number < N
+  ==VAL  Exact match (e.g. ==1, ==0, ==Disabled, ==root)
+  !=VAL  Not equal (e.g. !=0)
+  contains:TEXT  Substring match (e.g. contains:Success and Failure)
+  regex:PATTERN  Fallback regex only when no operator fits
+
+EXAMPLES:
+  CIS says "24 or more" → >=24
+  CIS says "set to 1" → ==1
+  CIS says "Disabled" → ==Disabled
+  CIS says "365 or fewer" → <=365
+  CIS says "Success and Failure" → contains:Success and Failure
+  CIS says "permissions 600" → <=600
+
+NEVER use complex regex patterns for numeric comparisons.
+NEVER use English phrases like "14 or more" or "Enabled or greater".
+ALWAYS prefer ==, >=, <= over regex:.
 
 WINDOWS (PowerShell):
 • NEVER use && — use ; to chain commands

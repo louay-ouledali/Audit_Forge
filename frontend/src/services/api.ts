@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveryProgress } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -288,6 +288,22 @@ export async function generateScript(payload: GenerateScriptRequest): Promise<Bl
 
 export async function previewScript(payload: GenerateScriptRequest): Promise<ScriptPreviewResponse> {
   const { data } = await api.post('/scans/generate-script/preview', payload);
+  return data;
+}
+
+// Network Discovery
+export async function discoverNetwork(subnet: string): Promise<{ hosts: DiscoveredHost[]; total_scanned: number }> {
+  const { data } = await api.post('/scans/discover/scan', { subnet });
+  return data;
+}
+
+export async function startDiscoveryAsync(subnet: string): Promise<{ discovery_id: string; status: string }> {
+  const { data } = await api.post('/scans/discover', { subnet });
+  return data;
+}
+
+export async function getDiscoveryStatus(discoveryId: string): Promise<DiscoveryProgress> {
+  const { data } = await api.get(`/scans/discover/${discoveryId}/status`);
   return data;
 }
 

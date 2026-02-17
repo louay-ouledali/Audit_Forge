@@ -97,9 +97,18 @@ async def extract_rules_from_section(
 
 
 def _prepare_rule_for_llm(rule: dict[str, Any]) -> dict[str, str]:
-    """Prepare a compact rule dict for LLM prompt injection."""
-    audit = (rule.get("audit_description_raw") or "")[:600]
-    remediation = (rule.get("remediation_description_raw") or "")[:400]
+    """Prepare a compact rule dict for LLM prompt injection.
+
+    Applies PDF line-break cleanup before truncation so that identifiers
+    like registry value names are never sent to the LLM in a broken state.
+    """
+    from backend.core.command_templates import _fix_line_breaks
+
+    audit_raw = rule.get("audit_description_raw") or ""
+    remediation_raw = rule.get("remediation_description_raw") or ""
+    # Fix PDF line-break artifacts BEFORE truncating
+    audit = _fix_line_breaks(audit_raw)[:600]
+    remediation = _fix_line_breaks(remediation_raw)[:400]
     return {
         "section_number": rule.get("section_number", ""),
         "title": rule.get("title", ""),
@@ -197,7 +206,7 @@ async def generate_commands_for_batch(
 
     # --- Phase B: send unmatched rules to LLM in concurrent sub-batches ---
     if llm_needed:
-        SUB_BATCH_SIZE = 5
+        SUB_BATCH_SIZE = 3  # Fewer rules per LLM call = better accuracy
         sub_batches: list[list[tuple[int, dict[str, Any]]]] = []
         for i in range(0, len(llm_needed), SUB_BATCH_SIZE):
             sub_batches.append(llm_needed[i : i + SUB_BATCH_SIZE])
@@ -254,8 +263,8 @@ async def generate_commands_for_batch(
 
 
 def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
-    """Clean up common LLM mistakes in generated commands and regex patterns."""
-    from backend.core.verification_engine import _check_regex_quality
+    """Clean up common LLM mistakes in generated commands and expected output expressions."""
+    from backend.core.comparison_engine import validate_expression
 
     # --- Fix commands that test compliance instead of retrieving values ---
     cmd = result.get("audit_command", "")
@@ -263,31 +272,74 @@ def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
         cmd = _fix_compliance_testing_command(cmd)
         result["audit_command"] = cmd
 
-    # --- Fix regex quality ---
-    regex = result.get("expected_output_regex", "")
-    if regex:
-        # Check if regex is a bad English-phrase pattern (reuse verification logic)
-        quality_error = _check_regex_quality(regex)
-        if quality_error:
-            # Clear the bad regex so verification falls back to exit-code check
+    # --- Fix expected output expression ---
+    expr = result.get("expected_output_regex", "")
+    if expr:
+        # Convert legacy regex patterns to comparison expressions where possible
+        expr = _convert_regex_to_expression(expr)
+        result["expected_output_regex"] = expr
+
+        # Validate the expression
+        error = validate_expression(expr)
+        if error:
+            # Clear the bad expression so verification falls back to exit-code check
             result["expected_output_regex"] = ""
             logger.warning(
-                "Cleared bad LLM regex for %s: %s",
-                result.get("section_number", "?"), quality_error,
+                "Cleared bad LLM expression for %s: %s",
+                result.get("section_number", "?"), error,
             )
-        else:
-            # Validate the regex compiles
-            try:
-                re.compile(result["expected_output_regex"])
-            except re.error:
-                logger.warning(
-                    "Invalid regex from LLM for %s: %s — clearing",
-                    result.get("section_number", "?"),
-                    result["expected_output_regex"],
-                )
-                result["expected_output_regex"] = ""
 
     return result
+
+
+def _convert_regex_to_expression(expr: str) -> str:
+    """Convert common regex patterns to comparison expressions.
+
+    This handles the case where the LLM still produces regex despite
+    being instructed to use comparison expressions.
+    """
+    stripped = expr.strip()
+
+    # Already a comparison expression — leave it alone
+    if re.match(r'^(>=|<=|!=|==|>|<)\s*\S', stripped):
+        return stripped
+    if re.match(r'^(contains|regex):', stripped, re.IGNORECASE):
+        return stripped
+
+    # ^1$ → ==1, ^0$ → ==0, ^Disabled$ → ==Disabled, etc.
+    exact_match = re.match(r'^\^([^$\\[\]()|*+?{}]+)\$$', stripped)
+    if exact_match:
+        value = exact_match.group(1)
+        # Only convert if it's a simple value (no regex metacharacters)
+        if not re.search(r'[\\[\]()|*+?{}]', value):
+            return f"=={value}"
+
+    # Complex numeric regex patterns like ^(?:1[4-9]|[2-9]\d|\d{3,})$ → hard to reverse
+    # Leave these as regex: prefix for backward compatibility
+    if re.match(r'^\^\(\?:', stripped):
+        return f"regex:{stripped}"
+
+    # Reject obvious English prose BEFORE converting to contains:
+    _english = [
+        r'^\d+\s+or\s+(?:more|fewer|greater|less)',
+        r'(?:should|must|needs?\s+to)\b',
+        r'\bshould\s+be\b',
+        r'\bor\s+(?:higher|lower|above|below)\b',
+        r'\bat\s+least\s+\d+',
+        r'\bno\s+more\s+than\b',
+        r'\bgreater\s+than\b',
+        r'\bless\s+than\b',
+        r'enabled\s+or\s+greater',
+    ]
+    for pat in _english:
+        if re.search(pat, stripped, re.IGNORECASE):
+            return stripped  # Leave as-is so validate_expression rejects it
+
+    # Simple patterns like "Success and Failure" → contains:Success and Failure
+    if not re.search(r'[\\^$*+?{}()\[\]|]', stripped) and len(stripped) > 3:
+        return f"contains:{stripped}"
+
+    return stripped
 
 
 # Patterns that indicate the command is testing compliance rather than retrieving a value

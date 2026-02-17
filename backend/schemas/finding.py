@@ -14,6 +14,8 @@ class FindingResponse(BaseModel):
     status: str
     actual_output: str | None = None
     expected_output: str | None = None
+    expected_output_display: str | None = None  # Human-readable form of expected_output
+    evaluation_explanation: str | None = None  # How the comparison was evaluated
     severity: str | None = None
     ai_advice: str | None = None
     ai_advice_generated_at: datetime | None = None

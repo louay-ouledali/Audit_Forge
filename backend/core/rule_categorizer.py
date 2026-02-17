@@ -27,7 +27,7 @@ TAG_KEYWORDS: dict[str, list[str]] = {
         "wireless", "wifi", "ipv6", "net.ipv4", "net.ipv6",
     ],
     "filesystem_permissions": [
-        "chmod", "chown", "chgrp", "permission", "ownership", "sticky bit",
+        "chmod", "chown", "chgrp", "file permission", "file ownership", "sticky bit",
         "suid", "sgid", "world-writable", "world-readable", "umask", "fstab",
         "noexec", "nosuid", "nodev", "mount", "/tmp", "/var/tmp",
     ],
@@ -54,13 +54,14 @@ TAG_KEYWORDS: dict[str, list[str]] = {
     ],
     "database_security": [
         "pg_hba.conf", "postgresql.conf", "listener.ora", "sqlnet.ora",
-        "authentication", "authorization", "audit trail", "grant", "revoke",
-        "privilege", "role", "schema", "tablespace",
+        "audit trail", "tablespace", "mysql", "mariadb", "mongodb",
+        "oracle database", "sql server", "mssql",
     ],
     "network_device": [
-        "acl", "access-list", "vty", "console", "aux", "management plane",
-        "control plane", "aaa", "radius", "tacacs", "snmp community",
-        "logging", "ntp", "banner",
+        "access-list", "vty", "management plane",
+        "control plane", "aaa authentication", "radius server", "tacacs",
+        "snmp community", "snmp-server", "show running-config",
+        "router ospf", "router bgp", "cisco", "juniper", "arista",
     ],
 }
 

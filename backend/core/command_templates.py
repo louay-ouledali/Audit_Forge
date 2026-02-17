@@ -128,6 +128,28 @@ def _regex_lte(threshold: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Text cleanup: fix PDF line-break artifacts
+# ---------------------------------------------------------------------------
+
+def _fix_line_breaks(text: str) -> str:
+    """Join words/identifiers broken across lines by PDF text extraction.
+
+    CIS PDF extraction frequently breaks long identifiers with a newline,
+    e.g.  ``DisableCloudOptimizedCo\\nntent`` instead of
+    ``DisableCloudOptimizedContent``.  This function joins them so that
+    regex-based extraction (registry paths, privilege names, etc.) works
+    correctly.
+    """
+    if not text:
+        return text
+    # Join lines where a word fragment is split: letter/digit at end of line
+    # followed by a lower-case letter or digit at start of next line.
+    # This is the dominant pattern in CIS PDFs.
+    text = re.sub(r'([A-Za-z0-9_])\n([a-z0-9])', r'\1\2', text)
+    return text
+
+
+# ---------------------------------------------------------------------------
 # Extractors: pull numbers / paths from rule text
 # ---------------------------------------------------------------------------
 
@@ -171,8 +193,13 @@ def _extract_threshold(text: str) -> int | None:
 
 
 def _extract_registry(text: str) -> tuple[str, str] | None:
-    """Return (key_path, value_name) from audit/remediation text."""
-    m = _REG_PATH_RE.search(text)
+    """Return (key_path, value_name) from audit/remediation text.
+
+    Applies line-break cleanup first so that PDF-broken names like
+    ``DisableCloudOptimizedCo\\nntent`` are properly joined.
+    """
+    cleaned = _fix_line_breaks(text)
+    m = _REG_PATH_RE.search(cleaned)
     return (m.group(1), m.group(2)) if m else None
 
 
@@ -195,6 +222,54 @@ _NET_ACCOUNTS_FIELDS: dict[str, str] = {
     "lockout threshold": "Lockout threshold",
     "lockout observation window": "Lockout observation window",
     "reset account lockout": "Lockout observation window",
+}
+
+# Map from CIS user-rights display names (lower-cased) to secedit privilege
+# constant names.  These are the keys that appear in the [Privilege Rights]
+# section of the security policy export (secedit /export).
+_USER_RIGHTS_MAP: dict[str, str] = {
+    "access credential manager as a trusted caller": "SeTrustedCredManAccessPrivilege",
+    "access this computer from the network": "SeNetworkLogonRight",
+    "act as part of the operating system": "SeTcbPrivilege",
+    "add workstations to domain": "SeMachineAccountPrivilege",
+    "adjust memory quotas for a process": "SeIncreaseQuotaPrivilege",
+    "allow log on locally": "SeInteractiveLogonRight",
+    "allow log on through remote desktop services": "SeRemoteInteractiveLogonRight",
+    "back up files and directories": "SeBackupPrivilege",
+    "change the system time": "SeSystemtimePrivilege",
+    "change the time zone": "SeTimeZonePrivilege",
+    "create a pagefile": "SeCreatePagefilePrivilege",
+    "create a token object": "SeCreateTokenPrivilege",
+    "create global objects": "SeCreateGlobalPrivilege",
+    "create permanent shared objects": "SeCreatePermanentPrivilege",
+    "create symbolic links": "SeCreateSymbolicLinkPrivilege",
+    "debug programs": "SeDebugPrivilege",
+    "deny access to this computer from the network": "SeDenyNetworkLogonRight",
+    "deny log on as a batch job": "SeDenyBatchLogonRight",
+    "deny log on as a service": "SeDenyServiceLogonRight",
+    "deny log on locally": "SeDenyInteractiveLogonRight",
+    "deny log on through remote desktop services": "SeDenyRemoteInteractiveLogonRight",
+    "enable computer and user accounts to be trusted for delegation": "SeEnableDelegationPrivilege",
+    "force shutdown from a remote system": "SeRemoteShutdownPrivilege",
+    "generate security audits": "SeAuditPrivilege",
+    "impersonate a client after authentication": "SeImpersonatePrivilege",
+    "increase a process working set": "SeIncreaseWorkingSetPrivilege",
+    "increase scheduling priority": "SeIncreaseBasePriorityPrivilege",
+    "load and unload device drivers": "SeLoadDriverPrivilege",
+    "lock pages in memory": "SeLockMemoryPrivilege",
+    "log on as a batch job": "SeBatchLogonRight",
+    "log on as a service": "SeServiceLogonRight",
+    "manage auditing and security log": "SeSecurityPrivilege",
+    "modify an object label": "SeRelabelPrivilege",
+    "modify firmware environment values": "SeSystemEnvironmentPrivilege",
+    "perform volume maintenance tasks": "SeManageVolumePrivilege",
+    "profile single process": "SeProfileSingleProcessPrivilege",
+    "profile system performance": "SeSystemProfilePrivilege",
+    "replace a process level token": "SeAssignPrimaryTokenPrivilege",
+    "restore files and directories": "SeRestorePrivilege",
+    "shut down the system": "SeShutdownPrivilege",
+    "synchronize directory service data": "SeSyncAgentPrivilege",
+    "take ownership of files or other objects": "SeTakeOwnershipPrivilege",
 }
 
 
@@ -235,9 +310,9 @@ def _try_net_accounts(rule: dict[str, Any]) -> dict[str, str] | None:
     # Determine comparison direction from title
     is_max = "maximum" in title_lower or "or fewer" in title_lower
     if is_max:
-        num_regex = _regex_lte(threshold)
+        comparison = f"<={threshold}"
     else:
-        num_regex = _regex_gte(threshold)
+        comparison = f">={threshold}"
 
     # Build a targeted command that outputs ONLY the numeric value
     escaped_label_ps = field_label.replace("'", "''")
@@ -248,8 +323,8 @@ def _try_net_accounts(rule: dict[str, Any]) -> dict[str, str] | None:
 
     return {
         "audit_command": audit_cmd,
-        "expected_output_regex": f"^{num_regex}$",
-        "expected_output_description": f"{field_label} value (number only, must meet threshold {threshold})",
+        "expected_output_regex": comparison,
+        "expected_output_description": f"{field_label} value (must be {comparison})",
         "remediation_command": "",
         "remediation_description": f"Set {field_label} to the required value via Group Policy.",
     }
@@ -262,7 +337,7 @@ def _try_registry(rule: dict[str, Any]) -> dict[str, str] | None:
     not the whole reg-query table.  For REG_DWORD values the output is a
     plain integer (e.g. ``1``), making regex matching trivial.
     """
-    combined = (
+    combined = _fix_line_breaks(
         (rule.get("audit_description_raw") or "")
         + " "
         + (rule.get("remediation_description_raw") or "")
@@ -273,29 +348,14 @@ def _try_registry(rule: dict[str, Any]) -> dict[str, str] | None:
 
     key_path, value_name = reg
 
+    # Skip firewall LogFilePath values — these are strings, not numbers
+    if value_name.lower() in ("logfilepath",):
+        return _try_firewall_logpath(rule, key_path, value_name)
+
     # Convert HKLM\ to PowerShell registry drive path HKLM:\
     ps_key_path = key_path.replace("HKLM\\", "HKLM:\\", 1)
 
-    threshold = _extract_threshold(combined)
-
-    if threshold is not None:
-        # Numeric threshold → output just the number, regex matches >= or <=
-        title_lower = (rule.get("title") or "").lower()
-        is_max = "maximum" in title_lower or "or fewer" in title_lower or "or less" in title_lower
-        if is_max:
-            num_regex = _regex_lte(threshold)
-        else:
-            num_regex = _regex_gte(threshold)
-        regex = f"^{num_regex}$"
-    else:
-        # Check for Enabled/Disabled pattern (REG_DWORD 1 = Enabled, 0 = Disabled)
-        title_lower = (rule.get("title") or "").lower()
-        if "enabled" in title_lower or "is set to 'on" in title_lower:
-            regex = "^1$"
-        elif "disabled" in title_lower or "is set to 'off" in title_lower:
-            regex = "^0$"
-        else:
-            regex = r"^\d+$"
+    comparison = _determine_registry_comparison(rule, combined)
 
     audit_cmd = (
         f"(Get-ItemProperty -Path '{ps_key_path}' "
@@ -304,15 +364,100 @@ def _try_registry(rule: dict[str, Any]) -> dict[str, str] | None:
 
     return {
         "audit_command": audit_cmd,
-        "expected_output_regex": regex,
-        "expected_output_description": f"Registry value {value_name} (single value output)",
+        "expected_output_regex": comparison,
+        "expected_output_description": f"Registry value {value_name} (expected: {comparison})",
         "remediation_command": "",
         "remediation_description": f"Set {key_path}\\{value_name} via Group Policy or reg add.",
     }
 
 
+def _determine_registry_comparison(rule: dict[str, Any], combined: str) -> str:
+    """Determine the correct comparison expression for a registry-backed rule.
+
+    Applies a cascade of heuristics to avoid the generic 'regex:\\d+' fallback:
+      1. Extract explicit threshold from "set to X", "X or more", etc.
+      2. Check title for Enabled/Disabled/On/Off patterns
+      3. Extract REG_DWORD expected value from audit text (e.g. "REG_DWORD value of 1")
+      4. Infer from title semantics ("Prevent", "Disallow", "Do not" → ==0,
+         "Require", "Enable", "Allow" → ==1)
+      5. Fall back to ==1 for REG_DWORD rules (better than regex:\\d+ which accepts any value)
+    """
+    title = rule.get("title") or ""
+    title_lower = title.lower()
+
+    # 1. Explicit threshold
+    threshold = _extract_threshold(combined)
+    if threshold is not None:
+        is_max = "maximum" in title_lower or "or fewer" in title_lower or "or less" in title_lower
+        if is_max:
+            return f"<={threshold}"
+        # Check if it's an exact-value setting (e.g. "set to '0'", "set to '4'")
+        exact_match = re.search(
+            r"is\s+set\s+to\s+['\"]?(\d+)['\"]?",
+            title_lower,
+        )
+        if exact_match and int(exact_match.group(1)) == threshold:
+            # "set to X" with no "or more" → exact match
+            if not re.search(r"or\s+(?:more|greater|higher|above)", title_lower):
+                return f"=={threshold}"
+        return f">={threshold}"
+
+    # 2. Explicit Enabled/Disabled in title
+    if re.search(r"is\s+set\s+to\s+['\"]?(?:enabled|on)['\"]?", title_lower):
+        return "==1"
+    if re.search(r"is\s+set\s+to\s+['\"]?(?:disabled|off)['\"]?", title_lower):
+        return "==0"
+    # Check for bare Enabled/Disabled at end of title (truncated closing quote)
+    if re.search(r"set\s+to\s+['\"]?disabled", title_lower):
+        return "==0"
+    if re.search(r"set\s+to\s+['\"]?enabled", title_lower):
+        return "==1"
+
+    # 3. Extract from audit text: "REG_DWORD value of X" or "a value of X"
+    dword_match = re.search(
+        r"(?:REG_DWORD|DWORD|value\s+of)\s+(?:value\s+of\s+)?['\"]?(\d+)",
+        combined, re.IGNORECASE,
+    )
+    if dword_match:
+        val = int(dword_match.group(1))
+        # Check if audit says "or less" / "or that the key does not exist"
+        context = combined[max(0, dword_match.start() - 20):dword_match.end() + 60]
+        if re.search(r"or\s+(?:less|lower|fewer|below)", context, re.IGNORECASE):
+            return f"<={val}"
+        if re.search(r"or\s+(?:more|greater|higher|above)", context, re.IGNORECASE):
+            return f">={val}"
+        return f"=={val}"
+
+    # 4. Infer from title semantics
+    # "Do not allow / Prevent / Disallow / Turn off" → typically ==0
+    if re.search(r"(?:do\s+not\s+allow|prevent|disallow|turn\s+off|block|prohibit|deny)",
+                 title_lower):
+        return "==0"
+    # "Always / Require / Must / Enable / Turn on / Allow" → typically ==1
+    if re.search(r"(?:always|require|must\s+use|turn\s+on|enable|force)",
+                 title_lower):
+        return "==1"
+
+    # 5. Last resort: check audit text for any specific value hint
+    # rather than falling back to the useless regex:\d+
+    set_to_val = re.search(r"set\s+(?:to|=)\s*['\"]?(\d+)", combined, re.IGNORECASE)
+    if set_to_val:
+        return f"=={set_to_val.group(1)}"
+
+    # 6. If all else fails, default to ==1 (most CIS registry rules check
+    # that a protective setting is Enabled=1).  This is much better than
+    # regex:\d+ which accepts ANY value including insecure ones.
+    return "==1"
+
+
 def _try_auditpol(rule: dict[str, Any]) -> dict[str, str] | None:
-    """Match Windows audit-policy rules (17.x)."""
+    """Match Windows audit-policy rules (17.x).
+
+    Parses both the title AND remediation text to determine the exact
+    expected audit setting (Success, Failure, or Success and Failure).
+    The remediation text is authoritative — it says exactly what the GP
+    setting should be set to.
+    """
     section = rule.get("section_number", "")
     if not section.startswith("17."):
         return None
@@ -326,79 +471,169 @@ def _try_auditpol(rule: dict[str, Any]) -> dict[str, str] | None:
     if not guid:
         return None
 
+    # Determine expected audit setting.
+    # Priority: remediation text > title text > default.
+    # Remediation typically says:
+    #   "set the following UI path to Success and Failure:"
+    #   "set the following UI path to include Failure:"
+    #   "set the following UI path to include Success:"
+    remediation = (rule.get("remediation_description_raw") or "").lower()
     title_lower = (rule.get("title") or "").lower()
-    if "success and failure" in title_lower:
-        regex = "Success and Failure"
-    elif "success" in title_lower:
-        regex = "Success"
-    elif "failure" in title_lower:
-        regex = "Failure"
-    else:
-        regex = "Success|Failure"
+
+    comparison = _determine_audit_comparison(title_lower, remediation)
 
     return {
         "audit_command": f'auditpol /get /subcategory:"{guid}"',
-        "expected_output_regex": regex,
-        "expected_output_description": f"Audit policy subcategory {guid} is configured",
+        "expected_output_regex": comparison,
+        "expected_output_description": f"Audit policy subcategory {guid} ({comparison})",
         "remediation_command": "",
         "remediation_description": "Configure via Advanced Audit Policy in Group Policy.",
     }
 
 
+def _determine_audit_comparison(title_lower: str, remediation_lower: str) -> str:
+    """Determine the correct audit policy comparison from title and remediation text.
+
+    The remediation text is the authoritative source.  CIS remediation for
+    audit policy rules says exactly one of:
+      - "set ... to Success and Failure"
+      - "set ... to include Failure"
+      - "set ... to include Success"
+      - "set ... to Success"
+      - "set ... to Failure"
+    """
+    # Check remediation text first (most reliable)
+    if "success and failure" in remediation_lower:
+        return "contains:Success and Failure"
+    # "include Failure" (only Failure required, e.g., 17.6.1, 17.7.5)
+    if re.search(r"(?:set|path)\s+to\s+(?:include\s+)?failure", remediation_lower):
+        # But NOT if it also says Success
+        if "success" not in remediation_lower or "include failure" in remediation_lower:
+            return "contains:Failure"
+        return "contains:Success and Failure"
+    # "include Success" (only Success required)
+    if re.search(r"(?:set|path)\s+to\s+(?:include\s+)?success", remediation_lower):
+        if "failure" not in remediation_lower or "include success" in remediation_lower:
+            return "contains:Success"
+        return "contains:Success and Failure"
+
+    # Fall back to title text
+    if "success and failure" in title_lower:
+        return "contains:Success and Failure"
+    if "failure" in title_lower and "success" not in title_lower:
+        return "contains:Failure"
+    if "success" in title_lower:
+        return "contains:Success"
+
+    # Default: Success (conservative)
+    return "contains:Success"
+
+
 def _try_windows_service(rule: dict[str, Any]) -> dict[str, str] | None:
     """Match Windows service rules (5.x).
 
-    Uses ``Get-Service … | Select-Object -ExpandProperty StartType``
-    which outputs a single word like ``Disabled`` or ``Automatic``.
+    Uses ``(Get-Service ...).StartType`` which outputs a single word like
+    ``Disabled`` or ``Automatic``.
+
+    CIS section 5.x is almost entirely about ensuring services are
+    Disabled.  Only use ==Automatic if the title/remediation explicitly
+    says so.  This fixes the inverted-state bug where services that
+    should be Disabled were checked as Automatic.
     """
     section = rule.get("section_number", "")
     if not section.startswith("5."):
         return None
 
-    title_lower = (rule.get("title") or "").lower()
+    title = rule.get("title") or ""
+    title_lower = title.lower()
+    remediation_lower = (rule.get("remediation_description_raw") or "").lower()
+
     # Extract service name from title like "Ensure 'Print Spooler (Spooler)' is set to 'Disabled'"
-    svc_match = re.search(r"\((\w+)\)", rule.get("title") or "")
+    svc_match = re.search(r"\((\w+)\)", title)
     if not svc_match:
         return None
 
     svc_name = svc_match.group(1)
-    if "disabled" in title_lower:
-        regex = "^(?:Disabled|Stopped)$"
+
+    # Determine expected state from title + remediation
+    # Check for explicit Automatic/Manual first (rare in section 5)
+    if re.search(r"set\s+to\s+['\"]?automatic", title_lower) or \
+       re.search(r"set\s+to\s+['\"]?automatic", remediation_lower):
+        comparison = "==Automatic"
+    elif re.search(r"set\s+to\s+['\"]?manual", title_lower) or \
+         re.search(r"set\s+to\s+['\"]?manual", remediation_lower):
+        comparison = "==Manual"
     else:
-        regex = "^(?:Running|Automatic)$"
+        # Default to Disabled for CIS section 5.x — the vast majority
+        # of these rules require services to be Disabled or Not Installed
+        comparison = "==Disabled"
 
     return {
         "audit_command": f"(Get-Service -Name {svc_name} -ErrorAction Stop).StartType",
-        "expected_output_regex": regex,
-        "expected_output_description": f"Service {svc_name} start type (single value)",
+        "expected_output_regex": comparison,
+        "expected_output_description": f"Service {svc_name} start type (expected: {comparison})",
         "remediation_command": "",
         "remediation_description": f"Set service {svc_name} startup type via Group Policy or sc.exe.",
     }
 
 
 def _try_secedit(rule: dict[str, Any]) -> dict[str, str] | None:
-    """Match Windows user rights assignment rules (2.2.x)."""
+    """Match Windows user rights assignment rules (2.2.x).
+
+    Uses ``secedit /export`` to dump the local security policy, then
+    ``Select-String`` with the **exact secedit privilege constant**
+    (e.g. ``SeCreatePagefilePrivilege``) to retrieve the assigned
+    accounts.  This replaces the broken first-word approach that produced
+    vague matches like ``Select-String -Pattern "Create"``.
+    """
     section = rule.get("section_number", "")
     if not section.startswith("2.2."):
         return None
 
     title = rule.get("title") or ""
     # Extract the right name, e.g. "Access this computer from the network"
+    # Also handle truncated titles where the closing quote is missing
     right_match = re.search(r"Ensure '([^']+)'", title)
+    if not right_match:
+        # Try without closing quote (PDF truncated the title)
+        right_match = re.search(r"Ensure '(.+)$", title)
     if not right_match:
         return None
 
     right_name = right_match.group(1)
-    # Map common right names to secedit policy keys
-    # We use a generic approach: export secpol and grep for a pattern
-    pattern_word = right_name.split()[0] if right_name else "Se"
+
+    # Look up the secedit privilege constant for this right name.
+    # Matching is case-insensitive and tolerates slight CIS wording variants.
+    right_lower = right_name.lower().strip()
+    privilege_key = _USER_RIGHTS_MAP.get(right_lower)
+
+    if not privilege_key:
+        # Fuzzy fallback: try substring matching for slight title differences
+        for known_right, key in _USER_RIGHTS_MAP.items():
+            # If the known right is contained in the title or vice-versa
+            if known_right in right_lower or right_lower in known_right:
+                privilege_key = key
+                break
+
+    if not privilege_key:
+        # Last resort: fall through to LLM
+        return None
+
+    # Determine if this is a "Deny" rule (expected to have specific accounts)
+    # or a positive privilege (expected to have Administrators, etc.)
+    title_lower = title.lower()
+    is_deny_right = "deny" in title_lower
+
+    # For deny rights, we want to verify the line exists (accounts are assigned)
+    # For positive rights, we want to verify the line exists with proper accounts
+    # In both cases, outputting the full line lets the verification engine check
     return {
         "audit_command": (
             "secedit /export /cfg C:\\Windows\\Temp\\secpol.cfg /quiet; "
-            f'Select-String -Path C:\\Windows\\Temp\\secpol.cfg -Pattern "{pattern_word}"'
+            f"Select-String -Path C:\\Windows\\Temp\\secpol.cfg -Pattern '{privilege_key}'"
         ),
-        "expected_output_regex": re.escape(pattern_word),
-        "expected_output_description": f"User rights assignment: {right_name}",
+        "expected_output_regex": f"contains:{privilege_key}",
+        "expected_output_description": f"User rights assignment: {right_name} ({privilege_key})",
         "remediation_command": "",
         "remediation_description": f"Configure '{right_name}' via Group Policy > User Rights Assignment.",
     }
@@ -434,8 +669,8 @@ def _try_sysctl(rule: dict[str, Any]) -> dict[str, str] | None:
 
     return {
         "audit_command": f"sysctl -n {param}",
-        "expected_output_regex": f"^{re.escape(expected_val)}$",
-        "expected_output_description": f"{param} value (expected: {expected_val})",
+        "expected_output_regex": f"=={expected_val}",
+        "expected_output_description": f"{param} value (expected: =={expected_val})",
         "remediation_command": "",
         "remediation_description": f"Set {param} = {expected_val} in /etc/sysctl.conf and run sysctl -p.",
     }
@@ -464,14 +699,14 @@ def _try_systemctl(rule: dict[str, Any]) -> dict[str, str] | None:
         svc_name = svc_match.group(1)
 
     if "not enabled" in title_lower or "disabled" in title_lower or "not installed" in title_lower:
-        regex = "^(?:disabled|masked|not-found|inactive)$"
+        comparison = "==disabled"
     else:
-        regex = "^enabled$"
+        comparison = "==enabled"
 
     return {
         "audit_command": f"systemctl is-enabled {svc_name} 2>/dev/null || echo not-found",
-        "expected_output_regex": regex,
-        "expected_output_description": f"Service {svc_name} state (single value)",
+        "expected_output_regex": comparison,
+        "expected_output_description": f"Service {svc_name} state (expected: {comparison})",
         "remediation_command": "",
         "remediation_description": f"Configure {svc_name} via systemctl.",
     }
@@ -493,14 +728,14 @@ def _try_file_permissions(rule: dict[str, Any]) -> dict[str, str] | None:
     perm_match = re.search(r"\b([0-7]{3,4})\b", combined)
     if perm_match:
         perms = perm_match.group(1)
-        regex = f"{re.escape(perms)}\\s+root\\s+root"
+        comparison = f"<={perms}"
     else:
-        regex = r"[0-6][0-4][0-4]\s+root\s+root"
+        comparison = "<=644"
 
     return {
-        "audit_command": f"stat -c '%a %U %G' {filepath}",
-        "expected_output_regex": regex,
-        "expected_output_description": f"File {filepath} permissions and ownership",
+        "audit_command": f"stat -c '%a' {filepath}",
+        "expected_output_regex": comparison,
+        "expected_output_description": f"File {filepath} permissions (expected: {comparison})",
         "remediation_command": "",
         "remediation_description": f"Set correct permissions on {filepath}.",
     }
@@ -529,16 +764,14 @@ def _try_grep_config(rule: dict[str, Any]) -> dict[str, str] | None:
     val_match = re.search(r"is\s+set\s+to\s+['\"]?(\w+)", title_lower)
     if val_match:
         expected_val = val_match.group(1)
-        key_match = re.search(r"ensure\s+'?([^']+?)'?\s+is\s+set", title_lower)
-        key_name = key_match.group(1).strip() if key_match else pattern
-        regex = f"{re.escape(key_name)}\\s+{re.escape(expected_val)}"
+        comparison = f"contains:{expected_val}"
     else:
-        regex = re.escape(pattern.strip("^$"))
+        comparison = f"contains:{pattern.strip('^$')}"
 
     return {
         "audit_command": f"grep -E '{pattern}' {filepath}",
-        "expected_output_regex": regex,
-        "expected_output_description": f"Config check in {filepath}",
+        "expected_output_regex": comparison,
+        "expected_output_description": f"Config check in {filepath} ({comparison})",
         "remediation_command": "",
         "remediation_description": f"Edit {filepath} to set the required value.",
     }
@@ -582,17 +815,16 @@ def _try_linux_password_policy(rule: dict[str, Any]) -> dict[str, str] | None:
     if threshold is not None:
         is_max = "max" in field_name.lower() or "or fewer" in title_lower or "or less" in title_lower
         if is_max:
-            num_regex = _regex_lte(threshold)
+            comparison = f"<={threshold}"
         else:
-            num_regex = _regex_gte(threshold)
-        regex = f"^{num_regex}$"
+            comparison = f">={threshold}"
     else:
-        regex = r"^\d+$"
+        comparison = ">=1"
 
     return {
         "audit_command": f"awk '/^{field_name}/ {{print $2}}' /etc/login.defs",
-        "expected_output_regex": regex,
-        "expected_output_description": f"{field_name} value (number only, threshold {threshold})",
+        "expected_output_regex": comparison,
+        "expected_output_description": f"{field_name} value (must be {comparison})",
         "remediation_command": "",
         "remediation_description": f"Edit /etc/login.defs and set {field_name} to the required value.",
     }
@@ -620,7 +852,7 @@ def _try_mount_point(rule: dict[str, Any]) -> dict[str, str] | None:
         option = option_match.group(1)
         return {
             "audit_command": f"findmnt -n {mount_point} | grep {option}",
-            "expected_output_regex": re.escape(option),
+            "expected_output_regex": f"contains:{option}",
             "expected_output_description": f"{mount_point} has {option} option set",
             "remediation_command": "",
             "remediation_description": f"Add {option} to {mount_point} mount options in /etc/fstab.",
@@ -628,7 +860,7 @@ def _try_mount_point(rule: dict[str, Any]) -> dict[str, str] | None:
 
     return {
         "audit_command": f"findmnt -n {mount_point}",
-        "expected_output_regex": re.escape(mount_point),
+        "expected_output_regex": f"contains:{mount_point}",
         "expected_output_description": f"{mount_point} is a separate mount",
         "remediation_command": "",
         "remediation_description": f"Create a separate partition for {mount_point}.",
@@ -659,22 +891,22 @@ def _try_package_check(rule: dict[str, Any]) -> dict[str, str] | None:
     if "dpkg" in combined or "apt" in combined:
         if is_not_installed:
             cmd = f"dpkg-query -W -f='${{Status}}' {pkg_name} 2>&1"
-            regex = "not-installed|no packages found|not installed"
+            comparison = "contains:not-installed"
         else:
             cmd = f"dpkg-query -s {pkg_name} 2>/dev/null | grep -i status"
-            regex = "install ok installed"
+            comparison = "contains:install ok installed"
     else:
         # Fallback: try rpm
         if is_not_installed:
             cmd = f"rpm -q {pkg_name} 2>&1"
-            regex = "not installed"
+            comparison = "contains:not installed"
         else:
             cmd = f"rpm -q {pkg_name}"
-            regex = pkg_name
+            comparison = f"contains:{pkg_name}"
 
     return {
         "audit_command": cmd,
-        "expected_output_regex": regex,
+        "expected_output_regex": comparison,
         "expected_output_description": f"Package {pkg_name} {'not ' if is_not_installed else ''}installed",
         "remediation_command": "",
         "remediation_description": f"{'Remove' if not is_not_installed else 'Install'} {pkg_name} using the system package manager.",
@@ -707,7 +939,7 @@ def _try_show_running_config(rule: dict[str, Any]) -> dict[str, str] | None:
 
     return {
         "audit_command": command,
-        "expected_output_regex": re.escape(search_term) if search_term else ".",
+        "expected_output_regex": f"contains:{search_term}" if search_term else "regex:.",
         "expected_output_description": f"Network config check: {search_term}",
         "remediation_command": "",
         "remediation_description": f"Configure the required setting in device configuration.",
@@ -718,11 +950,103 @@ def _try_show_running_config(rule: dict[str, Any]) -> dict[str, str] | None:
 # Master dispatcher
 # ---------------------------------------------------------------------------
 
+# Map of secedit INF keys for password/lockout policies that are NOT
+# accessible via `net accounts` or registry (Local Security Policy items).
+_SECEDIT_PASSWORD_POLICIES: dict[str, str] = {
+    "password must meet complexity": "PasswordComplexity",
+    "complexity requirements": "PasswordComplexity",
+    "reversible encryption": "ClearTextPassword",
+    "store passwords using reversible": "ClearTextPassword",
+    "relax minimum password length": "RelaxMinimumPasswordLengthLimits",
+    "administrator account lockout": "AllowAdministratorLockout",
+    "allow administrator account lockout": "AllowAdministratorLockout",
+}
+
+
+def _try_secedit_password(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Windows password/lockout policies that require secedit export.
+
+    Some password policies (complexity, reversible encryption, relax min
+    length) live in the Local Security Policy, NOT in the registry.
+    The correct audit approach is: secedit /export → parse the INF file.
+    """
+    section = rule.get("section_number", "")
+    if not (section.startswith("1.1.") or section.startswith("1.2.")):
+        return None
+
+    title_lower = (rule.get("title") or "").lower()
+
+    secedit_key = None
+    for pattern, key in _SECEDIT_PASSWORD_POLICIES.items():
+        if pattern in title_lower:
+            secedit_key = key
+            break
+    if not secedit_key:
+        return None
+
+    # Determine expected value
+    # PasswordComplexity: 1 = Enabled (CIS wants this)
+    # ClearTextPassword: 0 = Disabled (CIS wants reversible encryption OFF)
+    # RelaxMinimumPasswordLengthLimits: 1 = Enabled (CIS wants this)
+    # AllowAdministratorLockout: 1 = Enabled (CIS wants this)
+    if secedit_key == "ClearTextPassword":
+        comparison = "==0"
+    elif secedit_key == "PasswordComplexity":
+        comparison = "==1"
+    elif secedit_key == "RelaxMinimumPasswordLengthLimits":
+        comparison = "==1"
+    elif secedit_key == "AllowAdministratorLockout":
+        comparison = "==1"
+    else:
+        comparison = "==1"
+
+    audit_cmd = (
+        "secedit /export /cfg C:\\Windows\\Temp\\secpol.cfg /quiet; "
+        f"(Select-String -Path C:\\Windows\\Temp\\secpol.cfg -Pattern '{secedit_key}').Line "
+        f"-replace '.*=\\s*',''"
+    )
+
+    return {
+        "audit_command": audit_cmd,
+        "expected_output_regex": comparison,
+        "expected_output_description": f"Security policy {secedit_key} value (expected: {comparison})",
+        "remediation_command": "",
+        "remediation_description": f"Configure {secedit_key} via Local Security Policy or Group Policy.",
+    }
+
+
+def _try_firewall_logpath(
+    rule: dict[str, Any], key_path: str, value_name: str,
+) -> dict[str, str] | None:
+    """Handle firewall LogFilePath registry checks.
+
+    The LogFilePath is a string (file path), not a number.
+    CIS typically requires it to be set to the default:
+    %systemroot%\\system32\\logfiles\\firewall\\pfirewall.log
+    """
+    ps_key_path = key_path.replace("HKLM\\", "HKLM:\\", 1)
+    audit_cmd = (
+        f"(Get-ItemProperty -Path '{ps_key_path}' "
+        f"-Name '{value_name}' -ErrorAction Stop).{value_name}"
+    )
+    return {
+        "audit_command": audit_cmd,
+        "expected_output_regex": "contains:pfirewall.log",
+        "expected_output_description": f"Firewall log file path ({value_name})",
+        "remediation_command": "",
+        "remediation_description": (
+            f"Set {key_path}\\{value_name} to "
+            "%systemroot%\\system32\\logfiles\\firewall\\pfirewall.log."
+        ),
+    }
+
+
 # Template chains by platform family – tried in order, first match wins
 _WINDOWS_TEMPLATES = [
     _try_net_accounts,
     _try_auditpol,
     _try_windows_service,
+    _try_secedit_password,  # before secedit (more specific)
     _try_secedit,
     _try_registry,  # registry last because it's the broadest matcher
 ]

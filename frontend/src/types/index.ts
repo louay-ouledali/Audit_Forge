@@ -180,6 +180,24 @@ export interface ScriptPreviewResponse {
 
 // ── Network Scan types ───────────────────────────────────────
 
+export interface DiscoveredHost {
+  ip: string;
+  hostname: string;
+  open_ports: { port: number; service: string; platform_hint: string }[];
+  os_guess: string;
+  connection_methods: string[];
+}
+
+export interface DiscoveryProgress {
+  id: string;
+  status: string;
+  total: number;
+  scanned: number;
+  found: number;
+  hosts?: DiscoveredHost[];
+  error?: string;
+}
+
 export interface NetworkScanRequest {
   target_id: number;
   benchmark_id: number;
@@ -242,6 +260,8 @@ export interface Finding {
   status: string;
   actual_output: string | null;
   expected_output: string | null;
+  expected_output_display: string | null;
+  evaluation_explanation: string | null;
   severity: string | null;
   ai_advice: string | null;
   ai_advice_generated_at: string | null;

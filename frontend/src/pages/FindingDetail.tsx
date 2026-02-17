@@ -155,11 +155,25 @@ export default function FindingDetail() {
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
             <CheckCircle2 className="h-4 w-4 text-green-500" />
-            Expected Output (Regex)
+            Expected Output
           </h3>
+          {finding.expected_output_display && (
+            <div className="mb-2 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm font-medium text-blue-800">
+              {finding.expected_output_display}
+            </div>
+          )}
           <pre className="max-h-64 overflow-auto rounded-lg bg-gray-50 p-4 text-sm text-gray-800 font-mono">
-            {finding.expected_output || 'No expected output pattern defined'}
+            {finding.expected_output || 'No expected output defined'}
           </pre>
+          {finding.evaluation_explanation && (
+            <div className={`mt-2 rounded-lg p-3 text-sm font-medium ${
+              finding.status === 'PASS'
+                ? 'bg-green-50 border border-green-200 text-green-800'
+                : 'bg-red-50 border border-red-200 text-red-800'
+            }`}>
+              {finding.evaluation_explanation}
+            </div>
+          )}
         </div>
         <div className="rounded-lg border border-gray-200 bg-white p-6">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">

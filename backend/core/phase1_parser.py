@@ -37,7 +37,7 @@ MAX_PDF_SIZE_BYTES = 200 * 1024 * 1024
 MAX_PDF_PAGES = 5000
 
 # How many rules to send per LLM call for severity/category enrichment
-ENRICHMENT_BATCH_SIZE = 10
+ENRICHMENT_BATCH_SIZE = 3
 LLM_CALL_COOLDOWN = 2.0
 
 # ────────────────────────── PDF helpers ──────────────────────────
@@ -119,7 +119,7 @@ _APPENDIX_INDICATORS = re.compile(
 
 # Pattern to detect a real CIS rule heading anywhere on a page
 _RULE_HEADING_ON_PAGE = re.compile(
-    r"^\d+\.\d+(?:\.\d+)+\s+",
+    r"^\d+\.\d+(?:\.\d+)*\s+",
     re.MULTILINE,
 )
 
@@ -175,14 +175,50 @@ def filter_content_pages(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return content
 
 
+# ────────────────── PDF text cleaning ──────────────────
+
+# Common PDF extraction artifacts to remove before rule segmentation
+_PAGE_NUMBER_LINE = re.compile(
+    r"^\s*(?:Page\s+)?\d{1,4}\s*(?:\|.*)?$",  # "Page 42" or standalone "42" or "42 | CIS ..."
+    re.MULTILINE,
+)
+
+_RUNNING_HEADER = re.compile(
+    r"^(?:CIS\s+(?:Microsoft|Apple|Ubuntu|Debian|Red\s*Hat|SUSE|Oracle|Cisco|"
+    r"Amazon|Google|Windows|macOS|Linux|Docker|Kubernetes|PostgreSQL|MySQL|"
+    r"MongoDB|Apache|Nginx|IIS).*Benchmark.*v\d+\.\d+\.\d+.*$)",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+_EXCESSIVE_BLANK_LINES = re.compile(r"\n{4,}")
+
+
+def _clean_pdf_text(text: str) -> str:
+    """Remove common PDF extraction artefacts that break rule segmentation.
+
+    - Standalone page numbers (e.g. "42", "Page 42")
+    - Running headers/footers (e.g. "CIS Microsoft Windows 11 Benchmark v5.0.0")
+    - Excessive blank lines collapsed to double newlines
+    """
+    text = _PAGE_NUMBER_LINE.sub("", text)
+    text = _RUNNING_HEADER.sub("", text)
+    text = _EXCESSIVE_BLANK_LINES.sub("\n\n", text)
+    return text
+
+
 # ────────────────── Regex-based rule segmentation ──────────────────
 
-# CIS rule heading:  "1.1.1 Ensure …" or "18.9.4.2 (L1) Ensure …"
-# Must have at least 3 numeric parts (X.Y.Z) to distinguish from chapter headings.
+# CIS rule heading:  "1.1.1 Ensure …" or "18.9.4.2 (L1) Ensure …" or "5.1 (L2) Ensure …"
+# Must have at least 2 numeric parts (X.Y) — chapter headers with only 2 parts
+# are filtered out later by the no-field-marker and no-audit-remediation checks.
 # Also handles profile markers like (L1), (L2), (BL), (NG), and (Automated)/(Manual).
+# Allows optional leading whitespace (PDF extraction artifacts).
 _RULE_HEADING = re.compile(
-    r"^(\d{1,2}(?:\.\d{1,3}){2,})\s+"   # section number with ≥3 levels
+    r"^\s{0,4}"                           # allow small leading whitespace from PDF
+    r"(\d{1,2}(?:\.\d{1,3}){1,})"        # section number with ≥2 levels
+    r"\s+"                                # space after section
     r"(?:\((?:L[12]|BL|NG)\)\s+)?"       # optional profile marker like (L1)
+    r"(?:\((?:Automated|Manual)\)\s+)?"   # optional assessment marker before title
     r"(.+)",                              # title text
     re.MULTILINE,
 )
@@ -196,6 +232,130 @@ _FIELD_MARKERS = re.compile(
 )
 
 
+# Heuristic score for how "real" a rule body looks.
+# TOC entries, chapter intros, and noise score low; actual rules score high.
+_FIELD_MARKER_BODY = re.compile(
+    r"(?:^|\n)\s*(?:Profile\s+Applicability|Description|Rationale|Impact|"
+    r"Audit|Remediation|Default\s+Value|References|CIS\s+Controls)"
+    r"\s*:?\s*(?:$|\n)",
+    re.IGNORECASE,
+)
+
+
+def _rule_body_score(body: str) -> int:
+    """Score how much a body looks like a real CIS rule (higher = more real).
+
+    Used to pick the richest version when a section number appears multiple
+    times (TOC + real rule body).
+    """
+    score = 0
+    # Count field markers present
+    markers = len(_FIELD_MARKER_BODY.findall(body))
+    score += markers * 10
+    # Longer bodies are more likely to be real rules
+    score += min(len(body) // 50, 20)
+    # Penalise dotted leaders (TOC)
+    dotted_lines = sum(1 for ln in body.splitlines() if _DOTTED_LEADER_LINE.search(ln))
+    score -= dotted_lines * 5
+    return score
+
+
+# Regex that detects a CIS field marker at the start of a line
+_TITLE_STOP_PATTERN = re.compile(
+    r"^\s*(?:Profile\s+Applicability|Description|Rationale|Impact|"
+    r"Audit|Remediation|Default\s+Value|References|CIS\s+Controls|"
+    r"Additional\s+Information)\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+# Matches text that looks like a continuation of a truncated title.
+# CIS titles follow the pattern: Ensure 'Setting Name' is set to 'Value'
+# A continuation line will typically be short text that completes the sentence.
+_TITLE_CONTINUATION_RE = re.compile(
+    r"^[A-Za-z0-9'\"\(\)\-_.,/ ]+$",
+)
+
+
+def _extend_title_from_body(title: str, body: str) -> tuple[str, str]:
+    """Extend a truncated CIS rule title by consuming continuation lines from body.
+
+    CIS PDF extraction often puts the recommended value on a new line, truncating
+    the title.  For example:
+      Title line:  "Ensure 'Enforce password history' is set to '24 or more"
+      Next line:   "password(s) remembered' (Automated)"
+
+    This function detects incomplete titles (ending mid-quote, mid-sentence) and
+    appends continuation lines from the body until the title is complete.
+
+    Returns (extended_title, remaining_body).
+    """
+    if not body:
+        return title, body
+
+    # Heuristics for "title looks complete":
+    # - Ends with a closing single quote followed by optional whitespace
+    # - Ends with (Automated) or (Manual)
+    # - Ends with a closing paren
+    # If the title already looks complete, don't touch it.
+    title_stripped = title.rstrip()
+    if re.search(r"'\s*$", title_stripped):
+        # Ends with closing quote — likely complete
+        return title, body
+    if re.search(r"\((?:Automated|Manual)\)\s*$", title_stripped):
+        return title, body
+
+    # Title appears truncated — try to grab continuation lines from body
+    lines = body.split("\n")
+    consumed = 0
+
+    for line in lines:
+        stripped_line = line.strip()
+
+        # Stop at empty lines
+        if not stripped_line:
+            break
+
+        # Stop at field markers (Profile Applicability, Description, etc.)
+        if _TITLE_STOP_PATTERN.match(line):
+            break
+
+        # Stop at what looks like another section heading
+        if re.match(r"^\d+\.\d+(?:\.\d+)*\s+", stripped_line):
+            break
+
+        # Stop if the line is too long (real body text, not a title fragment)
+        if len(stripped_line) > 80:
+            break
+
+        # Stop if the line contains content that's clearly body text
+        if re.search(r"(?:navigate|this\s+setting|registry|the\s+following|"
+                      r"recommended\s+configuration|group\s+policy)\b",
+                      stripped_line, re.IGNORECASE):
+            break
+
+        # Looks like a title continuation — append it
+        title = title.rstrip() + " " + stripped_line
+        consumed += 1
+
+        # If we now have a complete-looking title, stop
+        if re.search(r"'\s*(?:\((?:Automated|Manual)\))?\s*$", title):
+            break
+        if re.search(r"\((?:Automated|Manual)\)\s*$", title):
+            break
+
+        # Safety: don't consume more than 3 lines
+        if consumed >= 3:
+            break
+
+    if consumed > 0:
+        # Strip (Automated)/(Manual) from the extended title
+        title = re.sub(r"\s*\((?:Automated|Manual)\)\s*$", "", title).strip()
+        # Remove consumed lines from body
+        body = "\n".join(lines[consumed:]).strip()
+
+    return title, body
+
+
 def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
     """Split the full PDF text into individual rule text blocks.
 
@@ -206,37 +366,59 @@ def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
     if not headings:
         return []
 
-    rules: list[dict[str, str]] = []
-    seen_sections: set[str] = set()
+    # First pass: collect all candidate rule blocks
+    candidates: list[dict[str, str]] = []
 
     for idx, match in enumerate(headings):
         section = match.group(1)
         title = match.group(2).strip()
+        # Strip trailing (Automated)/(Manual) from title if captured
+        title = re.sub(r"\s*\((?:Automated|Manual)\)\s*$", "", title)
         start = match.end()
         end = headings[idx + 1].start() if idx + 1 < len(headings) else len(all_text)
         body = all_text[start:end].strip()
 
-        # ── Filter out TOC entries and noise ──
+        # ── Fix truncated titles ──
+        # CIS PDFs often wrap long titles across multiple lines.  The regex
+        # captures only the first line.  We extend the title by consuming
+        # continuation lines from the top of the body — lines that are NOT
+        # a field marker, NOT another section heading, and NOT empty.
+        title, body = _extend_title_from_body(title, body)
+
+        # ── Filter out obvious TOC entries and noise ──
         # Skip empty or very short bodies (TOC line items)
-        if len(body) < 40:
+        if len(body) < 30:
             continue
         # Skip bodies that are mostly dots (TOC dotted leaders)
-        dots_ratio = body.count(".") / max(len(body), 1)
-        if dots_ratio > 0.3:
+        non_ws = body.replace(" ", "").replace("\t", "")
+        dots_ratio = non_ws.count(".") / max(len(non_ws), 1)
+        if dots_ratio > 0.3 and len(body) < 200:
             continue
-        # Must contain at least one CIS field marker to be a real rule
-        if not re.search(
-            r"Profile Applicability|Description|Audit|Remediation|Default\s+Value|Rationale",
+        # Must contain at least one CIS field marker to be a real rule.
+        # Check both standalone-line markers AND inline markers (e.g. "Audit: ...")
+        has_field_marker = bool(re.search(
+            r"(?:^|\n)\s*(?:Profile\s+Applicability|Description|Audit|Remediation|"
+            r"Default\s+Value|Rationale|Impact)\s*:?",
             body, re.IGNORECASE,
-        ):
+        ))
+        if not has_field_marker:
             continue
-        # Deduplicate: keep only the first (richest) occurrence
-        if section in seen_sections:
-            continue
-        seen_sections.add(section)
 
-        rules.append({"section": section, "title": title, "body": body})
-    return rules
+        candidates.append({"section": section, "title": title, "body": body})
+
+    # Second pass: deduplicate — keep the RICHEST version (most field markers + longest)
+    best: dict[str, dict[str, str]] = {}
+    for cand in candidates:
+        section = cand["section"]
+        existing = best.get(section)
+        if existing is None:
+            best[section] = cand
+        else:
+            # Keep whichever scores higher (more field markers, longer body)
+            if _rule_body_score(cand["body"]) > _rule_body_score(existing["body"]):
+                best[section] = cand
+
+    return list(best.values())
 
 
 def _extract_field(body: str, start_marker: str, end_markers: list[str]) -> str:
@@ -319,10 +501,24 @@ def parse_rule_fields(raw: dict[str, str]) -> dict[str, Any]:
     refs_text = _extract_field(body, "References", _ALL_FIELD_NAMES)
     cis_text = _extract_field(body, "CIS Controls", _ALL_FIELD_NAMES)
     references: list[str] = []
-    for line in (refs_text + "\n" + cis_text).splitlines():
+    for line in refs_text.splitlines():
         line = line.strip()
         if line and len(line) > 2:
             references.append(line)
+
+    # Parse CIS Controls separately (e.g. "v8  4.1, 4.8" or "v8\n4.1\n4.8")
+    cis_controls: list[str] = []
+    if cis_text:
+        for line in cis_text.splitlines():
+            line = line.strip()
+            if not line or line.lower().startswith("v") and len(line) <= 4:
+                continue  # Skip version labels like "v8"
+            # Extract control IDs like "4.1", "6.3", "16.8"
+            ctrl_ids = re.findall(r"\b(\d{1,2}\.\d{1,2})\b", line)
+            if ctrl_ids:
+                cis_controls.extend(ctrl_ids)
+            elif line and len(line) > 2:
+                cis_controls.append(line)
 
     # Assessment type — check for "(Automated)" or "(Manual)" in title or body
     assessment_type = "automated"
@@ -346,6 +542,7 @@ def parse_rule_fields(raw: dict[str, str]) -> dict[str, Any]:
         "remediation_description_raw": remediation,
         "default_value": default_value,
         "references": references,
+        "cis_controls": cis_controls if cis_controls else None,
         "severity": severity,
         "categories": categories,
     }
@@ -464,6 +661,7 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
 
         # ── Step 3: Segment individual rules via regex ──
         all_text = "\n\n".join(p["text"] for p in pages)
+        all_text = _clean_pdf_text(all_text)
         raw_rules = segment_rules_from_text(all_text)
         logger.info("[Phase1 B%d] Regex segmenter found %d rule headings", benchmark_id, len(raw_rules))
 
@@ -508,6 +706,9 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
             refs = rule_data.get("references", [])
             if isinstance(refs, list):
                 refs = json.dumps(refs)
+            cis_ctrls = rule_data.get("cis_controls")
+            if isinstance(cis_ctrls, list):
+                cis_ctrls = json.dumps(cis_ctrls)
 
             rule = Rule(
                 benchmark_id=benchmark_id,
@@ -519,6 +720,7 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
                 assessment_type=rule_data.get("assessment_type"),
                 default_value=rule_data.get("default_value"),
                 references_json=refs,
+                cis_controls=cis_ctrls,
                 audit_description_raw=rule_data.get("audit_description_raw"),
                 remediation_description_raw=rule_data.get("remediation_description_raw"),
                 severity=rule_data.get("severity", "medium"),

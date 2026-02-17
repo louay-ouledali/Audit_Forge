@@ -638,8 +638,8 @@ export default function BenchmarkDetail() {
                           )}
                           {ruleCommand.expected_output_regex && (
                             <div>
-                              <span className="text-xs font-medium text-gray-500">Expected Regex:</span>
-                              <code className="mt-1 block rounded bg-gray-100 p-2 text-xs text-gray-800">{ruleCommand.expected_output_regex}</code>
+                              <span className="text-xs font-medium text-gray-500">Comparison Expression:</span>
+                              <code className="mt-1 block rounded bg-blue-50 border border-blue-200 p-2 text-xs text-blue-800 font-semibold">{ruleCommand.expected_output_regex}</code>
                             </div>
                           )}
                           {ruleCommand.flag_reason && (

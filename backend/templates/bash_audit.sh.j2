@@ -62,6 +62,120 @@ with open('$RESULTS_DIR/system_info.json', 'w') as f:
 echo '[' > "$RESULTS_DIR/audit_results.json"
 FIRST_RESULT=true
 
+# ── Comparison expression evaluator ──
+# Supports: >=N, <=N, >N, <N, ==VALUE, !=VALUE, contains:TEXT, regex:PATTERN
+# Falls back to regex for legacy patterns.
+evaluate_expression() {
+    local expr="$1"
+    local actual="$2"
+
+    # Trim whitespace
+    expr="$(echo "$expr" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    actual="$(echo "$actual" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+    [ -z "$expr" ] && return 0  # empty expression = pass
+
+    # Helper: extract last number from text
+    extract_number() {
+        local txt="$1"
+        # Try if whole string is a number
+        if echo "$txt" | grep -qxE '-?[0-9]+(\.[0-9]+)?'; then
+            echo "$txt"; return 0
+        fi
+        # Find last number in text
+        local num
+        num=$(echo "$txt" | grep -oE '-?[0-9]+(\.[0-9]+)?' | tail -1)
+        [ -n "$num" ] && echo "$num" && return 0
+        return 1
+    }
+
+    # Numeric comparisons: >=N, <=N, >N, <N
+    if echo "$expr" | grep -qE '^(>=|<=|>|<)[[:space:]]*-?[0-9]+(\.[0-9]+)?$'; then
+        local op threshold actual_num
+        op=$(echo "$expr" | sed -E 's/^(>=|<=|>|<).*/\1/')
+        threshold=$(echo "$expr" | sed -E 's/^(>=|<=|>|<)[[:space:]]*//')
+        actual_num=$(extract_number "$actual") || return 1
+        case "$op" in
+            '>=') echo "$actual_num >= $threshold" | bc -l | grep -q '^1' ;;
+            '<=') echo "$actual_num <= $threshold" | bc -l | grep -q '^1' ;;
+            '>')  echo "$actual_num > $threshold"  | bc -l | grep -q '^1' ;;
+            '<')  echo "$actual_num < $threshold"  | bc -l | grep -q '^1' ;;
+        esac
+        return $?
+    fi
+
+    # Exact match: ==VALUE
+    if echo "$expr" | grep -qE '^=='; then
+        local expected="${expr#==}"
+        expected="$(echo "$expected" | sed 's/^[[:space:]]*//')"
+        # Try numeric comparison
+        if echo "$expected" | grep -qxE '-?[0-9]+(\.[0-9]+)?'; then
+            local actual_num
+            actual_num=$(extract_number "$actual") || { [ "$(echo "$actual" | tr '[:upper:]' '[:lower:]')" = "$(echo "$expected" | tr '[:upper:]' '[:lower:]')" ] && return 0 || return 1; }
+            echo "$actual_num == $expected" | bc -l | grep -q '^1'
+            return $?
+        fi
+        # String comparison (case-insensitive)
+        [ "$(echo "$actual" | tr '[:upper:]' '[:lower:]')" = "$(echo "$expected" | tr '[:upper:]' '[:lower:]')" ]
+        return $?
+    fi
+
+    # Not equal: !=VALUE
+    if echo "$expr" | grep -qE '^!='; then
+        local expected="${expr#!=}"
+        expected="$(echo "$expected" | sed 's/^[[:space:]]*//')"
+        if echo "$expected" | grep -qxE '-?[0-9]+(\.[0-9]+)?'; then
+            local actual_num
+            actual_num=$(extract_number "$actual") || { [ "$(echo "$actual" | tr '[:upper:]' '[:lower:]')" != "$(echo "$expected" | tr '[:upper:]' '[:lower:]')" ] && return 0 || return 1; }
+            echo "$actual_num != $expected" | bc -l | grep -q '^1'
+            return $?
+        fi
+        [ "$(echo "$actual" | tr '[:upper:]' '[:lower:]')" != "$(echo "$expected" | tr '[:upper:]' '[:lower:]')" ]
+        return $?
+    fi
+
+    # Substring check: contains:TEXT (case-insensitive)
+    if echo "$expr" | grep -qiE '^contains:'; then
+        local substring="${expr#contains:}"
+        substring="$(echo "$substring" | sed 's/^[[:space:]]*//' | tr '[:upper:]' '[:lower:]')"
+        echo "$actual" | tr '[:upper:]' '[:lower:]' | grep -qF "$substring"
+        return $?
+    fi
+
+    # Explicit regex: regex:PATTERN
+    if echo "$expr" | grep -qiE '^regex:'; then
+        local pattern="${expr#regex:}"
+        pattern="$(echo "$pattern" | sed 's/^[[:space:]]*//')"
+        echo "$actual" | grep -qP "$pattern" 2>/dev/null || echo "$actual" | grep -qE "$pattern" 2>/dev/null
+        return $?
+    fi
+
+    # Legacy fallback: treat as regex
+    echo "$actual" | grep -qP "$expr" 2>/dev/null || echo "$actual" | grep -qE "$expr" 2>/dev/null
+    return $?
+}
+
+# ── Error classification ──
+# Detects genuine execution failures (command not found, permission denied, etc.)
+is_execution_error() {
+    local text="$1"
+    [ -z "$text" ] && return 1
+    echo "$text" | grep -qiE \
+        'command not found|Permission denied|cannot open|Operation not permitted|syntax error|segmentation fault|unrecognized option' \
+        && return 0
+    return 1
+}
+
+# Detects "not configured" output (file/key not found = policy not set = FAIL)
+is_not_configured() {
+    local text="$1"
+    [ -z "$text" ] && return 1
+    echo "$text" | grep -qiE \
+        'No such file or directory|not found|does not exist' \
+        && return 0
+    return 1
+}
+
 run_check() {
     local rule_id="$1"
     local title="$2"
@@ -80,13 +194,28 @@ run_check() {
     local safe_id=$(echo "$rule_id" | tr '.' '_')
     echo "$output" > "$RAW_DIR/rule_${safe_id}.txt"
 
-    # Evaluate
+    # Evaluate using comparison expression engine
     local status
     if [ -z "$output" ] && [ $exit_code -ne 0 ]; then
         status="ERROR"
         ERRORS=$((ERRORS + 1))
         echo -e "  ${YELLOW}[ERROR]${NC} $rule_id: $title"
-    elif echo "$output" | grep -qP "$expected_regex" 2>/dev/null; then
+    elif is_execution_error "$output"; then
+        status="ERROR"
+        ERRORS=$((ERRORS + 1))
+        echo -e "  ${YELLOW}[ERROR]${NC} $rule_id: $title"
+    elif is_not_configured "$output"; then
+        # File/key not found = not configured; evaluate with empty to get FAIL
+        if evaluate_expression "$expected_regex" ""; then
+            status="PASS"
+            PASSED=$((PASSED + 1))
+            echo -e "  ${GREEN}[PASS]${NC}  $rule_id: $title"
+        else
+            status="FAIL"
+            FAILED=$((FAILED + 1))
+            echo -e "  ${RED}[FAIL]${NC}  $rule_id: $title -- Not Configured"
+        fi
+    elif evaluate_expression "$expected_regex" "$output"; then
         status="PASS"
         PASSED=$((PASSED + 1))
         echo -e "  ${GREEN}[PASS]${NC}  $rule_id: $title"

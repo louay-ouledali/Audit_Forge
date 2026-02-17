@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from backend.core.comparison_engine import evaluate as evaluate_expression
 from backend.models.finding import Finding
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
@@ -70,16 +71,13 @@ def parse_json_results(raw: str, scan_id: int, benchmark_id: int, db: Session) -
 
         cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
 
-        # If status not provided in JSON, try to evaluate using regex
+        # If status not provided in JSON, try to evaluate using comparison expression
         if not entry.get("status"):
             if cmd and cmd.expected_output_regex:
-                try:
-                    if re.search(cmd.expected_output_regex, actual, re.MULTILINE | re.IGNORECASE):
-                        status = "PASS"
-                    else:
-                        status = "FAIL"
-                except re.error:
-                    status = "MANUAL_REVIEW"
+                comp_result = evaluate_expression(cmd.expected_output_regex, actual)
+                status = "PASS" if comp_result.matched else "FAIL"
+            else:
+                status = "MANUAL_REVIEW"
 
         finding = Finding(
             scan_id=scan_id,
@@ -143,16 +141,11 @@ def parse_marker_results(raw_text: str, scan_id: int, benchmark_id: int, db: Ses
 
                 if rule:
                     cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
-                    regex = cmd.expected_output_regex if cmd else None
+                    expr = cmd.expected_output_regex if cmd else None
 
-                    if regex:
-                        try:
-                            if re.search(regex, output_text, re.MULTILINE | re.IGNORECASE):
-                                status = "PASS"
-                            else:
-                                status = "FAIL"
-                        except re.error:
-                            status = "MANUAL_REVIEW"
+                    if expr:
+                        comp_result = evaluate_expression(expr, output_text)
+                        status = "PASS" if comp_result.matched else "FAIL"
                     else:
                         status = "MANUAL_REVIEW"
 
@@ -161,7 +154,7 @@ def parse_marker_results(raw_text: str, scan_id: int, benchmark_id: int, db: Ses
                         rule_id=rule.id,
                         status=status,
                         actual_output=output_text[:MAX_OUTPUT_LENGTH],
-                        expected_output=regex,
+                        expected_output=expr,
                         severity=current_severity or rule.severity,
                     )
                     db.add(finding)
@@ -211,7 +204,7 @@ def detect_format_and_import(
     - If content contains RULE_START markers → parse_marker_results
     - Otherwise raise ValueError
     """
-    stripped = content.strip()
+    stripped = content.strip().lstrip("\ufeff")  # Strip UTF-8 BOM if present
 
     # Try JSON first
     if stripped.startswith("[") or stripped.startswith("{"):

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from backend.config import settings
 from backend.connectors import get_connector
 from backend.connectors.base import BaseConnector, CommandResult
+from backend.core.comparison_engine import evaluate as evaluate_expression
 from backend.core.exceptions import ConnectionFailedError, ScanCancelledError
 from backend.models.finding import Finding
 from backend.models.rule import Rule
@@ -77,30 +78,29 @@ def _decrypt_target_password(target: Target) -> str | None:
 def _evaluate_result(
     result: CommandResult,
     expected_regex: str | None,
-) -> str:
-    """Evaluate a command result and return a compliance status.
+) -> tuple[str, str]:
+    """Evaluate a command result and return a compliance status and explanation.
 
-    Returns one of: PASS, FAIL, ERROR
+    Uses the comparison engine to evaluate structured expressions
+    (e.g. ``>=24``, ``==Disabled``) as well as legacy regex patterns.
+
+    Returns a tuple of (status, explanation) where status is one of: PASS, FAIL, ERROR
     """
     # Error case — non-zero exit code and no useful output
     if result.exit_code != 0 and not result.stdout.strip():
-        return "ERROR"
+        return "ERROR", f"Command failed with exit code {result.exit_code}"
 
-    # No regex to check against — just check the command didn't error
+    # No expression to check against — just check the command didn't error
     if not expected_regex:
         if result.exit_code == 0:
-            return "PASS"
-        return "FAIL"
+            return "PASS", "Command executed successfully (no expected output defined)"
+        return "FAIL", f"Command failed with exit code {result.exit_code}"
 
-    # Check output against expected pattern
-    try:
-        if re.search(expected_regex, result.stdout, re.MULTILINE | re.IGNORECASE):
-            return "PASS"
-    except re.error:
-        logger.warning("Invalid regex pattern: %s", expected_regex)
-        # If regex is invalid, fall through to FAIL
-
-    return "FAIL"
+    # Evaluate using the comparison engine (handles >=, <=, ==, !=, contains:, regex:, and legacy regex)
+    comp_result = evaluate_expression(expected_regex, result.stdout)
+    if comp_result.matched:
+        return "PASS", comp_result.explanation
+    return "FAIL", comp_result.explanation
 
 
 async def execute_network_scan(
@@ -244,7 +244,7 @@ async def execute_network_scan(
                 consecutive_errors += 1
 
             # Evaluate
-            status = _evaluate_result(result, cmd.expected_output_regex)
+            status, explanation = _evaluate_result(result, cmd.expected_output_regex)
             if status == "PASS":
                 passed += 1
                 consecutive_errors = 0
@@ -261,6 +261,7 @@ async def execute_network_scan(
                 actual_output=result.stdout[:4000] if result.stdout else result.stderr[:4000],
                 expected_output=cmd.expected_output_regex,
                 severity=rule.severity,
+                evaluation_explanation=explanation,
             )
             db.add(finding)
             db.commit()

@@ -19,6 +19,7 @@ class Finding(Base):
     actual_output = Column(Text)
     expected_output = Column(Text)
     severity = Column(String)
+    evaluation_explanation = Column(Text)  # Human-readable explanation of the comparison result
 
     ai_advice = Column(Text)
     ai_advice_generated_at = Column(DateTime)

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.core.network_discovery import (
+    cleanup_discovery,
+    discover_network,
+    get_discovery_progress,
+)
 from backend.core.scan_executor import (
     cancel_scan,
     execute_network_scan,
@@ -27,6 +34,78 @@ from backend.schemas.scan import (
 )
 
 router = APIRouter(prefix="/scans", tags=["scans"])
+
+
+# ── Network Discovery ────────────────────────────────────────
+
+
+class DiscoveryRequest(BaseModel):
+    subnet: str  # CIDR, range, or single IP
+
+
+class DiscoveryResponse(BaseModel):
+    discovery_id: str
+    status: str
+
+
+@router.post("/discover", response_model=DiscoveryResponse)
+async def start_discovery(payload: DiscoveryRequest):
+    """Start a network discovery scan on the given subnet."""
+    discovery_id = str(uuid.uuid4())[:8]
+
+    async def _run_discovery():
+        try:
+            await discover_network(payload.subnet, discovery_id=discovery_id)
+        except Exception as exc:
+            from backend.core.network_discovery import _discovery_progress
+            _discovery_progress[discovery_id] = {
+                "id": discovery_id,
+                "status": "failed",
+                "error": str(exc),
+                "total": 0,
+                "scanned": 0,
+                "found": 0,
+            }
+
+    asyncio.ensure_future(_run_discovery())
+    return DiscoveryResponse(discovery_id=discovery_id, status="running")
+
+
+@router.get("/discover/{discovery_id}/status")
+async def get_discovery_status(discovery_id: str):
+    """Return current progress/results for a discovery scan."""
+    progress = get_discovery_progress(discovery_id)
+    if not progress:
+        raise HTTPException(status_code=404, detail="Discovery not found")
+    return progress
+
+
+@router.get("/discover/{discovery_id}/results")
+async def get_discovery_results(discovery_id: str):
+    """Return the full list of discovered hosts."""
+    progress = get_discovery_progress(discovery_id)
+    if not progress:
+        raise HTTPException(status_code=404, detail="Discovery not found")
+    if progress.get("status") != "completed":
+        return {"status": progress.get("status"), "hosts": []}
+
+    # Re-run to get results (they're returned, not stored separately)
+    # For simplicity, store results in progress dict
+    return {"status": "completed", "hosts": progress.get("hosts", [])}
+
+
+@router.post("/discover/scan")
+async def discover_and_return(payload: DiscoveryRequest):
+    """Run discovery synchronously and return results immediately.
+
+    Use this for small subnets (single IP or /28 and smaller).
+    For larger subnets, use the async POST /discover endpoint.
+    """
+    try:
+        hosts = await discover_network(payload.subnet)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"hosts": hosts, "total_scanned": len(hosts)}
 
 
 # ── Script generation (existing) ─────────────────────────────

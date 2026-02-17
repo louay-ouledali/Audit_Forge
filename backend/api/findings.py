@@ -26,6 +26,8 @@ VALID_OVERRIDES = {"confirmed", "false_positive", "accepted_risk", ""}
 
 def _finding_to_response(finding: Finding, db: Session) -> dict:
     """Convert a Finding ORM object to a response dict with joined rule info."""
+    from backend.core.comparison_engine import format_expression_display
+
     rule = db.query(Rule).filter(Rule.id == finding.rule_id).first()
     return {
         "id": finding.id,
@@ -34,6 +36,8 @@ def _finding_to_response(finding: Finding, db: Session) -> dict:
         "status": finding.status,
         "actual_output": finding.actual_output,
         "expected_output": finding.expected_output,
+        "expected_output_display": format_expression_display(finding.expected_output) if finding.expected_output else None,
+        "evaluation_explanation": finding.evaluation_explanation,
         "severity": finding.severity,
         "ai_advice": finding.ai_advice,
         "ai_advice_generated_at": finding.ai_advice_generated_at,

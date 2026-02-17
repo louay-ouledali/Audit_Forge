@@ -13,7 +13,7 @@ import {
   Usb,
   Plus,
 } from 'lucide-react';
-import type { Benchmark, Target, Mission, Client, ScanStatus, ImportResultsResponse, ScriptPreviewResponse } from '@/types';
+import type { Benchmark, Target, Mission, Client, ScanStatus, ImportResultsResponse, ScriptPreviewResponse, DiscoveredHost } from '@/types';
 import * as api from '@/services/api';
 
 function statusBadge(status: string) {
@@ -75,6 +75,25 @@ export default function Scans() {
   const [missionName, setMissionName] = useState('');
   const [missionDescription, setMissionDescription] = useState('');
   const [creatingMission, setCreatingMission] = useState(false);
+
+  // Inline target creation state
+  const [showTargetForm, setShowTargetForm] = useState(false);
+  const [targetHostname, setTargetHostname] = useState('');
+  const [targetIp, setTargetIp] = useState('');
+  const [targetType, setTargetType] = useState('windows');
+  const [targetConnectionMethod, setTargetConnectionMethod] = useState('ssh');
+  const [targetSshUsername, setTargetSshUsername] = useState('');
+  const [targetSshPassword, setTargetSshPassword] = useState('');
+  const [targetPort, setTargetPort] = useState('');
+  const [targetNotes, setTargetNotes] = useState('');
+  const [creatingTarget, setCreatingTarget] = useState(false);
+
+  // Network discovery state
+  const [discoverySubnet, setDiscoverySubnet] = useState('');
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveredHosts, setDiscoveredHosts] = useState<DiscoveredHost[]>([]);
+  const [discoveryError, setDiscoveryError] = useState('');
+  const [discoveryDone, setDiscoveryDone] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -265,6 +284,90 @@ export default function Scans() {
     }
   }
 
+  // Inline target creation
+  async function handleCreateTarget(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedMissionId || (!targetHostname.trim() && !targetIp.trim())) return;
+    setCreatingTarget(true);
+    setError('');
+    try {
+      const created = await api.createTarget({
+        mission_id: selectedMissionId as number,
+        hostname: targetHostname.trim() || undefined,
+        ip_address: targetIp.trim() || undefined,
+        target_type: targetType,
+        connection_method: targetConnectionMethod || undefined,
+        ssh_username: targetSshUsername.trim() || undefined,
+        ssh_password: targetSshPassword || undefined,
+        port: targetPort ? Number(targetPort) : undefined,
+        notes: targetNotes.trim() || undefined,
+      } as any);
+      // Refresh targets and select the new one
+      const updatedTargets = await api.getTargets(selectedMissionId as number);
+      setTargets(updatedTargets);
+      setSelectedTargetId(created.id);
+      setShowTargetForm(false);
+      setTargetHostname('');
+      setTargetIp('');
+      setTargetType('windows');
+      setTargetConnectionMethod('ssh');
+      setTargetSshUsername('');
+      setTargetSshPassword('');
+      setTargetPort('');
+      setTargetNotes('');
+    } catch {
+      setError('Failed to create target');
+    } finally {
+      setCreatingTarget(false);
+    }
+  }
+
+  // Network Discovery
+  async function handleDiscovery() {
+    if (!discoverySubnet.trim()) return;
+    setDiscovering(true);
+    setDiscoveryError('');
+    setDiscoveredHosts([]);
+    setDiscoveryDone(false);
+    try {
+      const result = await api.discoverNetwork(discoverySubnet.trim());
+      setDiscoveredHosts(result.hosts);
+      setDiscoveryDone(true);
+    } catch (err: any) {
+      setDiscoveryError(err?.response?.data?.detail || 'Discovery failed');
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  async function handleAddDiscoveredTarget(host: DiscoveredHost) {
+    if (!selectedMissionId) {
+      setError('Please select a Client and Mission first to add discovered targets');
+      return;
+    }
+    setCreatingTarget(true);
+    setError('');
+    try {
+      const created = await api.createTarget({
+        mission_id: selectedMissionId as number,
+        hostname: host.hostname || undefined,
+        ip_address: host.ip,
+        target_type: host.os_guess === 'unknown' ? 'windows' : host.os_guess,
+        connection_method: host.connection_methods[0] || undefined,
+        notes: `Discovered via network scan. Open ports: ${host.open_ports.map(p => `${p.port}/${p.service}`).join(', ')}`,
+      } as Partial<Target>);
+      const updatedTargets = await api.getTargets(selectedMissionId as number);
+      setTargets(updatedTargets);
+      setSelectedTargetId(created.id);
+      // Mark as added in the discovered list
+      setDiscoveredHosts(prev => prev.map(h => h.ip === host.ip ? { ...h, _added: true } as any : h));
+    } catch {
+      setError('Failed to add target');
+    } finally {
+      setCreatingTarget(false);
+    }
+  }
+
   const isFinished = scanStatus && ['completed', 'failed', 'cancelled'].includes(scanStatus.status);
   const canLaunch = selectedTargetId && selectedBenchmarkId && !activeScanId;
 
@@ -325,6 +428,131 @@ export default function Scans() {
           ═══════════════════════════════════════════════════════════ */}
       {scanMode === 'network' && (
         <>
+          {/* Network Discovery */}
+          <div className="rounded-lg border border-indigo-200 bg-white p-6">
+            <h2 className="mb-1 text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Wifi className="h-5 w-5 text-indigo-600" />
+              Network Discovery
+            </h2>
+            <p className="mb-4 text-sm text-gray-500">
+              Scan your network to find live devices. Use <code className="rounded bg-gray-100 px-1 text-xs">host.docker.internal</code> to scan your own machine,
+              or enter a subnet like <code className="rounded bg-gray-100 px-1 text-xs">192.168.1.0/24</code>.
+            </p>
+
+            <div className="flex gap-3 items-end flex-wrap">
+              <div className="flex-1 min-w-[250px] max-w-md">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Subnet / IP / Hostname</label>
+                <input
+                  type="text"
+                  value={discoverySubnet}
+                  onChange={(e) => setDiscoverySubnet(e.target.value)}
+                  placeholder="host.docker.internal or 192.168.1.0/24"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                  disabled={discovering}
+                />
+              </div>
+              <button
+                onClick={handleDiscovery}
+                disabled={discovering || !discoverySubnet.trim()}
+                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {discovering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
+                {discovering ? 'Scanning...' : 'Discover'}
+              </button>
+            </div>
+
+            {discoveryError && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {discoveryError}
+              </div>
+            )}
+
+            {discovering && (
+              <div className="mt-4 flex items-center gap-3 text-sm text-indigo-700">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Scanning network... This may take 30-60 seconds for a /24 subnet.
+              </div>
+            )}
+
+            {discoveryDone && (
+              <div className="mt-4">
+                {discoveredHosts.length === 0 ? (
+                  <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-700">
+                    <AlertTriangle className="inline h-4 w-4 mr-1" />
+                    No devices found on {discoverySubnet}. Make sure the subnet is reachable from the Docker container.
+                    <p className="mt-1 text-xs">Tip: Use your machine's gateway IP (e.g. <code>192.168.1.0/24</code>) or try a single IP first.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-gray-900">
+                        Found {discoveredHosts.length} device{discoveredHosts.length !== 1 ? 's' : ''}
+                      </h3>
+                      {!selectedMissionId && (
+                        <span className="text-xs text-amber-600">Select a Client &amp; Mission below to add targets</span>
+                      )}
+                    </div>
+                    <div className="overflow-hidden rounded-lg border border-gray-200">
+                      <table className="min-w-full divide-y divide-gray-200 text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">IP Address</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Hostname</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">OS Type</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Open Ports</th>
+                            <th className="px-4 py-2 text-left font-medium text-gray-600">Connection</th>
+                            <th className="px-4 py-2 text-right font-medium text-gray-600">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {discoveredHosts.map((host) => (
+                            <tr key={host.ip} className="hover:bg-gray-50">
+                              <td className="px-4 py-2 font-mono text-gray-900">{host.ip}</td>
+                              <td className="px-4 py-2 text-gray-700">{host.hostname || <span className="text-gray-400">—</span>}</td>
+                              <td className="px-4 py-2">
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                                  host.os_guess === 'windows' ? 'bg-blue-100 text-blue-800' :
+                                  host.os_guess === 'linux' ? 'bg-green-100 text-green-800' :
+                                  host.os_guess === 'network' ? 'bg-purple-100 text-purple-800' :
+                                  host.os_guess === 'database' ? 'bg-orange-100 text-orange-800' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>
+                                  <Server className="h-3 w-3" />
+                                  {host.os_guess}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-gray-600 text-xs">
+                                {host.open_ports.map(p => `${p.port}/${p.service}`).join(', ')}
+                              </td>
+                              <td className="px-4 py-2 text-gray-600 text-xs">
+                                {host.connection_methods.join(', ') || '—'}
+                              </td>
+                              <td className="px-4 py-2 text-right">
+                                {(host as any)._added ? (
+                                  <span className="inline-flex items-center gap-1 text-xs text-green-700">
+                                    <CheckCircle2 className="h-3 w-3" /> Added
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => handleAddDiscoveredTarget(host)}
+                                    disabled={!selectedMissionId || creatingTarget}
+                                    className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                                  >
+                                    <Plus className="h-3 w-3" /> Add as Target
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Scan Launcher */}
           <div className="rounded-lg border border-gray-200 bg-white p-6">
             <h2 className="mb-4 text-lg font-semibold text-gray-900">Launch Network Scan</h2>
@@ -392,6 +620,15 @@ export default function Scans() {
                     </option>
                   ))}
                 </select>
+                {selectedMissionId && !showTargetForm && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTargetForm(true)}
+                    className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    <Plus className="h-3 w-3" /> Create a target
+                  </button>
+                )}
               </div>
 
               {/* Benchmark */}
@@ -456,6 +693,105 @@ export default function Scans() {
                   >
                     Cancel
                   </button>
+                </div>
+              </form>
+            )}
+
+            {/* Inline Target Creation Form */}
+            {showTargetForm && (
+              <form onSubmit={handleCreateTarget} className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-900">Quick Create Target</h4>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Hostname</label>
+                    <input
+                      value={targetHostname}
+                      onChange={(e) => setTargetHostname(e.target.value)}
+                      placeholder="e.g. ubuntu-vm"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">IP Address *</label>
+                    <input
+                      value={targetIp}
+                      onChange={(e) => setTargetIp(e.target.value)}
+                      placeholder="e.g. 192.168.1.100"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Type *</label>
+                    <select
+                      value={targetType}
+                      onChange={(e) => setTargetType(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                    >
+                      <option value="windows">Windows</option>
+                      <option value="linux">Linux</option>
+                      <option value="network">Network</option>
+                      <option value="database">Database</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Connection</label>
+                    <select
+                      value={targetConnectionMethod}
+                      onChange={(e) => setTargetConnectionMethod(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                    >
+                      <option value="ssh">SSH</option>
+                      <option value="winrm">WinRM</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Username</label>
+                    <input
+                      value={targetSshUsername}
+                      onChange={(e) => setTargetSshUsername(e.target.value)}
+                      placeholder={targetConnectionMethod === 'winrm' ? 'Administrator' : 'root'}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Password</label>
+                    <input
+                      type="password"
+                      value={targetSshPassword}
+                      onChange={(e) => setTargetSshPassword(e.target.value)}
+                      placeholder="Required for scan"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Port</label>
+                    <input
+                      value={targetPort}
+                      onChange={(e) => setTargetPort(e.target.value)}
+                      placeholder={targetConnectionMethod === 'winrm' ? '5985' : '22'}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <button
+                    type="submit"
+                    disabled={creatingTarget || !targetIp.trim()}
+                    className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {creatingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowTargetForm(false); setTargetHostname(''); setTargetIp(''); setTargetType('windows'); setTargetConnectionMethod('ssh'); setTargetSshUsername(''); setTargetSshPassword(''); setTargetPort(''); setTargetNotes(''); }}
+                    className="rounded-lg bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-300"
+                  >
+                    Cancel
+                  </button>
+                  {!targetSshPassword && <span className="text-xs text-amber-600">Credentials are needed for remote scanning</span>}
                 </div>
               </form>
             )}
@@ -723,10 +1059,271 @@ export default function Scans() {
                 <p><strong>1.</strong> Select a benchmark and click &quot;Download Script Package&quot;</p>
                 <p><strong>2.</strong> Copy the ZIP to a USB drive and transfer to the target system</p>
                 <p><strong>3.</strong> Extract and run the audit script on the target</p>
-                <p><strong>4.</strong> Copy the results file back and import via the &quot;Network Scan&quot; tab → Import Results</p>
+                <p><strong>4.</strong> Copy the results file back and import below</p>
               </div>
             </div>
           )}
+
+          {/* Import Results Section (Script Export Tab) */}
+          <div className="rounded-lg border border-gray-200 bg-white p-6">
+            <div className="mb-4 flex items-center gap-3">
+              <Upload className="h-6 w-6 text-green-600" />
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Import Results</h2>
+                <p className="text-sm text-gray-500">
+                  Import scan results from offline/USB execution (audit_results.json)
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {/* Client selector */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Client</label>
+                <select
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value ? Number(e.target.value) : '')}
+                >
+                  <option value="">Select client...</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Mission selector */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Mission</label>
+                <select
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  value={selectedMissionId}
+                  onChange={(e) => setSelectedMissionId(e.target.value ? Number(e.target.value) : '')}
+                  disabled={!selectedClientId}
+                >
+                  <option value="">Select mission...</option>
+                  {missions.map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+                {selectedClientId && missions.length === 0 && !showMissionForm && (
+                  <button
+                    type="button"
+                    onClick={() => setShowMissionForm(true)}
+                    className="mt-1 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    <Plus className="h-3 w-3" /> Create a mission
+                  </button>
+                )}
+              </div>
+
+              {/* Target selector */}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Target</label>
+                <select
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  value={selectedTargetId}
+                  onChange={(e) => setSelectedTargetId(e.target.value ? Number(e.target.value) : '')}
+                  disabled={!selectedMissionId}
+                >
+                  <option value="">Select target...</option>
+                  {targets.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.hostname || t.ip_address} ({t.target_type})
+                    </option>
+                  ))}
+                </select>
+                {selectedMissionId && targets.length === 0 && !showTargetForm && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTargetForm(true)}
+                    className="mt-1 inline-flex items-center gap-1 text-xs text-green-600 hover:text-green-800"
+                  >
+                    <Plus className="h-3 w-3" /> Create a target
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Inline Target Creation Form (Script Export Tab) */}
+            {showTargetForm && scanMode === 'script_export' && (
+              <form onSubmit={handleCreateTarget} className="mt-4 rounded-lg border border-green-200 bg-green-50 p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-900">Quick Create Target</h4>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Hostname</label>
+                    <input
+                      value={targetHostname}
+                      onChange={(e) => setTargetHostname(e.target.value)}
+                      placeholder="e.g. ubuntu-vm"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">IP Address *</label>
+                    <input
+                      value={targetIp}
+                      onChange={(e) => setTargetIp(e.target.value)}
+                      placeholder="e.g. 192.168.1.100"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Type *</label>
+                    <select
+                      value={targetType}
+                      onChange={(e) => setTargetType(e.target.value)}
+                      required
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    >
+                      <option value="windows">Windows</option>
+                      <option value="linux">Linux</option>
+                      <option value="network">Network</option>
+                      <option value="database">Database</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Connection</label>
+                    <select
+                      value={targetConnectionMethod}
+                      onChange={(e) => setTargetConnectionMethod(e.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                    >
+                      <option value="ssh">SSH</option>
+                      <option value="winrm">WinRM</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Username</label>
+                    <input
+                      value={targetSshUsername}
+                      onChange={(e) => setTargetSshUsername(e.target.value)}
+                      placeholder={targetConnectionMethod === 'winrm' ? 'Administrator' : 'root'}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Password</label>
+                    <input
+                      type="password"
+                      value={targetSshPassword}
+                      onChange={(e) => setTargetSshPassword(e.target.value)}
+                      placeholder="Required for scan"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Port</label>
+                    <input
+                      value={targetPort}
+                      onChange={(e) => setTargetPort(e.target.value)}
+                      placeholder={targetConnectionMethod === 'winrm' ? '5985' : '22'}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-green-500 focus:ring-1 focus:ring-green-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <button
+                    type="submit"
+                    disabled={creatingTarget || !targetIp.trim()}
+                    className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                  >
+                    {creatingTarget ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowTargetForm(false); setTargetHostname(''); setTargetIp(''); setTargetType('windows'); setTargetConnectionMethod('ssh'); setTargetSshUsername(''); setTargetSshPassword(''); setTargetPort(''); setTargetNotes(''); }}
+                    className="rounded-lg bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-300"
+                  >
+                    Cancel
+                  </button>
+                  {!targetSshPassword && <span className="text-xs text-amber-600">Credentials are needed for remote scanning</span>}
+                </div>
+              </form>
+            )}
+
+            {/* Inline Mission Creation Form (Script Export Tab) */}
+            {showMissionForm && scanMode === 'script_export' && (
+              <form onSubmit={handleCreateMission} className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-3">
+                <h4 className="text-sm font-semibold text-gray-900">Quick Create Mission</h4>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Mission Name *</label>
+                    <input
+                      value={missionName}
+                      onChange={(e) => setMissionName(e.target.value)}
+                      required
+                      placeholder="e.g. Q1 2026 Audit"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-gray-700">Description</label>
+                    <input
+                      value={missionDescription}
+                      onChange={(e) => setMissionDescription(e.target.value)}
+                      placeholder="Optional description"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={creatingMission || !missionName.trim()}
+                    className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {creatingMission ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                    Create
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowMissionForm(false); setMissionName(''); setMissionDescription(''); }}
+                    className="rounded-lg bg-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-300"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Results File (JSON, TXT, or ZIP)
+                </label>
+                <input
+                  type="file"
+                  accept=".json,.txt,.zip"
+                  onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+                />
+              </div>
+              <button
+                onClick={handleImport}
+                disabled={!selectedTargetId || !selectedBenchmarkId || !importFile || importing}
+                className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {importing ? 'Importing...' : 'Import Results'}
+              </button>
+              {!selectedTargetId && importFile && (
+                <p className="text-xs text-amber-600">
+                  Please select a Client, Mission, and Target above to enable import.
+                </p>
+              )}
+              {importResult && (
+                <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+                  <p className="font-medium">Import successful!</p>
+                  <p>Findings created: {importResult.findings_created} | Passed: {importResult.passed} | Failed: {importResult.failed} | Errors: {importResult.errors}</p>
+                  <p>Compliance: {importResult.compliance_percentage}%</p>
+                </div>
+              )}
+            </div>
+          </div>
         </>
       )}
     </div>

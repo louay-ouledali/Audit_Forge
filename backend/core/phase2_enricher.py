@@ -20,7 +20,7 @@ logger = logging.getLogger("auditforge.phase2")
 # In-memory tracking of pause requests (benchmark_id -> bool)
 _pause_requests: dict[int, bool] = {}
 
-BATCH_SIZE = 30  # Rules per enrichment cycle (split into concurrent sub-batches of 10)
+BATCH_SIZE = 15  # Rules per enrichment cycle (split into concurrent sub-batches)
 
 # Maximum consecutive batch failures before stopping enrichment
 MAX_CONSECUTIVE_FAILURES = 10

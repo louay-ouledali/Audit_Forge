@@ -212,22 +212,20 @@ def verify_single_command(audit_command: str | None, platform_family: str) -> di
 
 
 def verify_regex(regex_str: str | None) -> dict:
-    """Verify that a regex pattern is valid Python regex.
+    """Verify that an expected-output expression is valid.
 
-    Returns ``{"valid": False}`` when *regex_str* is empty or ``None``.
+    Accepts both new comparison expressions (>=24, ==1, contains:text)
+    and legacy regex patterns. Returns ``{"valid": False}`` when
+    *regex_str* is empty or ``None``.
     """
-    if not regex_str or not regex_str.strip():
-        return {"valid": False, "error": "Regex is empty"}
-    try:
-        re.compile(regex_str)
-    except re.error as e:
-        return {"valid": False, "error": str(e)}
+    from backend.core.comparison_engine import validate_expression
 
-    # Quality check: reject regex that looks like plain-English descriptions
-    # instead of actual patterns matching command output
-    quality_error = _check_regex_quality(regex_str)
-    if quality_error:
-        return {"valid": False, "error": quality_error}
+    if not regex_str or not regex_str.strip():
+        return {"valid": False, "error": "Expression is empty"}
+
+    error = validate_expression(regex_str)
+    if error:
+        return {"valid": False, "error": error}
 
     return {"valid": True, "error": None}
 

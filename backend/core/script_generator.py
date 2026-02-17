@@ -258,7 +258,14 @@ def generate_script_package(
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{folder_name}/{script_filename}", script_content)
+        # PowerShell 5.1 needs a UTF-8 BOM to read non-ASCII correctly
+        if script_filename.endswith(".ps1"):
+            zf.writestr(
+                f"{folder_name}/{script_filename}",
+                "\ufeff" + script_content,
+            )
+        else:
+            zf.writestr(f"{folder_name}/{script_filename}", script_content)
         zf.writestr(f"{folder_name}/rules_reference.json", rules_reference)
         zf.writestr(f"{folder_name}/README.txt", readme_content)
         # Create empty results directory placeholder

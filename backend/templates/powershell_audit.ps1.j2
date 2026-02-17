@@ -1,12 +1,35 @@
-# ══════════════════════════════════════════════════════════════
-# AditForge — Automated Configuration Review
+# ==============================================================
+# AditForge -- Automated Configuration Review
 # Benchmark: {{ benchmark.name }} {{ benchmark.version }}
 # Generated: {{ generation_date }}
 # Rules: {{ rules|length }} enabled rules
 # Scan ID: {{ scan_id }}
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 
 $ErrorActionPreference = "Continue"
+
+# -- Self-elevate to Administrator if needed --
+$IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $IsAdmin) {
+    Write-Host ""
+    Write-Host "  This audit requires Administrator privileges." -ForegroundColor Yellow
+    Write-Host "  Re-launching as Administrator..." -ForegroundColor Yellow
+    Write-Host ""
+    try {
+        $scriptPath = $MyInvocation.MyCommand.Path
+        Start-Process powershell.exe -Verb RunAs -ArgumentList @(
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', "`"$scriptPath`""
+        ) -Wait
+    }
+    catch {
+        Write-Host "  ERROR: Failed to elevate. Please right-click PowerShell -> Run as Administrator." -ForegroundColor Red
+        Write-Host "  Then run: .\run_audit.ps1" -ForegroundColor Red
+    }
+    exit
+}
+
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ResultsDir = Join-Path $ScriptDir "results"
 $RawDir = Join-Path $ResultsDir "raw_outputs"
@@ -15,13 +38,13 @@ New-Item -ItemType Directory -Force -Path $RawDir | Out-Null
 $Total = 0; $Passed = 0; $Failed = 0; $Errors = 0
 $Results = @()
 
-Write-Host "══════════════════════════════════════════════════════════"
+Write-Host "=========================================================="
 Write-Host "  AditForge Audit Starting"
 Write-Host "  Benchmark: {{ benchmark.name }} {{ benchmark.version }}"
 Write-Host "  Date: $(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')"
-Write-Host "══════════════════════════════════════════════════════════"
+Write-Host "=========================================================="
 
-# ── Collect system info ──
+# -- Collect system info --
 $SysInfo = @{
     hostname          = $env:COMPUTERNAME
     os                = (Get-CimInstance Win32_OperatingSystem).Caption
@@ -34,6 +57,143 @@ $SysInfo = @{
     benchmark_version = "{{ benchmark.version }}"
 } | ConvertTo-Json -Depth 3
 $SysInfo | Out-File "$ResultsDir\system_info.json" -Encoding UTF8
+
+function Evaluate-Expression {
+    <#
+    .SYNOPSIS
+        Evaluates a comparison expression against command output.
+        Supports: >=N, <=N, >N, <N, ==VALUE, !=VALUE, contains:TEXT, regex:PATTERN.
+        Falls back to regex match for legacy patterns.
+    #>
+    param(
+        [string]$Expression,
+        [string]$ActualOutput
+    )
+
+    $expr = $Expression.Trim()
+    $actual = $ActualOutput.Trim()
+
+    if ([string]::IsNullOrWhiteSpace($expr)) { return $true }
+
+    # Helper: extract a number from text (last number found)
+    function Extract-Number([string]$text) {
+        $text = $text.Trim()
+        # Fast path: entire string is numeric
+        $asDouble = 0.0
+        if ([double]::TryParse($text, [ref]$asDouble)) { return $asDouble }
+        # Find all numbers in the text; return the last one
+        $matches = [regex]::Matches($text, '-?\d+(?:\.\d+)?')
+        if ($matches.Count -gt 0) {
+            $last = $matches[$matches.Count - 1].Value
+            if ([double]::TryParse($last, [ref]$asDouble)) { return $asDouble }
+        }
+        return $null
+    }
+
+    # Numeric comparisons: >=N, <=N, >N, <N
+    if ($expr -match '^(>=|<=|>|<)\s*(.+)$') {
+        $op = $Matches[1]; $threshold = 0.0
+        if (-not [double]::TryParse($Matches[2].Trim(), [ref]$threshold)) { return $false }
+        $actualNum = Extract-Number $actual
+        if ($null -eq $actualNum) { return $false }
+        switch ($op) {
+            '>=' { return $actualNum -ge $threshold }
+            '<=' { return $actualNum -le $threshold }
+            '>'  { return $actualNum -gt $threshold }
+            '<'  { return $actualNum -lt $threshold }
+        }
+    }
+
+    # Exact match: ==VALUE
+    if ($expr -match '^==\s*(.+)$') {
+        $expected = $Matches[1].Trim()
+        # Try numeric comparison first
+        $expNum = 0.0; $actNum = 0.0
+        $expIsNum = [double]::TryParse($expected, [ref]$expNum)
+        if ($expIsNum) {
+            $actNum2 = Extract-Number $actual
+            if ($null -ne $actNum2) { return $actNum2 -eq $expNum }
+        }
+        # String comparison (case-insensitive)
+        return $actual -ieq $expected
+    }
+
+    # Not-equal: !=VALUE
+    if ($expr -match '^!=\s*(.+)$') {
+        $expected = $Matches[1].Trim()
+        $expNum = 0.0
+        if ([double]::TryParse($expected, [ref]$expNum)) {
+            $actNum2 = Extract-Number $actual
+            if ($null -ne $actNum2) { return $actNum2 -ne $expNum }
+        }
+        return $actual -ine $expected
+    }
+
+    # Substring check: contains:TEXT
+    if ($expr -match '^contains:\s*(.+)$') {
+        $substring = $Matches[1].Trim()
+        return $actual.ToLower().Contains($substring.ToLower())
+    }
+
+    # Explicit regex: regex:PATTERN
+    if ($expr -match '^regex:\s*(.+)$') {
+        $pattern = $Matches[1].Trim()
+        return $actual -match $pattern
+    }
+
+    # Legacy fallback: treat entire expression as a regex
+    return $actual -match $expr
+}
+
+function Test-ExecutionError {
+    <#
+    .SYNOPSIS
+        Detects genuine execution failures: privilege errors, command not found,
+        access denied, etc. These represent cases where the audit could NOT run
+        at all and must be retried (e.g., with admin elevation).
+    #>
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    $patterns = @(
+        'is not recognized as the name of a cmdlet',
+        'CommandNotFoundException',
+        'Access is denied',
+        'Access to the path .+ is denied',
+        'UnauthorizedAccessException',
+        'PermissionDenied',
+        'Error 0x00000522',
+        'error occurred:',
+        'secedit.+/export.+failed',
+        'The term .+ is not recognized'
+    )
+    foreach ($p in $patterns) {
+        if ($Text -match $p) { return $true }
+    }
+    return $false
+}
+
+function Test-NotConfigured {
+    <#
+    .SYNOPSIS
+        Detects output indicating a registry key or property does not exist.
+        In CIS benchmarks this means the policy is "Not Configured" which is
+        typically non-compliant (FAIL), NOT an execution error.
+    #>
+    param([string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    $patterns = @(
+        'Cannot find path',
+        'does not exist at path',
+        'Property .+ does not exist',
+        'ObjectNotFound:',
+        'ItemNotFoundException',
+        'PathNotFound'
+    )
+    foreach ($p in $patterns) {
+        if ($Text -match $p) { return $true }
+    }
+    return $false
+}
 
 function Run-Check {
     param(
@@ -52,11 +212,39 @@ function Run-Check {
         $Output | Out-File "$RawDir\rule_$SafeId.txt" -Encoding UTF8
 
         if ([string]::IsNullOrWhiteSpace($Output)) {
+            # Empty output = setting not configured or not present = FAIL
+            if (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput "") {
+                $Status = "PASS"
+                $script:Passed++
+                Write-Host "  [PASS]  ${RuleId}: $Title" -ForegroundColor Green
+            }
+            else {
+                $Status = "FAIL"
+                $script:Failed++
+                Write-Host "  [FAIL]  ${RuleId}: $Title -- Not Configured" -ForegroundColor Red
+            }
+        }
+        elseif (Test-ExecutionError $Output) {
+            # Genuine execution failure (needs admin, command missing, etc.)
             $Status = "ERROR"
             $script:Errors++
             Write-Host "  [ERROR] ${RuleId}: $Title" -ForegroundColor Yellow
         }
-        elseif ($Output -match $ExpectedRegex) {
+        elseif (Test-NotConfigured $Output) {
+            # Registry key/property not found = policy not configured = FAIL
+            # Evaluate with empty string to avoid extracting numbers from error text
+            if (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput "") {
+                $Status = "PASS"
+                $script:Passed++
+                Write-Host "  [PASS]  ${RuleId}: $Title" -ForegroundColor Green
+            }
+            else {
+                $Status = "FAIL"
+                $script:Failed++
+                Write-Host "  [FAIL]  ${RuleId}: $Title -- Not Configured" -ForegroundColor Red
+            }
+        }
+        elseif (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput $Output) {
             $Status = "PASS"
             $script:Passed++
             Write-Host "  [PASS]  ${RuleId}: $Title" -ForegroundColor Green
@@ -70,9 +258,42 @@ function Run-Check {
     catch {
         $Output = $_.Exception.Message
         $Output | Out-File "$RawDir\rule_$SafeId.txt" -Encoding UTF8
-        $Status = "ERROR"
-        $script:Errors++
-        Write-Host "  [ERROR] ${RuleId}: $Title — $Output" -ForegroundColor Yellow
+
+        if (Test-NotConfigured $Output) {
+            # Exception from -ErrorAction Stop on missing registry key/property
+            # = policy not configured = evaluate as empty (usually FAIL)
+            if (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput "") {
+                $Status = "PASS"
+                $script:Passed++
+                Write-Host "  [PASS]  ${RuleId}: $Title" -ForegroundColor Green
+            }
+            else {
+                $Status = "FAIL"
+                $script:Failed++
+                Write-Host "  [FAIL]  ${RuleId}: $Title -- Not Configured" -ForegroundColor Red
+            }
+        }
+        elseif ($Output -match 'Cannot find any service') {
+            # Service not installed = not running, evaluate against expected
+            # For "Ensure X is Disabled": missing service satisfies ==Disabled
+            # For others: evaluate empty to let the expression decide
+            $svcOutput = "Disabled"
+            if (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput $svcOutput) {
+                $Status = "PASS"
+                $script:Passed++
+                Write-Host "  [PASS]  ${RuleId}: $Title -- Service Not Installed" -ForegroundColor Green
+            }
+            else {
+                $Status = "FAIL"
+                $script:Failed++
+                Write-Host "  [FAIL]  ${RuleId}: $Title -- Service Not Installed" -ForegroundColor Red
+            }
+        }
+        else {
+            $Status = "ERROR"
+            $script:Errors++
+            Write-Host "  [ERROR] ${RuleId}: $Title -- $Output" -ForegroundColor Yellow
+        }
     }
 
     $script:Results += @{
@@ -85,12 +306,12 @@ function Run-Check {
     }
 }
 
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 # AUDIT RULES
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 
 {% for rule in rules %}
-# ── Rule {{ rule.section_number }}: {{ rule.title }} ──
+# -- Rule {{ rule.section_number }}: {{ rule.title }} --
 Run-Check `
     -RuleId "{{ rule.section_number }}" `
     -Title "{{ rule.title | replace('"', '`"') }}" `
@@ -100,17 +321,17 @@ Run-Check `
 
 {% endfor %}
 
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 # SUMMARY
-# ══════════════════════════════════════════════════════════════
+# ==============================================================
 $Results | ConvertTo-Json -Depth 5 | Out-File "$ResultsDir\audit_results.json" -Encoding UTF8
 
 $Compliance = if ($Total -gt 0) { [math]::Round(($Passed / $Total) * 100, 1) } else { 0 }
 
 Write-Host ""
-Write-Host "══════════════════════════════════════════════════════════"
+Write-Host "=========================================================="
 Write-Host "  AUDIT COMPLETE"
 Write-Host "  Total: $Total | Pass: $Passed | Fail: $Failed | Error: $Errors"
 Write-Host "  Compliance: $Compliance%"
 Write-Host "  Results: $ResultsDir\audit_results.json"
-Write-Host "══════════════════════════════════════════════════════════"
+Write-Host "=========================================================="
