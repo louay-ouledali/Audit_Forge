@@ -72,6 +72,8 @@ export interface BenchmarkStatus {
 export interface EnrichStatus {
   total: number;
   processed: number;
+  template_matched: number;
+  llm_generated: number;
   status: string;
 }
 
@@ -253,6 +255,13 @@ export interface ScanDetail {
   compliance_percentage: number | null;
   notes: string | null;
   created_at: string | null;
+  // Enriched naming fields
+  benchmark_name?: string | null;
+  benchmark_version?: string | null;
+  target_hostname?: string | null;
+  target_ip?: string | null;
+  mission_name?: string | null;
+  client_name?: string | null;
 }
 
 export interface Finding {

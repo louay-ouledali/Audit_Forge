@@ -129,6 +129,19 @@ SYNTAX:
 • Do NOT write If/Else or try/catch — just the value-extraction command.
 • Use PowerShell property access (.PropertyName) to get single values.
 
+══ ABSOLUTELY FORBIDDEN — ENFORCEMENT/WRITE COMMANDS ══
+These commands CHANGE the system configuration. NEVER output them as audit commands:
+  ❌ Set-ItemProperty    ❌ New-ItemProperty    ❌ Remove-ItemProperty
+  ❌ reg add             ❌ reg delete           ❌ Set-Service
+  ❌ Stop-Service        ❌ Disable-Service      ❌ Enable-Service
+  ❌ Set-NetFirewallProfile  ❌ Set-MpPreference
+  ❌ secedit /configure   ❌ net user /add        ❌ net localgroup
+  ❌ bcdedit /set         ❌ Enable-WindowsOptionalFeature
+  ❌ Disable-WindowsOptionalFeature
+  ❌ chmod  ❌ chown  ❌ sed -i  ❌ usermod  ❌ systemctl enable/disable/stop
+
+The audit command must ONLY READ the current value — never change it.
+
 COMMAND PATTERNS BY CIS SECTION:
 • 1.1.x Password Policy / 1.2.x Account Lockout → extract the specific number
   Command: (net accounts | Select-String 'Minimum password length').Line -replace '\\D',''

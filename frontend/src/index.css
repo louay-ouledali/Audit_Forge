@@ -1,1 +1,97 @@
 @import "tailwindcss";
+
+@theme {
+  /* ── EY Brand Palette ── */
+  --color-ey-yellow: #FFE600;
+  --color-ey-yellow-hover: #FFF44F;
+  --color-ey-yellow-muted: #B8A900;
+  --color-ey-gold: #FFD700;
+  --color-ey-yellow-5: rgba(255, 230, 0, 0.05);
+  --color-ey-yellow-10: rgba(255, 230, 0, 0.10);
+
+  /* ── Dark Surfaces ── */
+  --color-dark: #000000;
+  --color-dark-surface: #050505;
+  --color-dark-card: #0A0A0A;
+  --color-dark-elevated: #111111;
+  --color-dark-overlay: #1A1A1A;
+  --color-dark-border: #1C1C1C;
+  --color-dark-border-hover: #2A2A2A;
+  --color-dark-muted: #555555;
+  --color-dark-secondary: #999999;
+}
+
+/* ── Base dark background ── */
+html, body, #root {
+  background-color: #000;
+  color: #e5e5e5;
+}
+
+/* ── Ambient glow effects ── */
+.glow-ambient {
+  position: relative;
+}
+.glow-ambient::before {
+  content: '';
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 400px;
+  background: radial-gradient(ellipse, rgba(255, 230, 0, 0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glow-card {
+  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+.glow-card:hover {
+  box-shadow: 0 0 20px rgba(255, 230, 0, 0.06), 0 0 40px rgba(255, 230, 0, 0.03);
+  border-color: rgba(255, 230, 0, 0.15) !important;
+}
+
+.glow-subtle {
+  box-shadow: 0 0 30px rgba(255, 230, 0, 0.03);
+}
+
+/* ── Scrollbar styling ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0A0A0A;
+}
+::-webkit-scrollbar-thumb {
+  background: #2A2A2A;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3A3A3A;
+}
+
+/* ── Selection styling ── */
+::selection {
+  background-color: rgba(255, 230, 0, 0.25);
+  color: #fff;
+}
+
+/* ── Dark select/option styling ── */
+select option {
+  background-color: #111111;
+  color: #e5e5e5;
+}
+
+/* ── Sidebar glow bar ── */
+.sidebar-active-bar {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  background: #FFE600;
+  border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px rgba(255, 230, 0, 0.4);
+}

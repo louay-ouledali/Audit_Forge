@@ -322,6 +322,8 @@ def list_scans(
 ):
     """List all scans with optional filters."""
     from backend.models.target import Target as TargetModel
+    from backend.models.mission import Mission as MissionModel
+    from backend.models.client import Client as ClientModel
 
     query = db.query(Scan)
     if target_id:
@@ -333,32 +335,68 @@ def list_scans(
         query = query.filter(Scan.status == status)
 
     scans = query.order_by(Scan.created_at.desc()).all()
-    return {
-        "data": [
-            {
-                "id": s.id,
-                "target_id": s.target_id,
-                "benchmark_id": s.benchmark_id,
-                "scan_mode": s.scan_mode,
-                "status": s.status,
-                "started_at": s.started_at.isoformat() if s.started_at else None,
-                "completed_at": s.completed_at.isoformat() if s.completed_at else None,
-                "results_imported_at": s.results_imported_at.isoformat() if s.results_imported_at else None,
-                "total_rules": s.total_rules or 0,
-                "total_rules_checked": s.total_rules_checked or 0,
-                "passed": s.passed or 0,
-                "failed": s.failed or 0,
-                "errors": s.errors or 0,
-                "not_applicable": s.not_applicable or 0,
-                "manual_review": s.manual_review or 0,
-                "compliance_percentage": s.compliance_percentage,
-                "notes": s.notes,
-                "created_at": s.created_at.isoformat() if s.created_at else None,
-            }
-            for s in scans
-        ],
-        "total": len(scans),
-    }
+
+    # Pre-fetch related names for enrichment
+    target_ids = {s.target_id for s in scans if s.target_id}
+    benchmark_ids = {s.benchmark_id for s in scans if s.benchmark_id}
+
+    targets_map: dict[int, TargetModel] = {}
+    missions_map: dict[int, MissionModel] = {}
+    clients_map: dict[int, ClientModel] = {}
+    benchmarks_map: dict[int, Benchmark] = {}
+
+    if target_ids:
+        for t in db.query(TargetModel).filter(TargetModel.id.in_(target_ids)).all():
+            targets_map[t.id] = t
+        mission_ids = {t.mission_id for t in targets_map.values() if t.mission_id}
+        if mission_ids:
+            for m in db.query(MissionModel).filter(MissionModel.id.in_(mission_ids)).all():
+                missions_map[m.id] = m
+            client_ids = {m.client_id for m in missions_map.values() if m.client_id}
+            if client_ids:
+                for c in db.query(ClientModel).filter(ClientModel.id.in_(client_ids)).all():
+                    clients_map[c.id] = c
+
+    if benchmark_ids:
+        for b in db.query(Benchmark).filter(Benchmark.id.in_(benchmark_ids)).all():
+            benchmarks_map[b.id] = b
+
+    result = []
+    for s in scans:
+        tgt = targets_map.get(s.target_id) if s.target_id else None
+        bm = benchmarks_map.get(s.benchmark_id) if s.benchmark_id else None
+        msn = missions_map.get(tgt.mission_id) if tgt and tgt.mission_id else None
+        cli = clients_map.get(msn.client_id) if msn and msn.client_id else None
+
+        result.append({
+            "id": s.id,
+            "target_id": s.target_id,
+            "benchmark_id": s.benchmark_id,
+            "scan_mode": s.scan_mode,
+            "status": s.status,
+            "started_at": s.started_at.isoformat() if s.started_at else None,
+            "completed_at": s.completed_at.isoformat() if s.completed_at else None,
+            "results_imported_at": s.results_imported_at.isoformat() if s.results_imported_at else None,
+            "total_rules": s.total_rules or 0,
+            "total_rules_checked": s.total_rules_checked or 0,
+            "passed": s.passed or 0,
+            "failed": s.failed or 0,
+            "errors": s.errors or 0,
+            "not_applicable": s.not_applicable or 0,
+            "manual_review": s.manual_review or 0,
+            "compliance_percentage": s.compliance_percentage,
+            "notes": s.notes,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            # Enriched naming fields
+            "benchmark_name": bm.name if bm else None,
+            "benchmark_version": bm.version if bm else None,
+            "target_hostname": tgt.hostname if tgt else None,
+            "target_ip": tgt.ip_address if tgt else None,
+            "mission_name": msn.name if msn else None,
+            "client_name": cli.name if cli else None,
+        })
+
+    return {"data": result, "total": len(result)}
 
 
 @router.post("/import")

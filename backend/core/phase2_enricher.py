@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -79,6 +80,8 @@ async def run_phase2(benchmark_id: int) -> None:
 
         total_to_process = len(rules_without_commands)
         processed = 0
+        template_count = 0
+        llm_count = 0
         consecutive_failures = 0
         logger.info("Phase 2: %d rules to enrich for benchmark %d", total_to_process, benchmark_id)
 
@@ -164,9 +167,16 @@ async def run_phase2(benchmark_id: int) -> None:
 
             # Save results
             batch_had_success = False
+            batch_template = 0
+            batch_llm = 0
             for i, rule in enumerate(batch_rules):
                 if i < len(results) and results[i].get("audit_command"):
                     result = results[i]
+                    source = "template" if result.get("_source") == "template" else "llm_generated"
+                    if source == "template":
+                        batch_template += 1
+                    else:
+                        batch_llm += 1
                     now = datetime.now(timezone.utc)
                     cmd = RuleCommand(
                         rule_id=rule.id,
@@ -176,7 +186,7 @@ async def run_phase2(benchmark_id: int) -> None:
                         remediation_command=result.get("remediation_command"),
                         remediation_description=result.get("remediation_description"),
                         status="generated",
-                        source="llm_generated",
+                        source=source,
                         created_at=now,
                     )
                     db.add(cmd)
@@ -195,14 +205,32 @@ async def run_phase2(benchmark_id: int) -> None:
             else:
                 consecutive_failures += 1
 
+            template_count += batch_template
+            llm_count += batch_llm
             processed += len(batch_rules)
-            benchmark.enrichment_stats = json.dumps({"total": total_to_process, "processed": processed})
+            benchmark.enrichment_stats = json.dumps({
+                "total": total_to_process,
+                "processed": processed,
+                "template_matched": template_count,
+                "llm_generated": llm_count,
+            })
             db.commit()
-            logger.info("Phase 2: %d/%d rules enriched for benchmark %d", processed, total_to_process, benchmark_id)
+            logger.info(
+                "Phase 2: %d/%d rules enriched (templates=%d, llm=%d) for benchmark %d",
+                processed, total_to_process, template_count, llm_count, benchmark_id,
+            )
+
+            # Yield control so the frontend can poll updated progress
+            await asyncio.sleep(0.05)
 
         # All done
         benchmark.phase2_status = "completed"
-        benchmark.enrichment_stats = json.dumps({"total": total_to_process, "processed": processed})
+        benchmark.enrichment_stats = json.dumps({
+            "total": total_to_process,
+            "processed": processed,
+            "template_matched": template_count,
+            "llm_generated": llm_count,
+        })
         db.commit()
         logger.info("Phase 2 completed for benchmark %d", benchmark_id)
 

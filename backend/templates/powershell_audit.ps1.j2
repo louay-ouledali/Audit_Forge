@@ -62,7 +62,8 @@ function Evaluate-Expression {
     <#
     .SYNOPSIS
         Evaluates a comparison expression against command output.
-        Supports: >=N, <=N, >N, <N, ==VALUE, !=VALUE, contains:TEXT, regex:PATTERN.
+        Supports: >=N, <=N, >N, <N, ==VALUE, !=VALUE, not_empty,
+                  contains:TEXT, not_contains:TEXT, regex:PATTERN.
         Falls back to regex match for legacy patterns.
     #>
     param(
@@ -118,9 +119,18 @@ function Evaluate-Expression {
         return $actual -ieq $expected
     }
 
-    # Not-equal: !=VALUE
-    if ($expr -match '^!=\s*(.+)$') {
+    # Not-empty check: not_empty (output must be non-blank)
+    if ($expr -ieq 'not_empty') {
+        return -not [string]::IsNullOrWhiteSpace($actual)
+    }
+
+    # Not-equal: !=VALUE (bare != with no value also means "must not be empty")
+    if ($expr -match '^!=\s*(.*)$') {
         $expected = $Matches[1].Trim()
+        if ([string]::IsNullOrWhiteSpace($expected)) {
+            # Bare != means "must not be empty"
+            return -not [string]::IsNullOrWhiteSpace($actual)
+        }
         $expNum = 0.0
         if ([double]::TryParse($expected, [ref]$expNum)) {
             $actNum2 = Extract-Number $actual
@@ -133,6 +143,12 @@ function Evaluate-Expression {
     if ($expr -match '^contains:\s*(.+)$') {
         $substring = $Matches[1].Trim()
         return $actual.ToLower().Contains($substring.ToLower())
+    }
+
+    # Negative substring check: not_contains:TEXT (PASS when text is NOT found)
+    if ($expr -match '^not_contains:\s*(.+)$') {
+        $substring = $Matches[1].Trim()
+        return -not $actual.ToLower().Contains($substring.ToLower())
     }
 
     # Explicit regex: regex:PATTERN
@@ -231,9 +247,16 @@ function Run-Check {
             Write-Host "  [ERROR] ${RuleId}: $Title" -ForegroundColor Yellow
         }
         elseif (Test-NotConfigured $Output) {
-            # Registry key/property not found = policy not configured = FAIL
-            # Evaluate with empty string to avoid extracting numbers from error text
-            if (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput "") {
+            # Registry key/property not found = policy not configured
+            # For !=X expressions, "not configured" means value IS the default,
+            # NOT that it's different from X.  Always FAIL for != on missing keys.
+            # For not_empty, missing = empty = FAIL.
+            if ($ExpectedRegex -match '^!=|^not_empty') {
+                $Status = "FAIL"
+                $script:Failed++
+                Write-Host "  [FAIL]  ${RuleId}: $Title -- Not Configured" -ForegroundColor Red
+            }
+            elseif (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput "") {
                 $Status = "PASS"
                 $script:Passed++
                 Write-Host "  [PASS]  ${RuleId}: $Title" -ForegroundColor Green
@@ -261,8 +284,13 @@ function Run-Check {
 
         if (Test-NotConfigured $Output) {
             # Exception from -ErrorAction Stop on missing registry key/property
-            # = policy not configured = evaluate as empty (usually FAIL)
-            if (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput "") {
+            # = policy not configured.  For != / not_empty: always FAIL.
+            if ($ExpectedRegex -match '^!=|^not_empty') {
+                $Status = "FAIL"
+                $script:Failed++
+                Write-Host "  [FAIL]  ${RuleId}: $Title -- Not Configured" -ForegroundColor Red
+            }
+            elseif (Evaluate-Expression -Expression $ExpectedRegex -ActualOutput "") {
                 $Status = "PASS"
                 $script:Passed++
                 Write-Host "  [PASS]  ${RuleId}: $Title" -ForegroundColor Green

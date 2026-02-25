@@ -54,6 +54,8 @@ class BenchmarkStatusResponse(BaseModel):
 class EnrichStatusResponse(BaseModel):
     total: int = 0
     processed: int = 0
+    template_matched: int = 0
+    llm_generated: int = 0
     status: str = "pending"
 
 

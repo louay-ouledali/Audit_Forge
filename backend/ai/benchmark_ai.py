@@ -190,6 +190,7 @@ async def generate_commands_for_batch(
         tmpl = match_template(rule, platform_family)
         if tmpl:
             tmpl["section_number"] = rule.get("section_number", "")
+            tmpl["_source"] = "template"
             all_results[idx] = tmpl
             logger.info(
                 "Template matched for %s: %s",
@@ -272,6 +273,7 @@ def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
     cmd = result.get("audit_command", "")
     if cmd:
         cmd = _fix_compliance_testing_command(cmd)
+        cmd = _sanitize_command(cmd)
         result["audit_command"] = cmd
 
     # --- Fix expected output expression ---
@@ -446,6 +448,118 @@ def _fix_compliance_testing_command(cmd: str) -> str:
             "Fixed compliance-testing command → single-value retrieval: %s",
             cmd[:80],
         )
+
+    return cmd
+
+
+# ── Patterns that indicate an enforcement/write command rather than an audit/read ──
+_ENFORCEMENT_PATTERNS = [
+    re.compile(r'\bSet-ItemProperty\b', re.IGNORECASE),
+    re.compile(r'\bNew-ItemProperty\b', re.IGNORECASE),
+    re.compile(r'\bRemove-ItemProperty\b', re.IGNORECASE),
+    re.compile(r'\bRemove-Item\b', re.IGNORECASE),
+    re.compile(r'\breg\s+add\b', re.IGNORECASE),
+    re.compile(r'\breg\s+delete\b', re.IGNORECASE),
+    re.compile(r'\bSet-Service\b', re.IGNORECASE),
+    re.compile(r'\bStop-Service\b', re.IGNORECASE),
+    re.compile(r'\bDisable-Service\b', re.IGNORECASE),
+    re.compile(r'\bEnable-NetFirewallRule\b', re.IGNORECASE),
+    re.compile(r'\bSet-NetFirewall\w+\b', re.IGNORECASE),
+    re.compile(r'\bSet-MpPreference\b', re.IGNORECASE),
+    re.compile(r'\bsecedit\s+/configure\b', re.IGNORECASE),
+    re.compile(r'\bnet\s+user\b', re.IGNORECASE),
+    re.compile(r'\bnet\s+localgroup\b', re.IGNORECASE),
+    re.compile(r'\bchmod\b'),
+    re.compile(r'\bchown\b'),
+    re.compile(r'\busermod\b'),
+    re.compile(r'\bsed\s+-i\b'),
+    re.compile(r'\bapt\s+(?:install|remove)\b'),
+    re.compile(r'\byum\s+(?:install|remove|erase)\b'),
+    re.compile(r'\bsystemctl\s+(?:enable|disable|stop|start|mask)\b'),
+]
+
+# ── Patterns that indicate syntactically broken PowerShell ──
+_BAD_SYNTAX_PATTERNS = [
+    re.compile(r'\s&&\s'),         # Bash operator in PowerShell
+    re.compile(r'^\s*\|\s'),       # Leading pipe with nothing before it
+    re.compile(r'\{\s*$'),         # Unclosed script block at end of line
+]
+
+
+def _sanitize_command(cmd: str) -> str:
+    """Sanitize a generated audit command.
+
+    Catches and fixes several common LLM mistakes:
+    1. Enforcement/write commands (Set-ItemProperty etc.) → clear
+    2. Bash operators in PowerShell (&&) → semicolons
+    3. Multi-statement Write-Host epilogues → strip
+    4. Overly long commands → truncate to the retrieval core
+    """
+    if not cmd or not cmd.strip():
+        return cmd
+
+    original = cmd
+
+    # ── 1. Reject enforcement commands ──
+    for pat in _ENFORCEMENT_PATTERNS:
+        if pat.search(cmd):
+            # Try to find and extract a read-only part before the write
+            # e.g., "Get-ItemProperty ... ; Set-ItemProperty ..."
+            parts = re.split(r'\s*;\s*', cmd)
+            read_parts = [p for p in parts if not any(ep.search(p) for ep in _ENFORCEMENT_PATTERNS)]
+            if read_parts:
+                cmd = "; ".join(read_parts)
+                logger.warning("Stripped enforcement commands, keeping: %s", cmd[:80])
+                break
+            else:
+                logger.warning("Rejected enforcement-only command: %s", cmd[:80])
+                return ""
+
+    # ── 2. Fix bash && operator → PowerShell semicolons ──
+    cmd = re.sub(r'\s*&&\s*', '; ', cmd)
+
+    # ── 3. Strip trailing Write-Host / echo statements ──
+    cmd = re.sub(r'\s*;\s*Write-Host\s+.*$', '', cmd, flags=re.IGNORECASE)
+    cmd = re.sub(r'\s*;\s*echo\s+["\'](?:PASS|FAIL|Compliant|Non-Compliant)["\'].*$', '', cmd, flags=re.IGNORECASE)
+
+    # ── 4. Strip enclosing try/catch blocks ──
+    try_match = re.match(r'^\s*try\s*\{(.+)\}\s*catch\s*\{.*\}\s*$', cmd, re.DOTALL | re.IGNORECASE)
+    if try_match:
+        inner = try_match.group(1).strip()
+        if inner:
+            cmd = inner
+
+    # ── 5. Trim excessive whitespace and newlines ──
+    cmd = re.sub(r'\s+', ' ', cmd).strip()
+
+    # ── 6. Detect LLM garbage in grep/awk patterns ──
+    # The LLM sometimes dumps remediation prose into the regex pattern,
+    # producing commands like:  grep -E 'hostbasedauthentication\n\nhostbased...- IF - Match set'
+    # Detect multi-line literals (\n), long prose, or dangerous regex fragments.
+    grep_match = re.search(r"""(?:grep|egrep|awk)\s+(?:-[A-Za-z]+\s+)*['"](.+?)['"]""", cmd)
+    if grep_match:
+        pattern_text = grep_match.group(1)
+        # Flag 1: literal \n in pattern (LLM dumped multi-line text)
+        if r'\n' in pattern_text and len(pattern_text) > 60:
+            logger.warning("Rejected grep with multi-line LLM garbage: %s", cmd[:100])
+            return ""
+        # Flag 2: English prose fragments that are never valid regex
+        _PROSE_MARKERS = [
+            " IF ", " Match set", " Edit ", " remediation",
+            " should be ", " must be ", " ensure that ", " configure ",
+            " the following ", " by default",
+        ]
+        if any(marker.lower() in pattern_text.lower() for marker in _PROSE_MARKERS):
+            logger.warning("Rejected grep with remediation prose: %s", cmd[:100])
+            return ""
+        # Flag 3: Extremely long pattern (>150 chars) — almost certainly junk
+        if len(pattern_text) > 150:
+            logger.warning("Rejected grep with excessively long pattern (%d chars): %s",
+                          len(pattern_text), cmd[:100])
+            return ""
+
+    if cmd != original:
+        logger.info("Sanitized command: %s", cmd[:100])
 
     return cmd
 

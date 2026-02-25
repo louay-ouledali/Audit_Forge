@@ -13,15 +13,15 @@ import * as api from '@/services/api';
 
 function statusBadge(status: string) {
   const styles: Record<string, string> = {
-    PASS: 'bg-green-100 text-green-800',
-    FAIL: 'bg-red-100 text-red-800',
-    ERROR: 'bg-yellow-100 text-yellow-800',
-    MANUAL_REVIEW: 'bg-blue-100 text-blue-800',
-    NOT_APPLICABLE: 'bg-gray-100 text-gray-600',
-    SKIPPED: 'bg-gray-100 text-gray-600',
+    PASS: 'bg-green-500/10 text-green-400',
+    FAIL: 'bg-red-500/10 text-red-400',
+    ERROR: 'bg-yellow-500/10 text-yellow-400',
+    MANUAL_REVIEW: 'bg-blue-500/10 text-blue-400',
+    NOT_APPLICABLE: 'bg-dark-overlay text-dark-muted',
+    SKIPPED: 'bg-dark-overlay text-dark-muted',
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] || 'bg-dark-overlay text-dark-muted'}`}>
       {status}
     </span>
   );
@@ -30,16 +30,38 @@ function statusBadge(status: string) {
 function severityBadge(severity: string | null) {
   if (!severity) return null;
   const styles: Record<string, string> = {
-    critical: 'bg-red-100 text-red-800',
-    high: 'bg-orange-100 text-orange-800',
-    medium: 'bg-yellow-100 text-yellow-800',
-    low: 'bg-green-100 text-green-800',
+    critical: 'bg-red-500/10 text-red-400',
+    high: 'bg-orange-500/10 text-orange-400',
+    medium: 'bg-yellow-500/10 text-yellow-400',
+    low: 'bg-green-500/10 text-green-400',
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[severity] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[severity] || 'bg-dark-overlay text-dark-muted'}`}>
       {severity}
     </span>
   );
+}
+
+/** Build a human-friendly scan label from enriched data. */
+function scanLabel(s: ScanDetail): string {
+  const parts: string[] = [];
+  // Benchmark short name (strip "CIS " prefix for brevity)
+  if (s.benchmark_name) {
+    const short = s.benchmark_name.replace(/^CIS\s+/, '');
+    parts.push(s.benchmark_version ? `${short} ${s.benchmark_version}` : short);
+  }
+  // Target identifier
+  const target = s.target_hostname || s.target_ip;
+  if (target) parts.push(target);
+  // Date
+  if (s.started_at) {
+    parts.push(new Date(s.started_at).toLocaleDateString());
+  } else if (s.created_at) {
+    parts.push(new Date(s.created_at).toLocaleDateString());
+  }
+  // Fallback to generic if nothing enriched
+  if (parts.length === 0) parts.push(`Scan #${s.id} \u2014 ${s.scan_mode}`);
+  return `${parts.join(' | ')} (${s.status})`;
 }
 
 export default function Findings() {
@@ -83,8 +105,8 @@ export default function Findings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Findings</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="text-2xl font-bold text-white">Findings</h1>
+          <p className="mt-1 text-sm text-dark-secondary">
             Browse compliance findings across all scans
           </p>
         </div>
@@ -92,24 +114,24 @@ export default function Findings() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">{error}</div>
       )}
 
       {/* Filters */}
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <div className="rounded-xl border border-dark-border bg-dark-card p-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Scan</label>
+            <label className="mb-1 block text-sm font-medium text-gray-300">Scan</label>
             <div className="flex gap-2">
               <select
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30"
                 value={selectedScanId}
                 onChange={(e) => setSelectedScanId(e.target.value ? Number(e.target.value) : '')}
               >
-                <option value="">Select scan...</option>
+                <option value="">Select scan{'\u2026'}</option>
                 {scans.map((s) => (
                   <option key={s.id} value={s.id}>
-                    Scan #{s.id} — {s.scan_mode} ({s.status})
+                    {scanLabel(s)}
                   </option>
                 ))}
               </select>
@@ -131,7 +153,7 @@ export default function Findings() {
                     finally { setDeleting(false); }
                   }}
                   disabled={deleting}
-                  className="flex-shrink-0 rounded-lg border border-red-200 bg-red-50 p-2 text-red-600 hover:bg-red-100 hover:text-red-700 disabled:opacity-50"
+                  className="flex-shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 p-2 text-red-400 hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50"
                   title="Delete this scan"
                 >
                   {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -140,9 +162,9 @@ export default function Findings() {
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
+            <label className="mb-1 block text-sm font-medium text-gray-300">Status</label>
             <select
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
@@ -156,9 +178,9 @@ export default function Findings() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Severity</label>
+            <label className="mb-1 block text-sm font-medium text-gray-300">Severity</label>
             <select
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30"
               value={severityFilter}
               onChange={(e) => setSeverityFilter(e.target.value)}
             >
@@ -172,56 +194,85 @@ export default function Findings() {
         </div>
       </div>
 
+      {/* Scan context summary */}
+      {selectedScanId && (() => {
+        const sel = scans.find((s) => s.id === selectedScanId);
+        if (!sel) return null;
+        return (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border border-dark-border bg-dark-elevated px-5 py-3 text-xs text-dark-secondary">
+            {sel.client_name && (
+              <span><span className="font-medium text-gray-300">Client:</span> {sel.client_name}</span>
+            )}
+            {sel.mission_name && (
+              <span><span className="font-medium text-gray-300">Mission:</span> {sel.mission_name}</span>
+            )}
+            {sel.benchmark_name && (
+              <span><span className="font-medium text-gray-300">Benchmark:</span> {sel.benchmark_name}{sel.benchmark_version ? ` ${sel.benchmark_version}` : ''}</span>
+            )}
+            {(sel.target_hostname || sel.target_ip) && (
+              <span><span className="font-medium text-gray-300">Target:</span> {sel.target_hostname || sel.target_ip}</span>
+            )}
+            {sel.compliance_percentage != null && (
+              <span><span className="font-medium text-gray-300">Compliance:</span> <span className={sel.compliance_percentage >= 70 ? 'text-emerald-400' : sel.compliance_percentage >= 40 ? 'text-amber-400' : 'text-red-400'}>{sel.compliance_percentage.toFixed(1)}%</span></span>
+            )}
+            <span><span className="font-medium text-gray-300">Mode:</span> {sel.scan_mode}</span>
+            {sel.started_at && (
+              <span><span className="font-medium text-gray-300">Date:</span> {new Date(sel.started_at).toLocaleString()}</span>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Results table */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <Loader2 className="h-8 w-8 animate-spin text-ey-yellow" />
         </div>
       ) : !selectedScanId ? (
-        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12 text-center">
-          <Search className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900">Select a scan</h3>
-          <p className="mt-2 text-sm text-gray-500">Choose a scan above to view its findings.</p>
+        <div className="rounded-xl border border-dashed border-dark-border bg-dark-elevated p-12 text-center">
+          <Search className="mx-auto h-12 w-12 text-dark-muted" />
+          <h3 className="mt-4 text-lg font-medium text-white">Select a scan</h3>
+          <p className="mt-2 text-sm text-dark-secondary">Choose a scan above to view its findings.</p>
         </div>
       ) : findings.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-12 text-center">
+        <div className="rounded-xl border border-dashed border-dark-border bg-dark-elevated p-12 text-center">
           <CheckCircle2 className="mx-auto h-12 w-12 text-green-400" />
-          <h3 className="mt-4 text-lg font-medium text-gray-900">No findings</h3>
-          <p className="mt-2 text-sm text-gray-500">No findings match the current filters.</p>
+          <h3 className="mt-4 text-lg font-medium text-white">No findings</h3>
+          <p className="mt-2 text-sm text-dark-secondary">No findings match the current filters.</p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <div className="overflow-hidden rounded-xl border border-dark-border bg-dark-card">
+          <table className="min-w-full divide-y divide-dark-border">
+            <thead className="bg-dark-elevated">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-dark-muted">
                   Section
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-dark-muted">
                   Rule
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-dark-muted">
                   Status
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-dark-muted">
                   Severity
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-dark-muted">
                   Override
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">
+                <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-dark-muted">
                   Actions
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y divide-dark-border">
               {findings.map((f) => (
-                <tr key={f.id} className="hover:bg-gray-50">
-                  <td className="whitespace-nowrap px-6 py-4 text-sm font-mono text-gray-900">
-                    {f.section_number || '—'}
+                <tr key={f.id} className="hover:bg-dark-elevated">
+                  <td className="whitespace-nowrap px-6 py-4 text-sm font-mono text-white">
+                    {f.section_number || '\u2014'}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-900">
-                    <div className="max-w-md truncate">{f.rule_title || '—'}</div>
+                  <td className="px-6 py-4 text-sm text-white">
+                    <div className="max-w-md truncate">{f.rule_title || '\u2014'}</div>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm">
                     {statusBadge(f.status)}
@@ -229,13 +280,13 @@ export default function Findings() {
                   <td className="whitespace-nowrap px-6 py-4 text-sm">
                     {severityBadge(f.severity)}
                   </td>
-                  <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-500">
-                    {f.auditor_override || '—'}
+                  <td className="whitespace-nowrap px-6 py-4 text-sm text-dark-secondary">
+                    {f.auditor_override || '\u2014'}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
                     <Link
                       to={`/findings/${f.id}`}
-                      className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800"
+                      className="inline-flex items-center gap-1 text-ey-yellow hover:text-ey-yellow-hover"
                     >
                       <Eye className="h-4 w-4" />
                       View
@@ -245,7 +296,7 @@ export default function Findings() {
               ))}
             </tbody>
           </table>
-          <div className="border-t border-gray-200 bg-gray-50 px-6 py-3 text-sm text-gray-500">
+          <div className="border-t border-dark-border bg-dark-elevated px-6 py-3 text-sm text-dark-secondary">
             {findings.length} finding{findings.length !== 1 ? 's' : ''}
           </div>
         </div>

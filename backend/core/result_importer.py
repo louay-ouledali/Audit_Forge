@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from backend.core.comparison_engine import evaluate as evaluate_expression
+from backend.core.error_patterns import classify_output
 from backend.models.finding import Finding
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
@@ -70,6 +71,24 @@ def parse_json_results(raw: str, scan_id: int, benchmark_id: int, db: Session) -
         actual = entry.get("actual_output", "")
 
         cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
+
+        # ── Re-classify using error patterns (mirrors PS template logic) ──
+        # Even when the PS script already set a status, double-check the
+        # actual_output for execution-error patterns.  The PS template's
+        # Test-ExecutionError already catches most, but if any slip through
+        # (e.g. older script versions) we correct them here.
+        output_category = classify_output(actual)
+        if output_category == "execution_error" and status != "ERROR":
+            status = "ERROR"
+        elif output_category == "not_configured" and status == "FAIL":
+            # Already correct (FAIL = Not Configured in CIS), keep explanation
+            pass
+        elif output_category == "service_not_found" and status == "FAIL":
+            # Re-evaluate: if expected is ==Disabled, service not installed → PASS
+            if cmd and cmd.expected_output_regex:
+                comp_result = evaluate_expression(cmd.expected_output_regex, "Disabled")
+                if comp_result.matched:
+                    status = "PASS"
 
         # If status not provided in JSON, try to evaluate using comparison expression
         if not entry.get("status"):
@@ -143,7 +162,24 @@ def parse_marker_results(raw_text: str, scan_id: int, benchmark_id: int, db: Ses
                     cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
                     expr = cmd.expected_output_regex if cmd else None
 
-                    if expr:
+                    # Check for error patterns first (mirrors PS template logic)
+                    output_cat = classify_output(output_text)
+                    if output_cat == "execution_error":
+                        status = "ERROR"
+                    elif output_cat == "not_configured":
+                        # Evaluate with empty string — missing path = Not Configured
+                        if expr:
+                            comp_result = evaluate_expression(expr, "")
+                            status = "PASS" if comp_result.matched else "FAIL"
+                        else:
+                            status = "FAIL"
+                    elif output_cat == "service_not_found":
+                        if expr:
+                            comp_result = evaluate_expression(expr, "Disabled")
+                            status = "PASS" if comp_result.matched else "FAIL"
+                        else:
+                            status = "FAIL"
+                    elif expr:
                         comp_result = evaluate_expression(expr, output_text)
                         status = "PASS" if comp_result.matched else "FAIL"
                     else:

@@ -557,6 +557,8 @@ def get_enrichment_status(benchmark_id: int, db: Session = Depends(get_db)):
     return EnrichStatusResponse(
         total=stats.get("total", benchmark.total_rules or 0),
         processed=stats.get("processed", 0),
+        template_matched=stats.get("template_matched", 0),
+        llm_generated=stats.get("llm_generated", 0),
         status=benchmark.phase2_status or "pending",
     )
 

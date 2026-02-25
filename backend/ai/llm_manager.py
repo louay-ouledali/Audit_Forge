@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -84,16 +86,32 @@ class LLMManager:
         json_mode: bool = False,
         task: str | None = None,
     ) -> str:
-        """Send a prompt and get a text response with retry and exponential backoff."""
+        """Send a prompt and get a text response with retry and exponential backoff.
+
+        Checks the LLM response cache first. On cache hit, returns the cached
+        response immediately (zero latency, zero API cost).
+        """
         config = self.get_current_config(task=task)
+
+        # ── Cache lookup ──
+        model_name = config.get("offline_model") if config["mode"] == "offline" else config.get("online_model", "")
+        cache_key = self._make_cache_key(prompt, system_prompt, model_name, task)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            logger.debug("Cache HIT for task=%s key=%s", task, cache_key[:12])
+            return cached
+
         last_exc: Exception | None = None
 
         for attempt in range(1, max_retries + 1):
             try:
                 if config["mode"] == "offline":
-                    return await self._invoke_ollama(prompt, system_prompt, config, timeout, json_mode=json_mode)
+                    result = await self._invoke_ollama(prompt, system_prompt, config, timeout, json_mode=json_mode)
                 else:
-                    return await self._invoke_online(prompt, system_prompt, config, timeout, json_mode=json_mode)
+                    result = await self._invoke_online(prompt, system_prompt, config, timeout, json_mode=json_mode)
+                # ── Cache the successful response ──
+                self._cache_put(cache_key, result, task, model_name, prompt)
+                return result
             except httpx.TimeoutException as exc:
                 last_exc = exc
                 logger.warning(
@@ -244,6 +262,116 @@ class LLMManager:
                 "model": config.get("offline_model") or config.get("online_model"),
                 "error": str(exc),
             }
+
+    # ── Cache helpers ──
+
+    @staticmethod
+    def _make_cache_key(
+        prompt: str,
+        system_prompt: str | None,
+        model: str | None,
+        task: str | None,
+    ) -> str:
+        """Build a deterministic SHA-256 cache key."""
+        parts = [
+            system_prompt or "",
+            prompt,
+            model or "",
+            task or "",
+        ]
+        raw = "\n---\n".join(parts)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _cache_get(cache_key: str) -> str | None:
+        """Return cached response or *None* on miss.  Thread-safe (own session)."""
+        from backend.models.llm_cache import LLMCache
+
+        db = SessionLocal()
+        try:
+            row = db.query(LLMCache).filter(LLMCache.cache_key == cache_key).first()
+            if row is None:
+                return None
+            row.hit_count = (row.hit_count or 0) + 1
+            row.last_used_at = datetime.now(timezone.utc)
+            db.commit()
+            return row.response_text
+        except Exception:
+            db.rollback()
+            return None
+        finally:
+            db.close()
+
+    @staticmethod
+    def _cache_put(
+        cache_key: str,
+        response_text: str,
+        task: str | None,
+        model: str | None,
+        prompt: str,
+    ) -> None:
+        """Store an LLM response in the cache.  Thread-safe (own session)."""
+        from backend.models.llm_cache import LLMCache
+
+        db = SessionLocal()
+        try:
+            existing = db.query(LLMCache).filter(LLMCache.cache_key == cache_key).first()
+            if existing:
+                existing.response_text = response_text
+                existing.last_used_at = datetime.now(timezone.utc)
+            else:
+                entry = LLMCache(
+                    cache_key=cache_key,
+                    task=task,
+                    model=model,
+                    prompt_preview=prompt[:200],
+                    response_text=response_text,
+                )
+                db.add(entry)
+            db.commit()
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_cache_stats() -> dict[str, Any]:
+        """Return cache statistics."""
+        from backend.models.llm_cache import LLMCache
+        from sqlalchemy import func
+
+        db = SessionLocal()
+        try:
+            total = db.query(func.count(LLMCache.id)).scalar() or 0
+            total_hits = db.query(func.sum(LLMCache.hit_count)).scalar() or 0
+            return {
+                "total_entries": total,
+                "total_hits": total_hits,
+            }
+        finally:
+            db.close()
+
+    @staticmethod
+    def clear_cache(task: str | None = None) -> int:
+        """Delete cache entries. If *task* is given, only that task's entries.
+
+        Returns the number of deleted rows.
+        """
+        from backend.models.llm_cache import LLMCache
+
+        db = SessionLocal()
+        try:
+            q = db.query(LLMCache)
+            if task:
+                q = q.filter(LLMCache.task == task)
+            count = q.delete()
+            db.commit()
+            return count
+        except Exception:
+            db.rollback()
+            return 0
+        finally:
+            db.close()
 
     # ── Private methods ──
 

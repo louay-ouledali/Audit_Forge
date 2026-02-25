@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Save, CheckCircle2, XCircle, Download, Upload, Database, AlertTriangle, Zap, Loader2 } from 'lucide-react';
+import {
+  Save, CheckCircle2, XCircle, Download, Upload, Database,
+  AlertTriangle, Zap, Loader2, Trash2,
+} from 'lucide-react';
 import type { Settings as SettingsType, LLMTestResult } from '@/types';
 import * as api from '@/services/api';
 
@@ -44,12 +47,16 @@ export default function Settings() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const location = useLocation();
 
+  /* Cache stats */
+  const [cacheStats, setCacheStats] = useState<{ total_entries: number; total_hits: number } | null>(null);
+
   useEffect(() => {
     if (location.pathname !== '/settings') return;
     (async () => {
       try {
-        const data = await api.getSettings();
+        const [data, cache] = await Promise.all([api.getSettings(), api.getCacheStats().catch(() => null)]);
         setSettings({ ...defaultSettings, ...data });
+        if (cache) setCacheStats(cache);
       } catch {
         // keep defaults
       } finally {
@@ -87,7 +94,7 @@ export default function Settings() {
       const result = await api.testLLM();
       setLlmTestResult(result);
     } catch {
-      setLlmTestResult({ success: false, error: 'Failed to reach backend. Is the server running?' });
+      setLlmTestResult({ success: false, error: 'Failed to reach backend. Is the server running?', response: null, response_time_ms: 0 });
     } finally {
       setTestingLLM(false);
     }
@@ -120,7 +127,6 @@ export default function Settings() {
     if (!file) return;
     restoreFileRef.current = file;
     setShowRestoreConfirm(true);
-    // Reset input so the same file can be selected again
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -140,8 +146,24 @@ export default function Settings() {
     }
   };
 
+  const handleClearCache = async () => {
+    try {
+      const r = await api.clearLLMCache();
+      setToast({ type: 'success', message: `Cleared ${r.deleted} cache entries` });
+      setCacheStats({ total_entries: 0, total_hits: cacheStats?.total_hits ?? 0 });
+    } catch {
+      setToast({ type: 'error', message: 'Clear cache failed' });
+    }
+  };
+
+  const inputClass = 'mt-1 block w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none';
+  const selectClass = inputClass;
+  const labelClass = 'block text-sm font-medium text-gray-300';
+  const helpClass = 'mt-1 text-xs text-dark-muted';
+  const codeClass = 'rounded bg-dark-elevated px-1 text-ey-yellow/80 font-mono text-[11px]';
+
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-gray-500">Loading…</div>;
+    return <div className="flex items-center justify-center py-12 text-dark-secondary">Loading…</div>;
   }
 
   return (
@@ -150,8 +172,8 @@ export default function Settings() {
         <div
           className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${
             toast.type === 'success'
-              ? 'border-green-200 bg-green-50 text-green-700'
-              : 'border-red-200 bg-red-50 text-red-700'
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+              : 'border-red-500/30 bg-red-500/10 text-red-400'
           }`}
         >
           {toast.type === 'success' ? (
@@ -164,78 +186,78 @@ export default function Settings() {
       )}
 
       {/* LLM Configuration */}
-      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900">LLM Configuration</h3>
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-white">LLM Configuration</h3>
 
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-gray-700">LLM Mode</legend>
+          <legend className="text-sm font-medium text-gray-300">LLM Mode</legend>
           <div className="flex gap-6">
             {['offline', 'online'].map((mode) => (
-              <label key={mode} className="flex items-center gap-2 text-sm text-gray-700">
+              <label key={mode} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                 <input
                   type="radio"
                   name="llm_mode"
                   value={mode}
                   checked={settings.llm_mode === mode}
                   onChange={() => handleChange('llm_mode', mode)}
-                  className="text-blue-600 focus:ring-blue-500"
+                  className="text-ey-yellow focus:ring-ey-yellow/50 accent-ey-yellow"
                 />
                 {mode === 'offline' ? 'Offline (Ollama)' : 'Online (Cloud API)'}
               </label>
             ))}
           </div>
-          <p className="text-xs text-gray-500">
+          <p className={helpClass}>
             {settings.llm_mode === 'offline'
-              ? 'Uses a local Ollama instance. You can run cloud models through Ollama too — see the setup guide.'
+              ? 'Uses a local Ollama instance. You can run cloud models through Ollama too \u2014 see the setup guide.'
               : 'Connects directly to a cloud API (OpenAI, Mistral, Groq, OpenRouter, or any OpenAI-compatible endpoint).'}
           </p>
         </fieldset>
 
-        {/* ── Offline (Ollama) Settings ── */}
+        {/* Offline (Ollama) Settings */}
         {settings.llm_mode === 'offline' && (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Ollama Model</label>
+              <label className={labelClass}>Ollama Model</label>
               <input
                 value={settings.llm_offline_model}
                 onChange={(e) => handleChange('llm_offline_model', e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className={inputClass}
                 placeholder="e.g. qwen2.5:7b, mistral, llama3.1:8b"
               />
-              <p className="mt-1 text-xs text-gray-500">
-                The model tag as shown by <code className="rounded bg-gray-100 px-1">ollama list</code>.
-                Default: <code className="rounded bg-gray-100 px-1">qwen2.5:7b</code>
+              <p className={helpClass}>
+                The model tag as shown by <code className={codeClass}>ollama list</code>.
+                Default: <code className={codeClass}>qwen2.5:7b</code>
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Ollama URL</label>
+              <label className={labelClass}>Ollama URL</label>
               <input
                 value={settings.llm_ollama_url}
                 onChange={(e) => handleChange('llm_ollama_url', e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className={inputClass}
                 placeholder="http://localhost:11434"
               />
-              <p className="mt-1 text-xs text-gray-500">
-                Default: <code className="rounded bg-gray-100 px-1">http://localhost:11434</code>.
-                Use <code className="rounded bg-gray-100 px-1">http://host.docker.internal:11434</code> if
+              <p className={helpClass}>
+                Default: <code className={codeClass}>http://localhost:11434</code>.
+                Use <code className={codeClass}>http://host.docker.internal:11434</code> if
                 running inside Docker.
               </p>
             </div>
           </>
         )}
 
-        {/* ── Online (Cloud API) Settings ── */}
+        {/* Online (Cloud API) Settings */}
         {settings.llm_mode === 'online' && (
           <>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Provider</label>
+              <label className={labelClass}>Provider</label>
               <select
                 value={settings.llm_online_provider}
                 onChange={(e) => handleChange('llm_online_provider', e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className={selectClass}
               >
-                <option value="">Select a provider…</option>
+                <option value="">Select a provider\u2026</option>
                 <option value="openai">OpenAI</option>
                 <option value="mistral">Mistral AI</option>
                 <option value="groq">Groq</option>
@@ -245,25 +267,25 @@ export default function Settings() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">API Key</label>
+              <label className={labelClass}>API Key</label>
               <input
                 type="password"
                 value={settings.llm_online_api_key_encrypted}
                 onChange={(e) => handleChange('llm_online_api_key_encrypted', e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                placeholder="sk-…"
+                className={inputClass}
+                placeholder="sk-\u2026"
               />
-              <p className="mt-1 text-xs text-gray-500">
+              <p className={helpClass}>
                 Your API key for the selected provider. Stored in the local database.
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Model</label>
+              <label className={labelClass}>Model</label>
               <input
                 value={settings.llm_online_model}
                 onChange={(e) => handleChange('llm_online_model', e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className={inputClass}
                 placeholder={
                   settings.llm_online_provider === 'openai'
                     ? 'e.g. gpt-4o, gpt-4o-mini'
@@ -280,15 +302,15 @@ export default function Settings() {
 
             {settings.llm_online_provider === 'custom' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700">Custom Base URL</label>
+                <label className={labelClass}>Custom Base URL</label>
                 <input
                   value={settings.llm_online_base_url}
                   onChange={(e) => handleChange('llm_online_base_url', e.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                  className={inputClass}
                   placeholder="https://your-endpoint.com/v1"
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  Full base URL for the OpenAI-compatible API (must support <code className="rounded bg-gray-100 px-1">/chat/completions</code>).
+                <p className={helpClass}>
+                  Full base URL for the OpenAI-compatible API (must support <code className={codeClass}>/chat/completions</code>).
                 </p>
               </div>
             )}
@@ -296,22 +318,22 @@ export default function Settings() {
         )}
 
         {/* Test LLM Connection */}
-        <div className="border-t border-gray-200 pt-4">
+        <div className="border-t border-dark-border pt-4">
           <button
             onClick={handleTestLLM}
             disabled={testingLLM}
-            className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-ey-yellow/30 bg-ey-yellow/10 px-4 py-2 text-sm font-medium text-ey-yellow hover:bg-ey-yellow/20 disabled:opacity-50"
           >
             {testingLLM ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-            {testingLLM ? 'Testing…' : 'Test LLM Connection'}
+            {testingLLM ? 'Testing\u2026' : 'Test LLM Connection'}
           </button>
 
           {llmTestResult && (
             <div
               className={`mt-3 rounded-lg border p-3 text-sm ${
                 llmTestResult.success
-                  ? 'border-green-200 bg-green-50 text-green-700'
-                  : 'border-red-200 bg-red-50 text-red-700'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                  : 'border-red-500/30 bg-red-500/10 text-red-400'
               }`}
             >
               {llmTestResult.success ? (
@@ -319,9 +341,9 @@ export default function Settings() {
                   <div className="flex items-center gap-2 font-medium">
                     <CheckCircle2 className="h-4 w-4" /> LLM is working
                   </div>
-                  <div>Model: <code className="rounded bg-white/60 px-1">{llmTestResult.model}</code></div>
+                  <div>Model: <code className={codeClass}>{llmTestResult.model}</code></div>
                   <div>Response time: <strong>{llmTestResult.response_time_ms}ms</strong></div>
-                  <div className="text-xs text-green-600 italic">&quot;{llmTestResult.response}&quot;</div>
+                  <div className="text-xs text-emerald-500/70 italic">&quot;{llmTestResult.response}&quot;</div>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
@@ -335,9 +357,9 @@ export default function Settings() {
       </section>
 
       {/* Per-Task Model Overrides */}
-      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900">Per-Task Model Overrides</h3>
-        <p className="text-sm text-gray-500">
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-white">Per-Task Model Overrides</h3>
+        <p className="text-sm text-dark-secondary">
           Optionally use a different model for specific tasks. Leave empty to use the global model configured above.
           {settings.llm_mode === 'offline'
             ? ' Enter an Ollama model tag (e.g. qwen2.5:14b).'
@@ -347,62 +369,62 @@ export default function Settings() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {TASK_FIELDS.map((field) => (
             <div key={field.key}>
-              <label className="block text-sm font-medium text-gray-700">{field.label}</label>
+              <label className={labelClass}>{field.label}</label>
               <input
                 value={settings[field.key] || ''}
                 onChange={(e) => handleChange(field.key, e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-none"
+                className={inputClass}
                 placeholder="(use global model)"
               />
-              <p className="mt-1 text-xs text-gray-500">{field.help}</p>
+              <p className={helpClass}>{field.help}</p>
             </div>
           ))}
         </div>
       </section>
 
       {/* Verification */}
-      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900">Verification</h3>
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-white">Verification</h3>
 
-        <label className="flex items-center gap-3">
+        <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={settings.verification_enabled === 'true'}
             onChange={(e) => handleChange('verification_enabled', e.target.checked ? 'true' : 'false')}
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow focus:ring-ey-yellow/50 accent-ey-yellow"
           />
-          <span className="text-sm text-gray-700">Enable verification</span>
+          <span className="text-sm text-gray-300">Enable verification</span>
         </label>
 
-        <label className="flex items-center gap-3">
+        <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
             checked={settings.verification_auto_protect_passing === 'true'}
             onChange={(e) =>
               handleChange('verification_auto_protect_passing', e.target.checked ? 'true' : 'false')
             }
-            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow focus:ring-ey-yellow/50 accent-ey-yellow"
           />
-          <span className="text-sm text-gray-700">Auto-protect passing checks</span>
+          <span className="text-sm text-gray-300">Auto-protect passing checks</span>
         </label>
       </section>
 
       {/* Scan Defaults */}
-      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
-        <h3 className="text-lg font-semibold text-gray-900">Scan Defaults</h3>
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-white">Scan Defaults</h3>
 
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-gray-700">Default Scan Mode</legend>
+          <legend className="text-sm font-medium text-gray-300">Default Scan Mode</legend>
           <div className="flex gap-6">
             {['network', 'script_export'].map((mode) => (
-              <label key={mode} className="flex items-center gap-2 text-sm text-gray-700">
+              <label key={mode} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                 <input
                   type="radio"
                   name="default_scan_mode"
                   value={mode}
                   checked={settings.default_scan_mode === mode}
                   onChange={() => handleChange('default_scan_mode', mode)}
-                  className="text-blue-600 focus:ring-blue-500"
+                  className="text-ey-yellow focus:ring-ey-yellow/50 accent-ey-yellow"
                 />
                 {mode === 'network' ? 'Network' : 'Script Export'}
               </label>
@@ -411,13 +433,36 @@ export default function Settings() {
         </fieldset>
       </section>
 
+      {/* LLM Cache */}
+      {cacheStats && (
+        <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+          <h3 className="text-lg font-semibold text-white">LLM Cache</h3>
+          <div className="flex items-center gap-6">
+            <div>
+              <p className="text-2xl font-bold text-white">{cacheStats.total_entries}</p>
+              <p className="text-xs text-dark-muted">cached entries</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white">{cacheStats.total_hits}</p>
+              <p className="text-xs text-dark-muted">total hits</p>
+            </div>
+            <button
+              onClick={handleClearCache}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-dark-secondary hover:bg-dark-overlay hover:text-white"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Clear Cache
+            </button>
+          </div>
+        </section>
+      )}
+
       {/* Database Backup & Restore */}
-      <section className="rounded-lg border border-gray-200 bg-white p-6 space-y-4">
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
         <div className="flex items-center gap-2">
-          <Database className="h-5 w-5 text-gray-600" />
-          <h3 className="text-lg font-semibold text-gray-900">Database Backup &amp; Restore</h3>
+          <Database className="h-5 w-5 text-ey-yellow" />
+          <h3 className="text-lg font-semibold text-white">Database Backup &amp; Restore</h3>
         </div>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-dark-secondary">
           Create a full backup of your AuditForge database or restore from a previous backup.
         </p>
 
@@ -425,15 +470,15 @@ export default function Settings() {
           <button
             onClick={handleBackup}
             disabled={backingUp}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-4 py-2 text-sm font-medium text-gray-300 hover:bg-dark-overlay hover:text-white disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
-            {backingUp ? 'Creating backup…' : 'Download Backup'}
+            {backingUp ? 'Creating backup\u2026' : 'Download Backup'}
           </button>
 
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-4 py-2 text-sm font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
             <Upload className="h-4 w-4" />
-            {restoring ? 'Restoring…' : 'Restore from Backup'}
+            {restoring ? 'Restoring\u2026' : 'Restore from Backup'}
             <input
               ref={fileInputRef}
               type="file"
@@ -445,10 +490,10 @@ export default function Settings() {
           </label>
         </div>
 
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
           <div className="flex items-start gap-2">
-            <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600 flex-shrink-0" />
-            <p className="text-xs text-amber-700">
+            <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-400 flex-shrink-0" />
+            <p className="text-xs text-amber-300/90">
               Restoring a backup will replace <strong>all current data</strong>. A safety backup of the
               current database will be created automatically. The application should be restarted after
               restoring.
@@ -459,23 +504,23 @@ export default function Settings() {
 
       {/* Restore Confirmation Dialog */}
       {showRestoreConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="mx-4 w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="mx-4 w-full max-w-md rounded-xl border border-dark-border bg-dark-card p-6 shadow-2xl">
             <div className="flex items-center gap-3 mb-4">
-              <AlertTriangle className="h-6 w-6 text-amber-500" />
-              <h4 className="text-lg font-semibold text-gray-900">Confirm Restore</h4>
+              <AlertTriangle className="h-6 w-6 text-amber-400" />
+              <h4 className="text-lg font-semibold text-white">Confirm Restore</h4>
             </div>
-            <p className="text-sm text-gray-600 mb-2">
+            <p className="text-sm text-gray-300 mb-2">
               Are you sure you want to restore the database from{' '}
-              <strong>{restoreFileRef.current?.name}</strong>?
+              <strong className="text-white">{restoreFileRef.current?.name}</strong>?
             </p>
-            <p className="text-sm text-red-600 mb-4">
+            <p className="text-sm text-red-400 mb-4">
               This will replace all current data. A safety backup will be created first.
             </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => { setShowRestoreConfirm(false); restoreFileRef.current = null; }}
-                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="rounded-lg border border-dark-border px-4 py-2 text-sm font-medium text-gray-300 hover:bg-dark-elevated"
               >
                 Cancel
               </button>
@@ -494,10 +539,10 @@ export default function Settings() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-6 py-2.5 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50"
         >
           <Save className="h-4 w-4" />
-          {saving ? 'Saving…' : 'Save Settings'}
+          {saving ? 'Saving\u2026' : 'Save Settings'}
         </button>
       </div>
     </div>

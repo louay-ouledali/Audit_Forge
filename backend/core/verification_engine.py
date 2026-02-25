@@ -29,26 +29,31 @@ DANGEROUS_LINUX = [
     (r'\bsed\s+-i\b', "sed -i — in-place file edit"),
     (r'\bsed\s+.*-i\b', "sed with -i flag — in-place file edit"),
     (r'\btee\s', "tee — writes to file"),
-    (r'>\s*/', "redirect to absolute path — writes to file"),
-    (r'>>', "append redirect — writes to file"),
+    # Redirect to absolute path — but NOT 2>/dev/null or >/dev/null (harmless)
+    (r'>\s*/(?!dev/null)', "redirect to absolute path — writes to file"),
+    # Append redirect — but NOT 2>>/dev/null
+    (r'(?<!\d)>>\s*/(?!dev/null)', "append redirect — writes to file"),
     (r'\bsystemctl\s+(start|stop|restart|enable|disable|mask|unmask)\b', "systemctl modification"),
     (r'\bservice\s+\S+\s+(start|stop|restart)\b', "service modification"),
     (r'\bapt\b.*\b(install|remove|purge|autoremove)\b', "apt package modification"),
     (r'\bapt-get\b.*\b(install|remove|purge)\b', "apt-get package modification"),
     (r'\byum\b.*\b(install|remove|erase|update)\b', "yum package modification"),
     (r'\bdnf\b.*\b(install|remove|erase|update)\b', "dnf package modification"),
-    (r'\buseradd\b', "useradd — creates user"),
-    (r'\buserdel\b', "userdel — deletes user"),
-    (r'\busermod\b', "usermod — modifies user"),
-    (r'\bpasswd\b', "passwd — changes password"),
+    (r'\buseradd\s+(?!-D\b)', "useradd — creates user"),
+    (r"(?<!['\"/])\buserdel\b", "userdel — deletes user"),
+    (r"(?<!['\"/])\busermod\b", "usermod — modifies user"),
+    # passwd as a COMMAND (not /etc/passwd file path or passwd- backup file)
+    (r'(?<!/)\bpasswd\s+(?!-S\b)(?!-)', "passwd — changes password"),
     (r'\biptables\s+-[ADIFX]\b', "iptables modification"),
     (r'\bufw\s+(allow|deny|enable|disable|delete)\b', "ufw modification"),
     (r'\bdd\s+', "dd — raw disk write potentially"),
     (r'\bmkfs\b', "mkfs — formats filesystem"),
     (r'\breboot\b', "reboot — restarts system"),
-    (r'\bshutdown\b', "shutdown — shuts down system"),
+    # shutdown as a standalone command, not inside awk/grep regex patterns
+    # Requires ; or & or line start (NOT | which appears in awk regex alternation)
+    (r'(?:^|[;&])\s*shutdown\b', "shutdown \u2014 shuts down system"),
     (r'\bpoweroff\b', "poweroff — shuts down system"),
-    (r'\bkill\b', "kill — terminates process"),
+    (r'\bkill\s+-', "kill with signal — terminates process"),
     (r'\bkillall\b', "killall — terminates processes"),
     (r'\bsysctl\s+-w\b', "sysctl -w — modifies kernel parameter"),
 ]
@@ -112,10 +117,11 @@ PLATFORM_PATTERNS: dict[str, list[tuple[str, str]]] = {
 # NOTE: \{...\} is excluded because auditpol GUIDs like {0cce923f-69ae-11d9-bed3-505054503030} are real.
 # Instead we match only obvious placeholders e.g. {PLACEHOLDER}, {your_value}, {VALUE_HERE}
 PLACEHOLDER_PATTERNS = [
-    r'\{[A-Za-z_]{3,}\}',      # {PLACEHOLDER}, {VALUE_HERE}, {replace_this}, {path}
-    r'\{your_\w+\}',           # {your_value}, {your_path}
-    r'<[A-Za-z_]{3,}>',        # <PLACEHOLDER>, <VALUE_HERE>, <hostname>
-    r'<your_\w+>',              # <your_value>
+    # {PLACEHOLDER} but NOT ${Status} (shell variable) and NOT awk keywords like {print}
+    r'(?<!\$)\{(?!print|else|next|exit|true|false|null|done|gsub|split|match|sub)[A-Za-z_]{3,}\}',
+    r'(?<!\$)\{your_\w+\}',        # {your_value} but NOT ${your_value}
+    r'<[A-Za-z_]{3,}>',            # <PLACEHOLDER>, <VALUE_HERE>, <hostname>
+    r'<your_\w+>',                  # <your_value>
     r'\[REPLACE\]',
     r'\bTODO\b',
     r'\bFIXME\b',

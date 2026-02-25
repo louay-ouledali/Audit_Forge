@@ -12,10 +12,6 @@ import Findings from '../../pages/Findings';
 import Reports from '../../pages/Reports';
 import Settings from '../../pages/Settings';
 
-/**
- * Pages that stay mounted (keep-alive) so state is preserved when
- * the user switches between sidebar tabs and comes back.
- */
 const PERSISTENT_PAGES: { path: string; Component: React.ComponentType }[] = [
   { path: '/', Component: Dashboard },
   { path: '/clients', Component: Clients },
@@ -34,7 +30,6 @@ export default function MainLayout() {
   const currentPath = location.pathname;
   const isPersistent = PERSISTENT_PATHS.has(currentPath);
 
-  // Track which persistent pages have been visited so we lazily mount them
   const [activated, setActivated] = useState<Set<string>>(new Set(['/']));
 
   useEffect(() => {
@@ -44,12 +39,11 @@ export default function MainLayout() {
   }, [currentPath, isPersistent, activated]);
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-dark">
       <Sidebar />
       <div className="flex flex-1 flex-col pl-64">
         <Header />
-        <main className="flex-1 p-6">
-          {/* Persistent (keep-alive) pages — stay mounted once visited */}
+        <main className="glow-ambient relative flex-1 overflow-y-auto p-6">
           {PERSISTENT_PAGES.map(({ path, Component }) => {
             if (!activated.has(path)) return null;
             return (
@@ -58,8 +52,6 @@ export default function MainLayout() {
               </div>
             );
           })}
-
-          {/* Detail / dynamic pages — normal React Router outlet */}
           {!isPersistent && <Outlet />}
         </main>
       </div>

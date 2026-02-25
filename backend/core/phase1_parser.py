@@ -356,6 +356,34 @@ def _extend_title_from_body(title: str, body: str) -> tuple[str, str]:
     return title, body
 
 
+def _normalize_title(title: str) -> str:
+    """Normalise a CIS rule title by stripping the leading 'Ensure' verb.
+
+    CIS rules almost always start with *Ensure*, *Configure*, or *Verify*.
+    The user prefers leaner titles, so we remove the leading verb when it
+    adds no information.  The rest of the title is left unchanged.
+
+    Examples
+    --------
+    >>> _normalize_title("Ensure 'Enforce password history' is set to '24'")
+    "'Enforce password history' is set to '24'"
+    >>> _normalize_title("Configure 'Audit Logon Events'")
+    "'Audit Logon Events'"
+    >>> _normalize_title("Verify 'Log on as a batch job' is set to 'Administrators'")
+    "'Log on as a batch job' is set to 'Administrators'"
+    """
+    stripped = re.sub(
+        r"^(?:Ensure|Configure|Verify)\s+",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+    # Capitalise first letter if it isn't a quote
+    if stripped and stripped[0].islower() and stripped[0] != "'":
+        stripped = stripped[0].upper() + stripped[1:]
+    return stripped
+
+
 def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
     """Split the full PDF text into individual rule text blocks.
 
@@ -384,6 +412,9 @@ def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
         # continuation lines from the top of the body — lines that are NOT
         # a field marker, NOT another section heading, and NOT empty.
         title, body = _extend_title_from_body(title, body)
+
+        # ── Normalise title (strip 'Ensure' / 'Configure' / 'Verify') ──
+        title = _normalize_title(title)
 
         # ── Filter out obvious TOC entries and noise ──
         # Skip empty or very short bodies (TOC line items)

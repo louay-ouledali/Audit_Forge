@@ -4,6 +4,7 @@ from backend.models.app_settings import AppSettings
 from backend.models.benchmark import Benchmark
 from backend.models.client import Client
 from backend.models.finding import Finding
+from backend.models.llm_cache import LLMCache
 from backend.models.mission import Mission
 from backend.models.mission_analysis import MissionAnalysis
 from backend.models.rule import Rule
@@ -19,6 +20,7 @@ __all__ = [
     "Benchmark",
     "Client",
     "Finding",
+    "LLMCache",
     "Mission",
     "MissionAnalysis",
     "Rule",

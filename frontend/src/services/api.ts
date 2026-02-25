@@ -318,6 +318,18 @@ export async function testLLM(): Promise<LLMTestResult> {
   return data;
 }
 
+// LLM Cache
+export async function getCacheStats(): Promise<{ total_entries: number; total_hits: number }> {
+  const { data } = await api.get('/llm/cache/stats');
+  return data;
+}
+
+export async function clearLLMCache(task?: string): Promise<{ deleted: number }> {
+  const params = task ? { task } : {};
+  const { data } = await api.delete('/llm/cache', { params });
+  return data;
+}
+
 // Script Export (USB)
 export async function generateScript(payload: GenerateScriptRequest): Promise<Blob> {
   const { data } = await api.post('/scans/generate-script', payload, {

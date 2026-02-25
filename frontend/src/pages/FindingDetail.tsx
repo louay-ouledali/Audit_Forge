@@ -14,15 +14,15 @@ import * as api from '@/services/api';
 
 function statusBadge(status: string) {
   const styles: Record<string, string> = {
-    PASS: 'bg-green-100 text-green-800',
-    FAIL: 'bg-red-100 text-red-800',
-    ERROR: 'bg-yellow-100 text-yellow-800',
-    MANUAL_REVIEW: 'bg-blue-100 text-blue-800',
-    NOT_APPLICABLE: 'bg-gray-100 text-gray-600',
-    SKIPPED: 'bg-gray-100 text-gray-600',
+    PASS: 'bg-green-500/10 text-green-400',
+    FAIL: 'bg-red-500/10 text-red-400',
+    ERROR: 'bg-yellow-500/10 text-yellow-400',
+    MANUAL_REVIEW: 'bg-blue-500/10 text-blue-400',
+    NOT_APPLICABLE: 'bg-dark-overlay text-dark-muted',
+    SKIPPED: 'bg-dark-overlay text-dark-muted',
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[status] || 'bg-dark-overlay text-dark-muted'}`}>
       {status}
     </span>
   );
@@ -31,13 +31,13 @@ function statusBadge(status: string) {
 function severityBadge(severity: string | null) {
   if (!severity) return null;
   const styles: Record<string, string> = {
-    critical: 'bg-red-100 text-red-800',
-    high: 'bg-orange-100 text-orange-800',
-    medium: 'bg-yellow-100 text-yellow-800',
-    low: 'bg-green-100 text-green-800',
+    critical: 'bg-red-500/10 text-red-400',
+    high: 'bg-orange-500/10 text-orange-400',
+    medium: 'bg-yellow-500/10 text-yellow-400',
+    low: 'bg-green-500/10 text-green-400',
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[severity] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${styles[severity] || 'bg-dark-overlay text-dark-muted'}`}>
       {severity}
     </span>
   );
@@ -115,7 +115,7 @@ export default function FindingDetail() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+        <Loader2 className="h-8 w-8 animate-spin text-ey-yellow" />
       </div>
     );
   }
@@ -123,10 +123,10 @@ export default function FindingDetail() {
   if (error || !finding) {
     return (
       <div className="space-y-4">
-        <Link to="/findings" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        <Link to="/findings" className="inline-flex items-center gap-1 text-sm text-ey-yellow hover:text-ey-yellow-hover">
           <ArrowLeft className="h-4 w-4" /> Back to findings
         </Link>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
           {error || 'Finding not found'}
         </div>
       </div>
@@ -137,105 +137,105 @@ export default function FindingDetail() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <Link to="/findings" className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800">
+        <Link to="/findings" className="inline-flex items-center gap-1 text-sm text-ey-yellow hover:text-ey-yellow-hover">
           <ArrowLeft className="h-4 w-4" /> Back to findings
         </Link>
         <div className="mt-3 flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-gray-900">
-            {finding.section_number || 'Finding'} — {finding.rule_title || `Finding #${finding.id}`}
+          <h1 className="text-2xl font-bold text-white">
+            {finding.section_number || 'Finding'} {'\u2014'} {finding.rule_title || `Finding #${finding.id}`}
           </h1>
           {statusBadge(finding.status)}
           {severityBadge(finding.severity)}
         </div>
-        <p className="mt-1 text-sm text-gray-500">Scan #{finding.scan_id} • Rule #{finding.rule_id}</p>
+        <p className="mt-1 text-sm text-dark-secondary">Scan #{finding.scan_id} {'\u00b7'} Rule #{finding.rule_id}</p>
       </div>
 
-      {/* Expected vs Actual */}
+      {/* Expected vs Actual — Two-column side-by-side layout */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
+        <div className="rounded-xl border border-dark-border bg-dark-card p-6">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-300">
+            <CheckCircle2 className="h-4 w-4 text-green-400" />
             Expected Output
           </h3>
           {finding.expected_output_display && (
-            <div className="mb-2 rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm font-medium text-blue-800">
+            <div className="mb-2 rounded-lg bg-blue-500/10 border border-blue-500/30 p-3 text-sm font-medium text-blue-400">
               {finding.expected_output_display}
             </div>
           )}
-          <pre className="max-h-64 overflow-auto rounded-lg bg-gray-50 p-4 text-sm text-gray-800 font-mono">
+          <pre className="max-h-64 overflow-auto rounded-lg bg-dark-elevated p-4 text-sm text-gray-300 font-mono">
             {finding.expected_output || 'No expected output defined'}
           </pre>
           {finding.evaluation_explanation && (
             <div className={`mt-2 rounded-lg p-3 text-sm font-medium ${
               finding.status === 'PASS'
-                ? 'bg-green-50 border border-green-200 text-green-800'
-                : 'bg-red-50 border border-red-200 text-red-800'
+                ? 'bg-green-500/10 border border-green-500/30 text-green-400'
+                : 'bg-red-500/10 border border-red-500/30 text-red-400'
             }`}>
               {finding.evaluation_explanation}
             </div>
           )}
         </div>
-        <div className="rounded-lg border border-gray-200 bg-white p-6">
-          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <FileText className="h-4 w-4 text-blue-500" />
+        <div className="rounded-xl border border-dark-border bg-dark-card p-6">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-300">
+            <FileText className="h-4 w-4 text-blue-400" />
             Actual Output
           </h3>
-          <pre className="max-h-64 overflow-auto rounded-lg bg-gray-50 p-4 text-sm text-gray-800 font-mono">
+          <pre className="max-h-64 overflow-auto rounded-lg bg-dark-elevated p-4 text-sm text-gray-300 font-mono">
             {finding.actual_output || 'No output captured'}
           </pre>
         </div>
       </div>
 
       {/* AI Advice */}
-      <div className="rounded-lg border border-gray-200 bg-white p-6">
+      <div className="rounded-xl border border-dark-border bg-dark-card p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-            <Sparkles className="h-4 w-4 text-purple-500" />
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-300">
+            <Sparkles className="h-4 w-4 text-purple-400" />
             AI Remediation Advice
           </h3>
           {!finding.ai_advice && (
             <button
               onClick={handleGetAIAdvice}
               disabled={aiLoading}
-              className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-purple-500/20 border border-purple-500/30 px-3 py-1.5 text-sm font-medium text-purple-400 hover:bg-purple-500/30 disabled:opacity-50"
             >
               {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {aiLoading ? 'Generating...' : 'Get AI Advice'}
+              {aiLoading ? 'Generating\u2026' : 'Get AI Advice'}
             </button>
           )}
         </div>
         {aiError && (
-          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{aiError}</div>
+          <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">{aiError}</div>
         )}
         {finding.ai_advice ? (
           <div className="prose prose-sm max-w-none">
-            <pre className="whitespace-pre-wrap rounded-lg bg-gray-50 p-4 text-sm text-gray-800">
+            <pre className="whitespace-pre-wrap rounded-lg bg-dark-elevated p-4 text-sm text-gray-300">
               {finding.ai_advice}
             </pre>
             {finding.ai_advice_generated_at && (
-              <p className="mt-2 text-xs text-gray-400">
+              <p className="mt-2 text-xs text-dark-muted">
                 Generated at {new Date(finding.ai_advice_generated_at).toLocaleString()}
               </p>
             )}
           </div>
         ) : (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-dark-secondary">
             Click &quot;Get AI Advice&quot; to generate remediation recommendations using AI.
           </p>
         )}
       </div>
 
       {/* Auditor Annotations */}
-      <div className="rounded-lg border border-gray-200 bg-white p-6">
-        <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-700">
-          <AlertTriangle className="h-4 w-4 text-yellow-500" />
+      <div className="rounded-xl border border-dark-border bg-dark-card p-6">
+        <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-gray-300">
+          <AlertTriangle className="h-4 w-4 text-yellow-400" />
           Auditor Annotations
         </h3>
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Override Status</label>
+            <label className="mb-1 block text-sm font-medium text-gray-300">Override Status</label>
             <select
-              className="w-full max-w-xs rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full max-w-xs rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30"
               value={override}
               onChange={(e) => setOverride(e.target.value)}
             >
@@ -246,11 +246,11 @@ export default function FindingDetail() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">Notes</label>
+            <label className="mb-1 block text-sm font-medium text-gray-300">Notes</label>
             <textarea
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30"
               rows={4}
-              placeholder="Add auditor notes..."
+              placeholder="Add auditor notes\u2026"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
@@ -259,13 +259,13 @@ export default function FindingDetail() {
             <button
               onClick={handleSaveAnnotations}
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? 'Saving...' : 'Save Annotations'}
+              {saving ? 'Saving\u2026' : 'Save Annotations'}
             </button>
             {saveSuccess && (
-              <span className="flex items-center gap-1 text-sm text-green-600">
+              <span className="flex items-center gap-1 text-sm text-green-400">
                 <CheckCircle2 className="h-4 w-4" /> Saved
               </span>
             )}

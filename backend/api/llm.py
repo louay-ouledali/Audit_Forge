@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from typing import Optional
+
+from fastapi import APIRouter, Query
 
 from backend.ai.llm_manager import llm_manager
 
@@ -29,3 +31,18 @@ async def test_llm():
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "response": None, "response_time_ms": 0}
+
+
+# ── LLM Cache endpoints ──
+
+@router.get("/cache/stats")
+def get_cache_stats():
+    """Return cache statistics (total entries, total hits)."""
+    return llm_manager.get_cache_stats()
+
+
+@router.delete("/cache")
+def clear_cache(task: Optional[str] = Query(None, description="Only clear entries for this task")):
+    """Clear LLM response cache (all or filtered by task)."""
+    deleted = llm_manager.clear_cache(task=task)
+    return {"deleted": deleted, "task": task}

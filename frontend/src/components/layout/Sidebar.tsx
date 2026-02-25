@@ -27,13 +27,19 @@ export default function Sidebar() {
   const location = useLocation();
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-gray-900 text-white">
-      <div className="flex h-16 items-center gap-2 border-b border-gray-800 px-6">
-        <Shield className="h-7 w-7 text-blue-400" />
-        <span className="text-xl font-bold tracking-tight">AuditForge</span>
+    <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-dark border-r border-dark-border">
+      {/* Logo */}
+      <div className="flex h-16 items-center gap-3 border-b border-dark-border px-6">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-ey-yellow/10">
+          <Shield className="h-5 w-5 text-ey-yellow" />
+        </div>
+        <span className="text-xl font-bold tracking-tight text-white">
+          Audit<span className="text-ey-yellow">Forge</span>
+        </span>
       </div>
 
-      <nav className="mt-4 flex flex-1 flex-col gap-1 px-3">
+      {/* Navigation */}
+      <nav className="mt-6 flex flex-1 flex-col gap-1 px-3">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -46,21 +52,26 @@ export default function Sidebar() {
               key={item.path}
               to={item.path}
               className={cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200',
                 isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-800 hover:text-white',
+                  ? 'bg-ey-yellow/10 text-ey-yellow'
+                  : 'text-dark-secondary hover:bg-dark-elevated hover:text-white',
               )}
             >
-              <Icon className="h-5 w-5" />
+              {isActive && <div className="sidebar-active-bar" />}
+              <Icon className={cn('h-5 w-5', isActive ? 'text-ey-yellow' : '')} />
               {item.label}
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t border-gray-800 p-4 text-xs text-gray-500">
-        AuditForge v0.1.0
+      {/* Footer */}
+      <div className="border-t border-dark-border p-4">
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-ey-yellow shadow-[0_0_6px_rgba(255,230,0,0.5)]" />
+          <span className="text-xs text-dark-muted">AuditForge v1.0</span>
+        </div>
       </div>
     </aside>
   );

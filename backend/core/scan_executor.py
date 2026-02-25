@@ -25,6 +25,7 @@ from backend.config import settings
 from backend.connectors import get_connector
 from backend.connectors.base import BaseConnector, CommandResult
 from backend.core.comparison_engine import evaluate as evaluate_expression
+from backend.core.error_patterns import classify_output
 from backend.core.exceptions import ConnectionFailedError, ScanCancelledError
 from backend.models.finding import Finding
 from backend.models.rule import Rule
@@ -37,6 +38,35 @@ logger = logging.getLogger("auditforge.scan_executor")
 
 # Statuses that should be skipped during scanning
 _SKIP_STATUSES = {"skipped", "manual", "not_applicable"}
+
+# Commands that already run with elevated privileges or shouldn't be prefixed
+_SUDO_SKIP_PREFIXES = ("sudo ", "cat ", "echo ", "printf ", "id ", "whoami ", "uname ")
+
+
+def _prepare_linux_command(cmd: str) -> str:
+    """Prepend ``sudo`` to a Linux command if it doesn't already have it.
+
+    Many CIS audit commands read root-owned files (``/etc/ssh/sshd_config``,
+    ``/boot/grub/grub.cfg``, ``/etc/audit/auditd.conf``, …) or run tools
+    that need root.  The SSH user typically has NOPASSWD sudo configured,
+    so we wrap the entire command in ``sudo sh -c '…'`` to ensure privilege.
+    """
+    stripped = cmd.strip()
+    if not stripped:
+        return cmd
+
+    # Already has sudo
+    if stripped.startswith("sudo "):
+        return cmd
+
+    # Simple read commands that don't need root
+    if stripped.startswith(_SUDO_SKIP_PREFIXES):
+        return cmd
+
+    # Wrap in sudo sh -c to preserve pipes, redirects, globs
+    # Escape single quotes in the command
+    escaped = stripped.replace("'", "'\\''")
+    return f"sudo sh -c '{escaped}'"
 
 # In-memory progress tracking for active scans (scan_id -> progress dict)
 _scan_progress: dict[int, dict[str, Any]] = {}
@@ -81,16 +111,54 @@ def _evaluate_result(
 ) -> tuple[str, str]:
     """Evaluate a command result and return a compliance status and explanation.
 
-    Uses the comparison engine to evaluate structured expressions
-    (e.g. ``>=24``, ``==Disabled``) as well as legacy regex patterns.
+    Uses a **three-tier** classification that mirrors the PowerShell audit
+    template (``Test-ExecutionError`` → ``Test-NotConfigured`` → expression
+    evaluation) so that network scans and USB-imported scans produce
+    identical results.
 
-    Returns a tuple of (status, explanation) where status is one of: PASS, FAIL, ERROR
+    Returns a tuple of (status, explanation) where status is one of:
+    PASS, FAIL, ERROR
     """
-    # Error case — non-zero exit code and no useful output
-    if result.exit_code != 0 and not result.stdout.strip():
+    combined_output = (result.stdout or "") + "\n" + (result.stderr or "")
+    output_stripped = result.stdout.strip() if result.stdout else ""
+
+    # ── Tier 0: Total failure — non-zero exit and no output at all ──
+    if result.exit_code != 0 and not output_stripped:
         return "ERROR", f"Command failed with exit code {result.exit_code}"
 
-    # No expression to check against — just check the command didn't error
+    # ── Tier 1: Execution error (bad command, access denied, etc.) → ERROR ──
+    category = classify_output(combined_output)
+    if category == "execution_error":
+        return "ERROR", "Command execution error detected in output"
+
+    # ── Tier 2: Not configured (missing registry key / GPO path) → FAIL ──
+    # Evaluate with empty string so the comparison engine doesn't extract
+    # numbers from the error message text.
+    if category == "not_configured":
+        if expected_regex:
+            comp_result = evaluate_expression(expected_regex, "")
+            if comp_result.matched:
+                return "PASS", f"Not Configured — but expression matched empty: {comp_result.explanation}"
+            return "FAIL", "Not Configured (registry key/GPO path missing)"
+        return "FAIL", "Not Configured (registry key/GPO path missing)"
+
+    # ── Tier 2b: Service not found → treat as Disabled ──
+    if category == "service_not_found":
+        if expected_regex:
+            comp_result = evaluate_expression(expected_regex, "Disabled")
+            if comp_result.matched:
+                return "PASS", "Service not installed (treated as Disabled)"
+            return "FAIL", "Service not installed"
+        return "FAIL", "Service not installed"
+
+    # ── Tier 2c: Module not found → module can't be loaded = secure ──
+    # A kernel module that doesn't exist on disk is *more* secure than one
+    # that is merely blacklisted via /bin/true.
+    if category == "module_not_found":
+        return "PASS", "Kernel module not found on system (equivalent to disabled)"
+
+    # ── Tier 3: Normal evaluation via comparison engine ──
+    # No expression to check — just confirm the command didn't error
     if not expected_regex:
         if result.exit_code == 0:
             return "PASS", "Command executed successfully (no expected output defined)"
@@ -234,7 +302,11 @@ async def execute_network_scan(
 
             # Execute
             try:
-                result = await connector.execute(cmd.audit_command, timeout=30)
+                exec_cmd = cmd.audit_command
+                # Auto-prefix sudo for Linux targets
+                if target.target_type and target.target_type.lower() == "linux":
+                    exec_cmd = _prepare_linux_command(exec_cmd)
+                result = await connector.execute(exec_cmd, timeout=30)
                 if result.exit_code == 0 or result.stdout.strip():
                     consecutive_errors = 0  # Reset on success
             except Exception as exc:

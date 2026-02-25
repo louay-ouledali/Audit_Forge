@@ -10,7 +10,10 @@ Supported expression formats:
     <90        Numeric: actual value < 90
     ==1        Exact match (string or number)
     !=0        Not equal
+    !=         Bare not-equal (output must not be empty)
+    not_empty  Output must not be empty or whitespace-only
     contains:Success and Failure   Substring check (case-insensitive)
+    not_contains:PrivilegeName     Negative substring check (PASS when absent)
     regex:^some_pattern$           Fallback to regex matching
 
 Legacy support:
@@ -26,14 +29,14 @@ from dataclasses import dataclass
 
 logger = logging.getLogger("auditforge.comparison")
 
-# Operator prefix pattern: >=, <=, >, <, ==, !=, contains:, regex:
+# Operator prefix pattern: >=, <=, >, <, ==, !=, contains:, not_contains:, regex:, not_empty
 _OPERATOR_RE = re.compile(
     r"^(?P<op>>=|<=|!=|==|>|<)"
-    r"\s*(?P<value>.+)$"
+    r"\s*(?P<value>.*)$"
 )
 
 _PREFIX_RE = re.compile(
-    r"^(?P<prefix>contains|regex):"
+    r"^(?P<prefix>contains|not_contains|regex):"
     r"\s*(?P<value>.+)$",
     re.IGNORECASE,
 )
@@ -49,13 +52,17 @@ class ComparisonResult:
 
 
 def parse_expression_type(expression: str) -> str:
-    """Return the type of expression: 'numeric', 'exact', 'not_equal', 'contains', 'regex', or 'legacy_regex'.
+    """Return the type of expression: 'numeric', 'exact', 'not_equal', 'not_empty', 'contains', 'not_contains', 'regex', or 'legacy_regex'.
 
     Useful for UI display and validation.
     """
     if not expression or not expression.strip():
         return "empty"
     expr = expression.strip()
+
+    # Check for not_empty keyword
+    if expr.lower() == "not_empty":
+        return "not_empty"
 
     m = _OPERATOR_RE.match(expr)
     if m:
@@ -100,6 +107,21 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
     expr = expression.strip()
     actual = actual_output.strip()
 
+    # --- Collapse doubled prefixes (e.g. "regex:regex:..." -> "regex:...") ---
+    expr = re.sub(r'^((?:contains|not_contains|regex):)\1+', r'\1', expr, flags=re.IGNORECASE)
+
+    # --- Check for not_empty keyword ---
+    if expr.lower() == "not_empty":
+        # Strip whitespace AND NUL bytes (Windows REG_SZ can contain \x00)
+        cleaned = actual.strip().strip('\x00')
+        matched = bool(cleaned)
+        return ComparisonResult(
+            matched=matched,
+            expression=expr,
+            actual_value=actual,
+            explanation=f"{'PASS' if matched else 'FAIL'}: output is {'non-empty' if matched else 'empty'}",
+        )
+
     # --- Try operator-based expressions first ---
     m = _OPERATOR_RE.match(expr)
     if m:
@@ -112,7 +134,6 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
             return _evaluate_exact(expected_val, actual, expr)
         if op == "!=":
             return _evaluate_not_equal(expected_val, actual, expr)
-
     # --- Try prefix-based expressions ---
     m = _PREFIX_RE.match(expr)
     if m:
@@ -121,6 +142,8 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
 
         if prefix == "contains":
             return _evaluate_contains(value, actual, expr)
+        if prefix == "not_contains":
+            return _evaluate_not_contains(value, actual, expr)
         if prefix == "regex":
             return _evaluate_regex(value, actual, expr)
 
@@ -237,7 +260,20 @@ def _evaluate_exact(
 def _evaluate_not_equal(
     expected: str, actual: str, full_expr: str
 ) -> ComparisonResult:
-    """Evaluate a not-equal comparison (!=)."""
+    """Evaluate a not-equal comparison (!=).
+
+    Special case: bare ``!=`` (empty expected value) means "must not be empty".
+    """
+    # Bare != with no value means "output must not be empty"
+    if not expected.strip():
+        matched = bool(actual.strip())
+        return ComparisonResult(
+            matched=matched,
+            expression=full_expr,
+            actual_value=actual,
+            explanation=f"{'PASS' if matched else 'FAIL'}: output is {'non-empty' if matched else 'empty'}",
+        )
+
     # Try numeric first
     try:
         exp_num = float(expected)
@@ -276,6 +312,23 @@ def _evaluate_contains(
     )
 
 
+def _evaluate_not_contains(
+    expected: str, actual: str, full_expr: str
+) -> ComparisonResult:
+    """Evaluate a negative substring check (not_contains:).
+
+    PASS when the expected substring is NOT present in the output.
+    Useful for secedit "No One" rules where the privilege line must be absent.
+    """
+    matched = expected.lower() not in actual.lower()
+    return ComparisonResult(
+        matched=matched,
+        expression=full_expr,
+        actual_value=actual,
+        explanation=f"{'PASS' if matched else 'FAIL'}: output {'does not contain' if matched else 'contains'} '{expected}'",
+    )
+
+
 def _evaluate_regex(
     pattern: str, actual: str, full_expr: str
 ) -> ComparisonResult:
@@ -307,6 +360,10 @@ def validate_expression(expression: str) -> str | None:
         return None  # Empty is acceptable
 
     expr = expression.strip()
+
+    # not_empty keyword
+    if expr.lower() == "not_empty":
+        return None  # Valid
 
     # Check operator expressions
     m = _OPERATOR_RE.match(expr)
@@ -371,12 +428,20 @@ def format_expression_display(expression: str) -> str:
 
     expr = expression.strip()
 
+    # Check for not_empty keyword
+    if expr.lower() == "not_empty":
+        return "Output must not be empty"
+
     m = _OPERATOR_RE.match(expr)
     if m:
         op = m.group("op")
         value = m.group("value").strip()
         op_symbols = {">=": "≥", "<=": "≤", ">": ">", "<": "<", "==": "=", "!=": "≠"}
         symbol = op_symbols.get(op, op)
+
+        # Handle bare != (no value)
+        if op == "!=" and not value:
+            return "Output must not be empty"
 
         try:
             float(value)
@@ -394,6 +459,8 @@ def format_expression_display(expression: str) -> str:
         value = m.group("value").strip()
         if prefix == "contains":
             return f"Output must contain '{value}'"
+        if prefix == "not_contains":
+            return f"Output must NOT contain '{value}'"
         if prefix == "regex":
             return f"Output must match pattern: {value}"
 
