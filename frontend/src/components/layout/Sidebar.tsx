@@ -2,10 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Building2,
-  Crosshair,
   FileText,
-  Play,
-  AlertTriangle,
   BarChart3,
   Settings,
   Shield,
@@ -15,10 +12,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
   { label: 'Clients', icon: Building2, path: '/clients' },
-  { label: 'Missions', icon: Crosshair, path: '/missions' },
   { label: 'Benchmarks', icon: FileText, path: '/benchmarks' },
-  { label: 'Scans', icon: Play, path: '/scans' },
-  { label: 'Findings', icon: AlertTriangle, path: '/findings' },
   { label: 'Reports', icon: BarChart3, path: '/reports' },
   { label: 'Settings', icon: Settings, path: '/settings' },
 ];
@@ -45,7 +39,9 @@ export default function Sidebar() {
           const isActive =
             item.path === '/'
               ? location.pathname === '/'
-              : location.pathname.startsWith(item.path);
+              : item.path === '/clients'
+                ? location.pathname.startsWith('/clients') || location.pathname.startsWith('/missions')
+                : location.pathname.startsWith(item.path);
 
           return (
             <Link

@@ -131,6 +131,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 .findings-table tbody tr:hover td { background: #eff6ff; }
 .findings-table tbody tr.detail-row td { background: #f8fafc; padding: 0; }
 .findings-table tbody tr.detail-row:hover td { background: #f8fafc; }
+.findings-table tbody tr.detail-row .detail-content { transition: max-height 0.2s ease-out, padding 0.2s ease-out; overflow: hidden; }
 
 /* ── Group Headers ── */
 .group-header { background: linear-gradient(90deg, #f1f5f9, #fff) !important; cursor: pointer; user-select: none; }
@@ -173,6 +174,119 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
   border-top: 1px solid #e2e8f0; margin-top: 40px;
 }
 
+/* ── Audience Badge ── */
+.audience-badge {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+  border-radius: 8px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.audience-executive { background: #dbeafe; color: #1e40af; }
+.audience-technical  { background: #dcfce7; color: #166534; }
+.audience-compliance { background: #fef3c7; color: #92400e; }
+
+/* ── Grouped Sections ── */
+.group-section {
+  background: #fff; border-radius: 12px; border: 1px solid #e2e8f0;
+  margin-bottom: 20px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.group-section-header {
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  padding: 16px 20px; border-bottom: 2px solid #3b82f6;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.group-section-header h3 {
+  font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0;
+}
+.group-section-header .group-stats {
+  display: flex; gap: 10px; align-items: center;
+}
+.group-section-header .group-stats span {
+  font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 6px;
+}
+.group-section-header .pass-badge { background: #dcfce7; color: #166534; }
+.group-section-header .fail-badge { background: #fee2e2; color: #991b1b; }
+.group-summary-box {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe); border-left: 4px solid #3b82f6;
+  padding: 14px 18px; margin: 12px 16px; border-radius: 0 10px 10px 0;
+  font-size: 0.85rem; line-height: 1.6; color: #334155; white-space: pre-wrap;
+}
+.group-summary-label {
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+  color: #1e40af; margin-bottom: 6px;
+}
+.group-findings-list { padding: 0 16px 16px; }
+.group-finding-card {
+  border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-top: 10px;
+  background: #fff; transition: box-shadow 0.15s;
+}
+.group-finding-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.group-finding-card.sev-left-critical { border-left: 4px solid #dc2626; }
+.group-finding-card.sev-left-high { border-left: 4px solid #ea580c; }
+.group-finding-card.sev-left-medium { border-left: 4px solid #d97706; }
+.group-finding-card.sev-left-low { border-left: 4px solid #2563eb; }
+.group-finding-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; margin-bottom: 8px;
+}
+.group-finding-header .rule-ref { font-weight: 700; font-size: 0.85rem; color: #0f172a; }
+.group-finding-detail p { margin: 3px 0; font-size: 0.82rem; }
+.group-finding-detail .field-lbl { font-weight: 600; color: #475569; display: inline-block; min-width: 90px; }
+.group-finding-detail code {
+  background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.78rem;
+  font-family: 'Cascadia Code', 'Consolas', monospace; word-break: break-all;
+}
+
+/* ── Group Overview Table ── */
+.group-overview-table {
+  width: 100%; border-collapse: collapse; font-size: 0.82rem;
+  background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0;
+  margin-bottom: 24px;
+}
+.group-overview-table th {
+  background: #f1f5f9; padding: 10px 12px; text-align: left; font-weight: 600;
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.3px; color: #475569;
+}
+.group-overview-table td { padding: 8px 12px; border-top: 1px solid #f1f5f9; vertical-align: middle; }
+.group-overview-table tr:hover td { background: #f8fafc; }
+.group-overview-table .sev-cell { text-align: center; font-weight: 700; font-size: 0.75rem; }
+.group-overview-table .sev-cell.has-value { color: #dc2626; }
+.group-overview-table .sev-cell.zero { color: #94a3b8; }
+.compliance-mini { display: inline-flex; align-items: center; gap: 6px; }
+.compliance-mini .bar { width: 60px; height: 6px; background: #fee2e2; border-radius: 3px; overflow: hidden; }
+.compliance-mini .bar .fill { height: 100%; border-radius: 3px; }
+
+/* ── Severity Breakdown Mini-Table ── */
+.sev-breakdown { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 16px 4px; }
+.sev-chip {
+  font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 3px;
+}
+.sev-chip.crit { background: #fee2e2; color: #991b1b; }
+.sev-chip.high { background: #ffedd5; color: #9a3412; }
+.sev-chip.med  { background: #fef3c7; color: #92400e; }
+.sev-chip.low  { background: #dbeafe; color: #1e40af; }
+
+/* ── False-Positive Suspect Styles ── */
+.fp-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.3px; margin-left: 4px; }
+.fp-badge.fp-high { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+.fp-badge.fp-medium { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+.fp-badge.fp-low { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+.fp-analysis-box {
+  background: linear-gradient(135deg, #fffbeb, #fef3c7); border-left: 3px solid #eab308;
+  padding: 10px 14px; margin: 6px 0; border-radius: 0 6px 6px 0; font-size: 0.82rem;
+}
+.fp-signals { margin: 6px 0 0 16px; font-size: 0.78rem; color: #64748b; }
+.fp-signals li { margin-bottom: 3px; }
+.fp-section {
+  background: #fff; border: 1px solid #fde68a; border-radius: 12px;
+  padding: 20px 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.fp-section h3 { color: #92400e; margin-bottom: 12px; }
+.fp-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+.fp-stat-card { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 14px; text-align: center; }
+.fp-stat-card .value { font-size: 1.5rem; font-weight: 800; }
+.fp-stat-card .label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; color: #92400e; margin-top: 4px; }
+
 /* ── Print ── */
 @media print {
   body { background: #fff; }
@@ -202,12 +316,16 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
     {% if client_name %}<span>{{ client_name }}</span>{% endif %}
     {% if date_range %}<span>{{ date_range }}</span>{% endif %}
     <span>Generated {{ generated_at }}</span>
+    {% if has_builder and audience %}
+    <span class="audience-badge audience-{{ audience }}">{{ audience }} Report</span>
+    {% endif %}
   </div>
 </div>
 
 <div class="container">
 
   <!-- ═══ Stats Cards ═══ -->
+  {% if not section_toggles or section_toggles.get('executive_summary', true) %}
   <div class="stats-grid">
     <div class="stat-card compliance">
       <div class="value">{{ summary.overall_compliance }}%</div>
@@ -235,6 +353,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
   </div>
 
   <!-- ═══ SVG Charts (fully offline, zero external dependencies) ═══ -->
+  {% if not section_toggles or section_toggles.get('charts', true) %}
   <div class="charts-grid">
     {% if chart_donut %}
     <div class="chart-card">
@@ -260,13 +379,254 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
       {{ chart_categories|safe }}
     </div>
     {% endif %}
+    {% if chart_group_compliance %}
+    <div class="chart-card">
+      <h3>Compliance by Group</h3>
+      {{ chart_group_compliance|safe }}
+    </div>
+    {% endif %}
+    {% if chart_risk_heatmap %}
+    <div class="chart-card" style="grid-column: 1 / -1;">
+      <h3>Risk Heatmap</h3>
+      {{ chart_risk_heatmap|safe }}
+    </div>
+    {% endif %}
+    {% if chart_fp_gauge %}
+    <div class="chart-card">
+      <h3>False Positive Analysis</h3>
+      {{ chart_fp_gauge|safe }}
+    </div>
+    {% endif %}
+    {% if chart_radar %}
+    <div class="chart-card">
+      <h3>Category Compliance Radar</h3>
+      {{ chart_radar|safe }}
+    </div>
+    {% endif %}
+    {% if chart_treemap %}
+    <div class="chart-card" style="grid-column: 1 / -1;">
+      <h3>Category Compliance Map</h3>
+      {{ chart_treemap|safe }}
+    </div>
+    {% endif %}
+    {% if chart_waterfall %}
+    <div class="chart-card" style="grid-column: 1 / -1;">
+      <h3>Compliance Waterfall</h3>
+      {{ chart_waterfall|safe }}
+    </div>
+    {% endif %}
   </div>
+  {% endif %}{# end charts toggle #}
+
+  {% endif %}{# end executive_summary toggle (stats) #}
 
   <!-- ═══ AI Summary ═══ -->
   {% if ai_summary %}
   <div class="section-title">AI Executive Summary</div>
   <div class="ai-summary">{{ ai_summary }}</div>
   {% endif %}
+
+  <!-- ═══ Top Critical / High Failures ═══ -->
+  {% set top5_fails = namespace(items=[]) %}
+  {% for f in findings if f.status == "FAIL" and f.severity in ["critical", "high"] %}
+    {% if top5_fails.items | length < 5 %}
+      {% set top5_fails.items = top5_fails.items + [f] %}
+    {% endif %}
+  {% endfor %}
+  {% if top5_fails.items %}
+  <div class="section-title">Top Critical / High Failures</div>
+  <table class="data-table">
+    <thead>
+      <tr><th>Section</th><th>Rule</th><th>Severity</th><th>Target</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for f in top5_fails.items %}
+      <tr>
+        <td>{{ f.section_number }}</td>
+        <td>{{ f.rule_title }}</td>
+        <td><span class="badge sev-{{ f.severity }}">{{ f.severity|upper }}</span></td>
+        <td>{{ f.target_hostname }}</td>
+        <td><span class="badge st-fail">FAIL</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <!-- ═══ False Positive Analysis ═══ -->
+  {% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
+  <div class="section-title">⚠ False Positive Analysis <span class="badge-count">{{ fp_summary.total_suspects }}</span></div>
+  <div class="fp-section">
+    <p style="font-size:0.85rem;margin-bottom:14px;color:#475569;">
+      The intelligent analysis engine has identified <strong>{{ fp_summary.total_suspects }}</strong> failed finding(s) that may be false positives.
+      These should be reviewed by an auditor for confirmation.
+    </p>
+    <div class="fp-stats-grid">
+      <div class="fp-stat-card"><div class="value" style="color:#dc2626">{{ fp_summary.high_confidence }}</div><div class="label">High Confidence</div></div>
+      <div class="fp-stat-card"><div class="value" style="color:#d97706">{{ fp_summary.medium_confidence }}</div><div class="label">Medium</div></div>
+      <div class="fp-stat-card"><div class="value" style="color:#3b82f6">{{ fp_summary.low_confidence }}</div><div class="label">Low</div></div>
+    </div>
+    <table class="data-table" style="font-size:0.8rem;">
+      <thead><tr><th>Section</th><th>Rule</th><th>Severity</th><th>FP Confidence</th><th>Primary Reason</th></tr></thead>
+      <tbody>
+        {% for f in findings if f.status == "FAIL" and f.fp_analysis is defined and f.fp_analysis.is_suspect %}
+        <tr>
+          <td>{{ f.section_number }}</td>
+          <td>{{ f.rule_title }}</td>
+          <td><span class="badge sev-{{ f.severity }}">{{ f.severity|upper }}</span></td>
+          <td><span class="fp-badge fp-{{ f.fp_analysis.confidence_label|lower }}">{{ f.fp_analysis.confidence_label }} ({{ f.fp_analysis.confidence }}%)</span></td>
+          <td style="font-size:0.78rem;color:#64748b;">{{ f.fp_analysis.top_reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- ═══ Grouped Findings (Report Builder Phase 2) ═══ -->
+  {% if has_builder and grouped_findings %}
+
+  <!-- Audit Scope (grouped mode) -->
+  <div class="section-title">Audit Scope</div>
+  <table class="data-table">
+    <thead>
+      <tr><th>Target</th><th>IP</th><th>Type</th><th>OS</th><th>Benchmark</th><th>Compliance</th><th>Date</th></tr>
+    </thead>
+    <tbody>
+      {% for t in targets %}
+        {% for s in t.scans %}
+        <tr>
+          <td>{{ t.hostname }}</td><td>{{ t.ip_address }}</td><td>{{ t.target_type }}</td>
+          <td>{{ t.os_details }}</td><td>{{ s.benchmark_name }}</td>
+          <td>
+            {{ s.compliance_percentage }}%
+            <div class="compliance-bar">
+              <div class="fill {% if s.compliance_percentage >= 80 %}fill-good{% elif s.compliance_percentage >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ s.compliance_percentage }}%"></div>
+            </div>
+          </td>
+          <td>{{ s.completed_at }}</td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if not section_toggles or section_toggles.get('findings_detail', true) %}
+  <div class="section-title">Findings by Section <span class="badge-count">{{ grouped_findings|length }} sections</span></div>
+
+  <!-- ═══ Group Overview Summary Table ═══ -->
+  <table class="group-overview-table">
+    <thead>
+      <tr>
+        <th>Group</th><th>Total</th><th>Passed</th><th>Failed</th><th>Errors</th>
+        <th style="text-align:center">CRIT</th><th style="text-align:center">HIGH</th>
+        <th style="text-align:center">MED</th><th style="text-align:center">LOW</th>
+        <th>Compliance</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group in grouped_findings %}
+      <tr>
+        <td style="font-weight:600">{{ group.name }}</td>
+        <td>{{ group.total_count }}</td>
+        <td style="color:#16a34a;font-weight:600">{{ group.pass_count }}</td>
+        <td style="color:#dc2626;font-weight:600">{{ group.fail_count }}</td>
+        <td style="color:#7c3aed">{{ group.error_count }}</td>
+        {% for sev in ["critical", "high", "medium", "low"] %}
+        {% set sc = group.sev_counts.get(sev, 0) %}
+        <td class="sev-cell {{ 'has-value' if sc > 0 else 'zero' }}">{{ sc }}</td>
+        {% endfor %}
+        <td>
+          <div class="compliance-mini">
+            <span style="font-weight:700;{% if group.compliance_pct >= 80 %}color:#16a34a{% elif group.compliance_pct >= 50 %}color:#d97706{% else %}color:#dc2626{% endif %}">{{ group.compliance_pct }}%</span>
+            <div class="bar">
+              <div class="fill {% if group.compliance_pct >= 80 %}fill-good{% elif group.compliance_pct >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width:{{ group.compliance_pct }}%"></div>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% for group in grouped_findings %}
+  <div class="group-section">
+    <div class="group-section-header">
+      <div style="display:flex;align-items:center;gap:12px">
+        {% if group.mini_donut %}{{ group.mini_donut|safe }}{% endif %}
+        <div>
+          <h3>{{ group.name }}</h3>
+          <span style="font-size:0.72rem;color:#64748b">{{ group.total_count }} rules - {{ group.compliance_pct }}% compliant</span>
+        </div>
+      </div>
+      <div class="group-stats">
+        <span class="pass-badge">✓ {{ group.pass_count }} passed</span>
+        <span class="fail-badge">✗ {{ group.fail_count }} failed</span>
+        {% if group.error_count > 0 %}<span style="font-size:0.72rem;font-weight:600;padding:3px 10px;border-radius:6px;background:#f3e8ff;color:#6b21a8">⚠ {{ group.error_count }} errors</span>{% endif %}
+      </div>
+    </div>
+
+    {% if group.sev_detail %}
+    <div class="sev-breakdown">
+      {% for sev in ["critical", "high", "medium", "low"] %}
+        {% if group.sev_detail.get(sev) %}
+        {% set sd = group.sev_detail[sev] %}
+        <span class="sev-chip {{ 'crit' if sev == 'critical' else 'high' if sev == 'high' else 'med' if sev == 'medium' else 'low' }}">
+          {{ sev|upper }}: {{ sd.failed }}F / {{ sd.passed }}P ({{ sd.total }})
+        </span>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if group.summary %}
+    <div class="group-summary-box">
+      <div class="group-summary-label">AI Section Summary</div>
+      {{ group.summary }}
+    </div>
+    {% endif %}
+
+    <div class="group-findings-list">
+      {% for f in group.findings %}
+      <div class="group-finding-card sev-left-{{ f.severity }}">
+        <div class="group-finding-header">
+          <span class="rule-ref">{{ f.section_number }} - {{ f.rule_title }}</span>
+          <span>
+            <span class="badge sev-{{ f.severity }}">{{ f.severity|upper }}</span>
+            <span class="badge st-{{ f.status|lower|replace(' ','_') }}">{{ f.status }}</span>
+            {% if f.fp_analysis is defined and f.fp_analysis.is_suspect %}
+            <span class="fp-badge fp-{{ f.fp_analysis.confidence_label|lower }}">⚠ FP {{ f.fp_analysis.confidence_label }}</span>
+            {% endif %}
+          </span>
+        </div>
+        <div class="group-finding-detail">
+          {% if f.fp_analysis is defined and f.fp_analysis.is_suspect %}
+          <div class="fp-analysis-box">
+            <strong>⚠ Potential False Positive ({{ f.fp_analysis.confidence }}%):</strong> {{ f.fp_analysis.top_reason }}
+            {% if f.fp_analysis.signal_count > 1 %}
+            <ul class="fp-signals">
+              {% for sig in f.fp_analysis.signals %}<li>{{ sig.reason }} ({{ sig.confidence }}%)</li>{% endfor %}
+            </ul>
+            {% endif %}
+          </div>
+          {% endif %}
+          {% if f.description %}<p><span class="field-lbl">Description:</span> {{ f.description }}</p>{% endif %}
+          {% if f.rationale %}<p style="background:#fefce8;border-left:3px solid #eab308;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Rationale:</strong> {{ f.rationale }}</p>{% endif %}
+          <p><span class="field-lbl">Expected:</span> <code>{{ f.expected_output }}</code></p>
+          <p><span class="field-lbl">Actual:</span> <code>{{ f.actual_output }}</code></p>
+          {% if f.evaluation_explanation %}<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</p>{% endif %}
+          {% if f.remediation and (not section_toggles or section_toggles.get('recommendations', true)) %}<p><span class="field-lbl">Remediation:</span> {{ f.remediation }}</p>{% endif %}
+          {% if f.ai_advice %}<p style="background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> {{ f.ai_advice }}</p>{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}{# end findings_detail toggle #}
+
+  {% else %}
+  {# ═══ Original Flat Findings (no builder groups) ═══ #}
 
   <!-- ═══ Audit Scope ═══ -->
   <div class="section-title">Audit Scope</div>
@@ -330,9 +690,16 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
     <tbody id="findingsBody"></tbody>
   </table>
 
+{% endif %}{# end has_builder / flat findings conditional #}
+
 </div>
 
-<div class="report-footer">Generated by <strong>AuditForge</strong> &mdash; {{ generated_at }} &mdash; Fully self-contained, no external dependencies</div>
+<div class="report-footer">
+  <div style="margin-bottom:8px;">
+    <button onclick="window.print()" style="background:#3b82f6;color:#fff;border:none;padding:8px 20px;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">&#128424; Print / Save as PDF</button>
+  </div>
+  Generated by <strong>AuditForge</strong> &mdash; {{ generated_at }} &mdash; Fully self-contained, no external dependencies
+</div>
 
 <script>
 /* ══════════════════════════════════════════════════════════════
@@ -342,6 +709,7 @@ var allFindings = {{ findings_json|safe }};
 var sortCol = null, sortAsc = true;
 var currentFilters = { search: '', severity: '', status: '', target: '', benchmark: '' };
 var currentGroupBy = 'none';
+var expandedDetails = {};
 
 function esc(s) {
   if (!s) return '';
@@ -403,21 +771,39 @@ function sortFindings(list) {
 
 function buildRow(f, idx, groupAttr) {
   var ga = groupAttr ? ' data-group="' + groupAttr + '"' : '';
+  var fpBadge = '';
+  var fpDetail = '';
+  if (f.fp_analysis && f.fp_analysis.is_suspect) {
+    var cl = f.fp_analysis.confidence_label ? f.fp_analysis.confidence_label.toLowerCase() : 'low';
+    fpBadge = ' <span class="fp-badge fp-' + cl + '">⚠ FP ' + esc(f.fp_analysis.confidence_label) + '</span>';
+    fpDetail = '<div class="fp-analysis-box"><strong>⚠ Potential False Positive (' + f.fp_analysis.confidence + '%):</strong> ' + esc(f.fp_analysis.top_reason);
+    if (f.fp_analysis.signals && f.fp_analysis.signals.length > 1) {
+      fpDetail += '<ul class="fp-signals">';
+      f.fp_analysis.signals.forEach(function(sig) { fpDetail += '<li>' + esc(sig.reason) + ' (' + sig.confidence + '%)</li>'; });
+      fpDetail += '</ul>';
+    }
+    fpDetail += '</div>';
+  }
   return '<tr class="finding-row"' + ga + '>' +
     '<td>' + esc(f.target_hostname) + '</td>' +
     '<td>' + esc(f.section_number) + '</td>' +
     '<td>' + esc(f.rule_title) + '</td>' +
     '<td><span class="badge sev-' + f.severity + '">' + f.severity.toUpperCase() + '</span></td>' +
-    '<td><span class="badge st-' + f.status.toLowerCase().replace(/ /g,'_') + '">' + f.status + '</span></td>' +
+    '<td><span class="badge st-' + f.status.toLowerCase().replace(/ /g,'_') + '">' + f.status + '</span>' + fpBadge + '</td>' +
     '<td>' + esc(f.benchmark_name) + '</td>' +
     '<td><button class="toggle-btn" onclick="toggleDetail(this,\'det-' + idx + '\')">&#9660;</button></td>' +
     '</tr>' +
     '<tr id="det-' + idx + '" class="detail-row" style="display:none"' + ga + '>' +
       '<td colspan="7"><div class="detail-content">' +
+        fpDetail +
         (f.description ? '<p><span class="field-label">Description:</span> ' + esc(f.description) + '</p>' : '') +
+        (f.rationale ? '<p style="background:#fefce8;border-left:3px solid #eab308;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Rationale:</strong> ' + esc(f.rationale) + '</p>' : '') +
         '<p><span class="field-label">Expected:</span> <code>' + esc(f.expected_output) + '</code></p>' +
         '<p><span class="field-label">Actual:</span> <code>' + esc(f.actual_output) + '</code></p>' +
+        (f.evaluation_explanation ? '<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Evaluation:</strong> ' + esc(f.evaluation_explanation) + '</p>' : '') +
         (f.remediation ? '<p><span class="field-label">Remediation:</span> ' + esc(f.remediation) + '</p>' : '') +
+        (f.ai_advice ? '<p style="background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> ' + esc(f.ai_advice) + '</p>' : '') +
+        (f.default_value ? '<p><span class="field-label">Default Value:</span> <code>' + esc(f.default_value) + '</code></p>' : '') +
         (f.auditor_notes ? '<p><span class="field-label">Notes:</span> ' + esc(f.auditor_notes) + '</p>' : '') +
         (f.auditor_override ? '<p><span class="field-label">Override:</span> ' + esc(f.auditor_override) + '</p>' : '') +
       '</div></td>' +
@@ -480,7 +866,12 @@ function toggleGroup(grpId) {
 }
 
 /* Event listeners */
-document.getElementById('searchInput').addEventListener('input', function(e) { currentFilters.search = e.target.value; renderFindings(); });
+var searchTimer = null;
+document.getElementById('searchInput').addEventListener('input', function(e) {
+  clearTimeout(searchTimer);
+  var val = e.target.value;
+  searchTimer = setTimeout(function() { currentFilters.search = val; renderFindings(); }, 200);
+});
 document.getElementById('filterSeverity').addEventListener('change', function(e) { currentFilters.severity = e.target.value; renderFindings(); });
 document.getElementById('filterStatus').addEventListener('change', function(e) { currentFilters.status = e.target.value; renderFindings(); });
 document.getElementById('filterTarget').addEventListener('change', function(e) { currentFilters.target = e.target.value; renderFindings(); });
@@ -512,11 +903,29 @@ document.querySelectorAll('.findings-table th[data-col]').forEach(function(th) {
     var col = th.getAttribute('data-col');
     if (sortCol === col) sortAsc = !sortAsc;
     else { sortCol = col; sortAsc = true; }
+    /* Update sort indicators */
+    document.querySelectorAll('.findings-table th[data-col] .sort-icon').forEach(function(icon) {
+      icon.innerHTML = '\u21C5';
+      icon.style.opacity = '0.4';
+    });
+    var activeIcon = th.querySelector('.sort-icon');
+    if (activeIcon) {
+      activeIcon.innerHTML = sortAsc ? '\u25B2' : '\u25BC';
+      activeIcon.style.opacity = '1';
+    }
     renderFindings();
   });
 });
 
 renderFindings();
+
+/* Keyboard shortcut: Ctrl/Cmd+F focuses search */
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    var searchInput = document.getElementById('searchInput');
+    if (searchInput) { e.preventDefault(); searchInput.focus(); searchInput.select(); }
+  }
+});
 </script>
 </body>
 </html>

@@ -21,11 +21,15 @@ export interface Mission {
   created_at: string;
   target_count: number;
   client_name?: string | null;
+  // Lock info
+  is_locked: boolean;
+  locked_at: string | null;
+  locked_by: string | null;
 }
 
 export interface Target {
   id: number;
-  mission_id: number;
+  client_id: number;
   hostname: string | null;
   ip_address: string | null;
   target_type: string;
@@ -36,6 +40,118 @@ export interface Target {
   port: number | null;
   notes: string | null;
   created_at: string;
+  // Phase 1 enrichment fields
+  platform_subtype: string | null;
+  default_benchmark_id: number | null;
+  connection_status: 'ok' | 'failed' | 'untested' | null;
+  connection_error: string | null;
+  last_connection_test: string | null;
+  db_name: string | null;
+  db_instance: string | null;
+  has_enable_password: boolean;
+  device_type: string | null;
+  // Computed fields from API
+  last_scan_compliance: number | null;
+  last_scan_date: string | null;
+  scan_count: number;
+  default_benchmark_name: string | null;
+}
+
+// ── Target Connection & Readiness types ──────────────────────
+
+export interface ConnectionTestResult {
+  target_id: number;
+  status: 'ok' | 'failed';
+  message: string;
+  response_time_ms: number | null;
+  connection_method: string | null;
+  error_details: string | null;
+}
+
+export interface ScanReadinessCheck {
+  check: string;
+  status: 'ok' | 'warning' | 'error';
+  message: string;
+}
+
+export interface ScanReadiness {
+  target_id: number;
+  ready: boolean;
+  checks: ScanReadinessCheck[];
+  blockers: string[];
+  suggestions: string[];
+}
+
+export interface PrerequisiteStep {
+  step: number;
+  title: string;
+  command: string;
+  description: string;
+}
+
+export interface PrerequisiteGuide {
+  target_id: number;
+  platform: string;
+  connection_method: string;
+  steps: PrerequisiteStep[];
+}
+
+export interface BenchmarkMatchResult {
+  benchmark_id: number;
+  benchmark_name: string;
+  score: number;
+  reason: string;
+}
+
+// ── Scan Batch types ─────────────────────────────────────────
+
+export interface ScanBatchRequest {
+  mission_id: number;
+  target_ids: number[];
+  benchmark_id?: number | null;
+}
+
+export interface ScanBatchResponse {
+  batch_id: number;
+  status: string;
+  total_items: number;
+  items: ScanBatchItemResponse[];
+}
+
+export interface ScanBatchItemResponse {
+  item_id: number;
+  target_id: number;
+  benchmark_id: number;
+  status: string;
+  scan_id: number | null;
+}
+
+export interface ScanBatchStatus {
+  batch_id: number;
+  status: string;
+  total_items: number;
+  completed_items: number;
+  failed_items: number;
+  items: ScanBatchItemDetail[];
+}
+
+export interface ScanBatchItemDetail {
+  item_id: number;
+  target_id: number;
+  target_name: string;
+  benchmark_id: number;
+  benchmark_name: string;
+  status: string;
+  scan_id: number | null;
+  error_message: string | null;
+}
+
+export interface DiscoveredHostEnriched extends DiscoveredHost {
+  already_added?: boolean;
+  existing_target_id?: number | null;
+  already_assigned?: boolean;
+  suggested_benchmark?: string | null;
+  suggested_benchmark_id?: number | null;
 }
 
 export interface Settings {
@@ -58,6 +174,47 @@ export interface Benchmark {
   is_ready: boolean;
   status: string;
   notes: string | null;
+}
+
+// ── Benchmark Catalog (hierarchical classification) ──
+
+export interface CatalogBenchmark {
+  id: number;
+  name: string;
+  version: string;
+  platform: string;
+  platform_family: string;
+  total_rules: number;
+  phase1_status: string;
+  phase2_status: string;
+  verification_status: string;
+  is_ready: boolean;
+  source: string;
+  import_date: string | null;
+}
+
+export interface ProductLine {
+  name: string;
+  icon: string;
+  benchmarks: CatalogBenchmark[];
+}
+
+export interface CatalogVendor {
+  name: string;
+  icon: string;
+  benchmark_count: number;
+  product_lines: ProductLine[];
+}
+
+export interface CatalogCategory {
+  name: string;
+  icon: string;
+  benchmark_count: number;
+  vendors: CatalogVendor[];
+}
+
+export interface BenchmarkCatalog {
+  categories: CatalogCategory[];
 }
 
 export interface BenchmarkStatus {
@@ -204,6 +361,7 @@ export interface DiscoveryProgress {
 export interface NetworkScanRequest {
   target_id: number;
   benchmark_id: number;
+  mission_id?: number | null;
   preset_id?: number | null;
   selected_rule_ids?: number[] | null;
   category_filter?: string[] | null;
@@ -241,6 +399,7 @@ export interface ScanDetail {
   id: number;
   target_id: number;
   benchmark_id: number;
+  mission_id: number | null;
   scan_mode: string;
   status: string;
   started_at: string | null;
@@ -281,6 +440,22 @@ export interface Finding {
   created_at: string | null;
   section_number: string | null;
   rule_title: string | null;
+  // Override fields
+  override_status: string | null;
+  override_severity: string | null;
+  override_description: string | null;
+  override_remediation: string | null;
+  override_reason: string | null;
+  override_timestamp: string | null;
+}
+
+export interface SavedReport {
+  id: number;
+  mission_id: number;
+  title: string;
+  format: string;
+  config_json: Record<string, unknown> | null;
+  created_at: string | null;
 }
 
 export interface ImportResultsResponse {
@@ -302,6 +477,11 @@ export interface ReportGenerateRequest {
   include_ai_summary: boolean;
   include_passed_rules: boolean;
   title?: string;
+  excluded_rule_ids?: number[];
+  groups?: RuleGroup[];
+  audience?: string;
+  sections?: Record<string, boolean>;
+  group_summaries?: Record<string, string>;
 }
 
 export interface AISummaryRequest {
@@ -310,6 +490,61 @@ export interface AISummaryRequest {
 }
 
 export interface AISummaryResponse {
+  summary: string;
+}
+
+// ── Report Builder types ─────────────────────────────────────
+
+export interface BuilderFinding {
+  finding_id: number;
+  rule_id: number;
+  scan_id: number;
+  section_number: string;
+  rule_title: string;
+  description: string;
+  severity: string;
+  status: string;
+  target_hostname: string;
+  benchmark_name: string;
+}
+
+export interface BuilderFindingsResponse {
+  data: BuilderFinding[];
+  total: number;
+}
+
+export interface BuilderPreviewRequest {
+  scan_ids: number[];
+  excluded_rule_ids?: number[];
+  include_passed_rules: boolean;
+  title?: string;
+  groups?: RuleGroup[];
+  audience?: string;
+  sections?: Record<string, boolean>;
+  group_summaries?: Record<string, string>;
+}
+
+// ── Phase 2: Grouping & Audience ─────────────────────────────
+
+export interface RuleGroup {
+  name: string;
+  rule_ids: number[];
+}
+
+export interface AutoGroupResponse {
+  groups: RuleGroup[];
+  total_rules: number;
+  total_groups: number;
+}
+
+export interface GroupSummaryRequest {
+  group_name: string;
+  rule_ids: number[];
+  scan_ids: number[];
+  audience: string;
+}
+
+export interface GroupSummaryResponse {
   summary: string;
 }
 

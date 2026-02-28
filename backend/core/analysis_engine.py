@@ -28,7 +28,11 @@ def _gather_mission_data(mission_id: int, db: Session) -> dict[str, Any]:
 
     client = db.query(Client).filter(Client.id == mission.client_id).first()
 
-    targets = db.query(Target).filter(Target.mission_id == mission_id).all()
+    # Scans now have direct mission_id; get unique targets from those scans
+    scans_for_mission = db.query(Scan).filter(Scan.mission_id == mission_id).all()
+    target_ids = {s.target_id for s in scans_for_mission}
+    targets = db.query(Target).filter(Target.id.in_(target_ids)).all() if target_ids else []
+
     result: dict[str, Any] = {
         "mission": mission,
         "client": client,
@@ -36,7 +40,7 @@ def _gather_mission_data(mission_id: int, db: Session) -> dict[str, Any]:
     }
 
     for target in targets:
-        scans = db.query(Scan).filter(Scan.target_id == target.id).all()
+        scans = [s for s in scans_for_mission if s.target_id == target.id]
         target_findings: list[dict[str, Any]] = []
         total_pass = 0
         total_fail = 0
@@ -287,17 +291,15 @@ def get_comparable_missions(client_id: int, db: Session) -> list[dict[str, Any]]
 
     result: list[dict[str, Any]] = []
     for m in missions:
-        targets = db.query(Target).filter(Target.mission_id == m.id).all()
+        # Scans now have direct mission_id
+        mission_scans = db.query(Scan).filter(Scan.mission_id == m.id).all()
         total_pass = 0
         total_checked = 0
-        has_scans = False
+        has_scans = len(mission_scans) > 0
 
-        for t in targets:
-            scans = db.query(Scan).filter(Scan.target_id == t.id).all()
-            for s in scans:
-                has_scans = True
-                total_pass += s.passed or 0
-                total_checked += s.total_rules_checked or 0
+        for s in mission_scans:
+            total_pass += s.passed or 0
+            total_checked += s.total_rules_checked or 0
 
         if has_scans:
             compliance = round(total_pass / total_checked * 100, 1) if total_checked > 0 else 0.0

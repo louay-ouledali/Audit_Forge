@@ -5,20 +5,14 @@ import Header from './Header';
 
 import Dashboard from '../../pages/Dashboard';
 import Clients from '../../pages/Clients';
-import Missions from '../../pages/Missions';
 import Benchmarks from '../../pages/Benchmarks';
-import Scans from '../../pages/Scans';
-import Findings from '../../pages/Findings';
 import Reports from '../../pages/Reports';
 import Settings from '../../pages/Settings';
 
 const PERSISTENT_PAGES: { path: string; Component: React.ComponentType }[] = [
   { path: '/', Component: Dashboard },
   { path: '/clients', Component: Clients },
-  { path: '/missions', Component: Missions },
   { path: '/benchmarks', Component: Benchmarks },
-  { path: '/scans', Component: Scans },
-  { path: '/findings', Component: Findings },
   { path: '/reports', Component: Reports },
   { path: '/settings', Component: Settings },
 ];
@@ -39,11 +33,11 @@ export default function MainLayout() {
   }, [currentPath, isPersistent, activated]);
 
   return (
-    <div className="flex min-h-screen bg-dark">
+    <div className="flex min-h-screen bg-dark overflow-hidden">
       <Sidebar />
-      <div className="flex flex-1 flex-col pl-64">
+      <div className="flex min-w-0 flex-1 flex-col pl-64">
         <Header />
-        <main className="glow-ambient relative flex-1 overflow-y-auto p-6">
+        <main className="glow-ambient relative flex-1 overflow-y-auto overflow-x-hidden p-6">
           {PERSISTENT_PAGES.map(({ path, Component }) => {
             if (!activated.has(path)) return null;
             return (

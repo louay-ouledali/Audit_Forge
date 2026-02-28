@@ -4,10 +4,7 @@ import { Shield } from 'lucide-react';
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
   '/clients': 'Clients',
-  '/missions': 'Missions',
   '/benchmarks': 'Benchmarks',
-  '/scans': 'Scans',
-  '/findings': 'Findings',
   '/reports': 'Reports',
   '/settings': 'Settings',
 };
@@ -17,10 +14,11 @@ export default function Header() {
 
   const title =
     pageTitles[location.pathname] ??
-    (location.pathname.startsWith('/clients/') ? 'Client Detail' :
+    (location.pathname.startsWith('/clients/') ? 'Client Workspace' :
+     location.pathname.startsWith('/missions/') && location.pathname.includes('/analysis') ? 'AI Analysis' :
+     location.pathname.startsWith('/missions/') ? 'Mission Workspace' :
      location.pathname.startsWith('/benchmarks/') ? 'Benchmark Detail' :
      location.pathname.startsWith('/findings/') ? 'Finding Detail' :
-     location.pathname.includes('/analysis') ? 'AI Analysis' :
      'AuditForge');
 
   return (

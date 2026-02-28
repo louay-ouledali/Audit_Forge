@@ -17,55 +17,66 @@ from backend.models.verification_report import VerificationReport
 
 logger = logging.getLogger("auditforge.verify")
 
+# ---------------------------------------------------------------------------
 # Dangerous command patterns by platform family
+# ---------------------------------------------------------------------------
+# IMPORTANT design principle: audit commands are READ-ONLY by nature.
+# Patterns must avoid false-positives on legitimate read-only constructs such as
+#   - grep/awk/find pipelines that mention modify-keywords inside search strings
+#   - "show running-config" (network) which contains "config" in a safe context
+#   - SQL SELECT queries that reference DML keywords as column/string values
+#   - "dnf check-update" vs "dnf update" on Linux
+# ---------------------------------------------------------------------------
+
 DANGEROUS_LINUX = [
-    (r'\brm\s+-', "rm with flags — deletes files"),
-    (r'\brm\s+/', "rm on absolute path — deletes files"),
-    (r'\bmkdir\b', "mkdir — creates directories"),
-    (r'\btouch\b', "touch — creates/modifies files"),
-    (r'\bchmod\b', "chmod — changes permissions"),
-    (r'\bchown\b', "chown — changes ownership"),
-    (r'\bchgrp\b', "chgrp — changes group"),
-    (r'\bsed\s+-i\b', "sed -i — in-place file edit"),
-    (r'\bsed\s+.*-i\b', "sed with -i flag — in-place file edit"),
-    (r'\btee\s', "tee — writes to file"),
-    # Redirect to absolute path — but NOT 2>/dev/null or >/dev/null (harmless)
-    (r'>\s*/(?!dev/null)', "redirect to absolute path — writes to file"),
-    # Append redirect — but NOT 2>>/dev/null
-    (r'(?<!\d)>>\s*/(?!dev/null)', "append redirect — writes to file"),
+    (r'\brm\s+-', "rm with flags - deletes files"),
+    (r'\brm\s+/', "rm on absolute path - deletes files"),
+    (r'\bmkdir\b', "mkdir - creates directories"),
+    (r'\btouch\b', "touch - creates/modifies files"),
+    # chmod/chown/chgrp as actual commands (not inside stat/find -printf output)
+    (r'(?:^|[;&|]\s*)chmod\b', "chmod - changes permissions"),
+    (r'(?:^|[;&|]\s*)chown\b', "chown - changes ownership"),
+    (r'(?:^|[;&|]\s*)chgrp\b', "chgrp - changes group"),
+    (r'\bsed\s+-i\b', "sed -i - in-place file edit"),
+    # tee writing to a real file (not /dev/null)
+    (r'\btee\s+(?!/dev/null)', "tee - writes to file"),
+    # Redirect to absolute path - but NOT 2>/dev/null or >/dev/null (harmless)
+    (r'>\s*/(?!dev/null)', "redirect to absolute path - writes to file"),
+    # Append redirect - but NOT 2>>/dev/null
+    (r'(?<!\d)>>\s*/(?!dev/null)', "append redirect - writes to file"),
     (r'\bsystemctl\s+(start|stop|restart|enable|disable|mask|unmask)\b', "systemctl modification"),
     (r'\bservice\s+\S+\s+(start|stop|restart)\b', "service modification"),
     (r'\bapt\b.*\b(install|remove|purge|autoremove)\b', "apt package modification"),
     (r'\bapt-get\b.*\b(install|remove|purge)\b', "apt-get package modification"),
-    (r'\byum\b.*\b(install|remove|erase|update)\b', "yum package modification"),
-    (r'\bdnf\b.*\b(install|remove|erase|update)\b', "dnf package modification"),
-    (r'\buseradd\s+(?!-D\b)', "useradd — creates user"),
-    (r"(?<!['\"/])\buserdel\b", "userdel — deletes user"),
-    (r"(?<!['\"/])\busermod\b", "usermod — modifies user"),
+    (r'\byum\s+(install|remove|erase|update)\b', "yum package modification"),
+    # dnf: "dnf update" is dangerous, "dnf check-update" is safe
+    (r'\bdnf\s+(install|remove|erase|update)\b', "dnf package modification"),
+    (r'\buseradd\s+(?!-D\b)', "useradd - creates user"),
+    (r"(?<!['\"/])\buserdel\b", "userdel - deletes user"),
+    (r"(?<!['\"/])\busermod\b", "usermod - modifies user"),
     # passwd as a COMMAND (not /etc/passwd file path or passwd- backup file)
-    (r'(?<!/)\bpasswd\s+(?!-S\b)(?!-)', "passwd — changes password"),
+    (r'(?<!/)\bpasswd\s+(?!-S\b)(?!-)', "passwd - changes password"),
     (r'\biptables\s+-[ADIFX]\b', "iptables modification"),
     (r'\bufw\s+(allow|deny|enable|disable|delete)\b', "ufw modification"),
-    (r'\bdd\s+', "dd — raw disk write potentially"),
-    (r'\bmkfs\b', "mkfs — formats filesystem"),
-    (r'\breboot\b', "reboot — restarts system"),
+    (r'\bdd\s+', "dd - raw disk write potentially"),
+    (r'\bmkfs\b', "mkfs - formats filesystem"),
+    (r'\breboot\b', "reboot - restarts system"),
     # shutdown as a standalone command, not inside awk/grep regex patterns
-    # Requires ; or & or line start (NOT | which appears in awk regex alternation)
-    (r'(?:^|[;&])\s*shutdown\b', "shutdown \u2014 shuts down system"),
-    (r'\bpoweroff\b', "poweroff — shuts down system"),
-    (r'\bkill\s+-', "kill with signal — terminates process"),
-    (r'\bkillall\b', "killall — terminates processes"),
-    (r'\bsysctl\s+-w\b', "sysctl -w — modifies kernel parameter"),
+    (r'(?:^|[;&])\s*shutdown\b', "shutdown - shuts down system"),
+    (r'\bpoweroff\b', "poweroff - shuts down system"),
+    (r'\bkill\s+-', "kill with signal - terminates process"),
+    (r'\bkillall\b', "killall - terminates processes"),
+    (r'\bsysctl\s+-w\b', "sysctl -w - modifies kernel parameter"),
 ]
 
 DANGEROUS_WINDOWS = [
-    (r'Set-ItemProperty', "Set-ItemProperty — modifies registry"),
-    (r'New-ItemProperty', "New-ItemProperty — creates registry value"),
-    (r'Remove-ItemProperty', "Remove-ItemProperty — deletes registry value"),
-    (r'Remove-Item', "Remove-Item — deletes files/registry"),
-    (r'New-Item', "New-Item — creates files/directories/registry"),
-    (r'Set-Content', "Set-Content — writes to file"),
-    (r'Add-Content', "Add-Content — appends to file"),
+    (r'Set-ItemProperty', "Set-ItemProperty - modifies registry"),
+    (r'New-ItemProperty', "New-ItemProperty - creates registry value"),
+    (r'Remove-ItemProperty', "Remove-ItemProperty - deletes registry value"),
+    (r'Remove-Item', "Remove-Item - deletes files/registry"),
+    (r'New-Item', "New-Item - creates files/directories/registry"),
+    (r'Set-Content', "Set-Content - writes to file"),
+    (r'Add-Content', "Add-Content - appends to file"),
     (r'Stop-Service', "Stops a service"),
     (r'Start-Service', "Starts a service"),
     (r'Restart-Service', "Restarts a service"),
@@ -79,31 +90,39 @@ DANGEROUS_WINDOWS = [
     (r'Clear-EventLog', "Clears event log"),
 ]
 
+# SQL patterns: only flag DML/DDL at statement-start position.
+# SELECT/SHOW queries that *reference* these keywords as values are safe.
 DANGEROUS_SQL = [
-    (r'\bDROP\b', "DROP — destroys database objects"),
-    (r'\bALTER\b', "ALTER — modifies database objects"),
-    (r'\bCREATE\b', "CREATE — creates database objects"),
-    (r'\bINSERT\b', "INSERT — adds data"),
-    (r'\bUPDATE\b', "UPDATE — modifies data"),
-    (r'\bDELETE\b', "DELETE — removes data"),
-    (r'\bTRUNCATE\b', "TRUNCATE — removes all data"),
-    (r'\bGRANT\b', "GRANT — modifies permissions"),
-    (r'\bREVOKE\b', "REVOKE — modifies permissions"),
-    (r'\bSHUTDOWN\b', "SHUTDOWN — shuts down database"),
+    (r'(?:^|;\s*)DROP\b', "DROP - destroys database objects"),
+    (r'(?:^|;\s*)ALTER\b', "ALTER - modifies database objects"),
+    (r'(?:^|;\s*)CREATE\b', "CREATE - creates database objects"),
+    (r'(?:^|;\s*)INSERT\b', "INSERT - adds data"),
+    (r'(?:^|;\s*)UPDATE\b', "UPDATE - modifies data"),
+    (r'(?:^|;\s*)DELETE\b', "DELETE - removes data"),
+    (r'(?:^|;\s*)TRUNCATE\b', "TRUNCATE - removes all data"),
+    (r'(?:^|;\s*)GRANT\b', "GRANT - modifies permissions"),
+    (r'(?:^|;\s*)REVOKE\b', "REVOKE - modifies permissions"),
+    (r'(?:^|;\s*)SHUTDOWN\b', "SHUTDOWN - shuts down database"),
 ]
 
+# Network patterns: only match dangerous keywords at *command-start* position.
+# "show running-config | include ..." and similar read-only constructs are safe.
+# The prefix (?:^|[;&]\s*) ensures the keyword is the first word of a command
+# (after start of string, semicolon, or ampersand) — never after a pipe or
+# inside a quoted search string.
 DANGEROUS_NETWORK = [
-    (r'\bconfigure\s+terminal\b', "Enters configuration mode"),
-    (r'\bconf\s+t\b', "Enters configuration mode (shorthand)"),
-    (r'\bno\s+', "no — negates/removes configuration"),
-    (r'\bwrite\s+memory\b', "Writes configuration to flash"),
-    (r'\breload\b', "Reloads device"),
-    (r'\bshutdown\b', "Shuts down interface"),
-    (r'\bset\s', "set — adds configuration"),
-    (r'\bdelete\s', "delete — removes configuration"),
-    (r'\bcommit\b', "commit — applies configuration changes"),
-    (r'\bconfig\s', "config — enters configuration mode"),
-    (r'\bunset\s', "unset — removes configuration"),
+    (r'(?:^|[;&]\s*)configure\s+terminal\b', "Enters configuration mode"),
+    (r'(?:^|[;&]\s*)conf\s+t\b', "Enters configuration mode (shorthand)"),
+    (r'(?:^|[;&]\s*)no\s+', "no - negates/removes configuration"),
+    (r'(?:^|[;&]\s*)write\s+memory\b', "Writes configuration to flash"),
+    (r'(?:^|[;&]\s*)reload\b', "Reloads device"),
+    (r'(?:^|[;&]\s*)shutdown\b', "Shuts down interface"),
+    (r'(?:^|[;&]\s*)set\s', "set - adds configuration"),
+    (r'(?:^|[;&]\s*)delete\s', "delete - removes configuration"),
+    (r'(?:^|[;&]\s*)commit\b', "commit - applies configuration changes"),
+    # "config" at command start — does NOT match "show running-config ..."
+    (r'(?:^|[;&]\s*)config(?:ure)?\s', "config - enters configuration mode"),
+    (r'(?:^|[;&]\s*)unset\s', "unset - removes configuration"),
 ]
 
 PLATFORM_PATTERNS: dict[str, list[tuple[str, str]]] = {
@@ -113,14 +132,44 @@ PLATFORM_PATTERNS: dict[str, list[tuple[str, str]]] = {
     "network": DANGEROUS_NETWORK,
 }
 
+
+def _is_readonly_network_cmd(cmd: str) -> bool:
+    """Return True if the network command is clearly read-only (show/display/get).
+
+    Network devices use ``show``, ``display`` (Huawei), ``get`` (FortiGate /
+    Juniper), ``diagnose`` (FortiGate) as read-only prefixes.  When the first
+    word is one of these the entire pipeline is safe regardless of what keywords
+    appear later in the output filter.
+    """
+    return bool(re.match(
+        r'\s*(show|display|get|diagnose|run\s+show|more)\b',
+        cmd,
+        re.IGNORECASE,
+    ))
+
+
+def _is_readonly_sql_cmd(cmd: str) -> bool:
+    """Return True if a database command is a read-only SQL query.
+
+    Checks for the presence of SELECT / SHOW / EXPLAIN / WITH as the primary
+    SQL statement.  If the command invokes a DB client (``psql``, ``mysql``,
+    ``sqlcmd``, ``sqlplus``, ``Invoke-Sqlcmd``) and the SQL portion starts with
+    a read-only keyword, any DML/DDL keywords appearing further in the string
+    are just referenced values — not dangerous.
+    """
+    return bool(re.search(r'\b(SELECT|SHOW|EXPLAIN|WITH)\b', cmd, re.IGNORECASE))
+
 # Patterns that indicate a command still contains unresolved placeholders
 # NOTE: \{...\} is excluded because auditpol GUIDs like {0cce923f-69ae-11d9-bed3-505054503030} are real.
 # Instead we match only obvious placeholders e.g. {PLACEHOLDER}, {your_value}, {VALUE_HERE}
 PLACEHOLDER_PATTERNS = [
-    # {PLACEHOLDER} but NOT ${Status} (shell variable) and NOT awk keywords like {print}
-    r'(?<!\$)\{(?!print|else|next|exit|true|false|null|done|gsub|split|match|sub)[A-Za-z_]{3,}\}',
-    r'(?<!\$)\{your_\w+\}',        # {your_value} but NOT ${your_value}
-    r'<[A-Za-z_]{3,}>',            # <PLACEHOLDER>, <VALUE_HERE>, <hostname>
+    # {PLACEHOLDER} but NOT ${Status} (shell variable), NOT %{SESSIONID} (Tomcat
+    # log format), and NOT awk keywords like {print}
+    r'(?<!\$)(?<!%)\{(?!print|else|next|exit|true|false|null|done|gsub|split|match|sub)[A-Za-z_]{3,}\}',
+    r'(?<!\$)(?<!%)\{your_\w+\}',  # {your_value} but NOT ${your_value}
+    # <PLACEHOLDER> with ALL-UPPERCASE names only — avoids false-positives on
+    # XML tags like <interface>, <address> in Juniper/network display output
+    r'<[A-Z][A-Z_0-9]{2,}>',       # <PLACEHOLDER>, <VALUE_HERE>, <YOUR_HOST>
     r'<your_\w+>',                  # <your_value>
     r'\[REPLACE\]',
     r'\bTODO\b',
@@ -145,11 +194,27 @@ def _check_syntax(audit_command: str | None) -> dict:
 
 
 def _check_safety(audit_command: str | None, platform_family: str) -> dict:
-    """Level 2: Safety check. Returns {result: str, message: str, details: list}."""
+    """Level 2: Safety check. Returns {result: str, message: str, details: list}.
+
+    Context-aware: skips pattern checks for commands that are clearly read-only
+    (e.g. ``show running-config`` on network, ``SELECT`` queries on databases).
+    """
     if not audit_command or not audit_command.strip():
         return {"result": "fail", "message": "No command to check", "details": []}
 
     stripped = audit_command.strip()
+
+    # ── Context-aware bypass ──────────────────────────────────────────────
+    # Network read-only commands (show, display, get, diagnose …) are safe
+    if platform_family == "network" and _is_readonly_network_cmd(stripped):
+        return {"result": "pass", "message": "Read-only network command", "details": []}
+
+    # SQL read-only queries (SELECT, SHOW, EXPLAIN, WITH) are safe even when
+    # they reference DML/DDL keywords as column values or string literals
+    if platform_family == "database" and _is_readonly_sql_cmd(stripped):
+        return {"result": "pass", "message": "Read-only SQL query", "details": []}
+
+    # ── Standard pattern matching ─────────────────────────────────────────
     patterns = PLATFORM_PATTERNS.get(platform_family, DANGEROUS_LINUX)
     hits: list[str] = []
     for pattern, description in patterns:
@@ -209,10 +274,18 @@ def verify_single_command(audit_command: str | None, platform_family: str) -> di
             break
 
     # Safety check: verify command is read-only
-    patterns = PLATFORM_PATTERNS.get(platform_family, DANGEROUS_LINUX)
-    for pattern, description in patterns:
-        if re.search(pattern, stripped, re.IGNORECASE):
-            issues.append({"type": "safety", "message": f"Dangerous pattern: {description}"})
+    # Context-aware bypass for read-only commands
+    skip_safety = False
+    if platform_family == "network" and _is_readonly_network_cmd(stripped):
+        skip_safety = True
+    elif platform_family == "database" and _is_readonly_sql_cmd(stripped):
+        skip_safety = True
+
+    if not skip_safety:
+        patterns = PLATFORM_PATTERNS.get(platform_family, DANGEROUS_LINUX)
+        for pattern, description in patterns:
+            if re.search(pattern, stripped, re.IGNORECASE):
+                issues.append({"type": "safety", "message": f"Dangerous pattern: {description}"})
 
     return {"passed": len(issues) == 0, "issues": issues}
 

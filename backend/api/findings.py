@@ -44,6 +44,14 @@ def _finding_to_response(finding: Finding, db: Session) -> dict:
         "auditor_notes": finding.auditor_notes,
         "auditor_override": finding.auditor_override,
         "created_at": finding.created_at,
+        # Override fields
+        "auditor_status_override": finding.auditor_status_override,
+        "auditor_severity_override": finding.auditor_severity_override,
+        "auditor_description": finding.auditor_description,
+        "auditor_remediation": finding.auditor_remediation,
+        "override_reason": finding.override_reason,
+        "overridden_at": finding.overridden_at,
+        # Joined fields
         "section_number": rule.section_number if rule else None,
         "rule_title": rule.title if rule else None,
     }
@@ -65,6 +73,8 @@ def update_finding(
     db: Session = Depends(get_db),
 ):
     """Update auditor notes and/or override on a finding."""
+    from datetime import datetime, timezone as tz
+
     finding = db.query(Finding).filter(Finding.id == finding_id).first()
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
@@ -79,6 +89,30 @@ def update_finding(
                 detail=f"Invalid override. Must be one of: {', '.join(valid_overrides)}",
             )
         finding.auditor_override = payload.auditor_override or None
+
+    # Handle granular override fields
+    has_override = False
+    if payload.auditor_status_override is not None:
+        if payload.auditor_status_override not in {"PASS", "FAIL", "N/A", ""}:
+            raise HTTPException(status_code=400, detail="Invalid status override")
+        finding.auditor_status_override = payload.auditor_status_override or None
+        has_override = True
+    if payload.auditor_severity_override is not None:
+        if payload.auditor_severity_override not in {"critical", "high", "medium", "low", ""}:
+            raise HTTPException(status_code=400, detail="Invalid severity override")
+        finding.auditor_severity_override = payload.auditor_severity_override or None
+        has_override = True
+    if payload.auditor_description is not None:
+        finding.auditor_description = payload.auditor_description or None
+        has_override = True
+    if payload.auditor_remediation is not None:
+        finding.auditor_remediation = payload.auditor_remediation or None
+        has_override = True
+    if payload.override_reason is not None:
+        finding.override_reason = payload.override_reason or None
+
+    if has_override:
+        finding.overridden_at = datetime.now(tz.utc)
 
     db.commit()
     db.refresh(finding)

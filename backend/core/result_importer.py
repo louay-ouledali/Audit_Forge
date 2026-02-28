@@ -264,7 +264,7 @@ def detect_format_and_import(
 
 def finalize_scan_stats(scan: Scan, stats: dict[str, Any], db: Session) -> None:
     """Update scan record with import results and stats."""
-    scan.status = "imported"
+    scan.status = "completed"
     scan.results_imported_at = datetime.now(timezone.utc)
     scan.total_rules_checked = stats["passed"] + stats["failed"] + stats["errors"]
     scan.passed = stats["passed"]

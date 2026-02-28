@@ -60,7 +60,7 @@ function scanLabel(s: ScanDetail): string {
     parts.push(new Date(s.created_at).toLocaleDateString());
   }
   // Fallback to generic if nothing enriched
-  if (parts.length === 0) parts.push(`Scan #${s.id} \u2014 ${s.scan_mode}`);
+  if (parts.length === 0) parts.push(`Scan #${s.id} - ${s.scan_mode}`);
   return `${parts.join(' | ')} (${s.status})`;
 }
 
@@ -269,10 +269,10 @@ export default function Findings() {
               {findings.map((f) => (
                 <tr key={f.id} className="hover:bg-dark-elevated">
                   <td className="whitespace-nowrap px-6 py-4 text-sm font-mono text-white">
-                    {f.section_number || '\u2014'}
+                    {f.section_number || '-'}
                   </td>
                   <td className="px-6 py-4 text-sm text-white">
-                    <div className="max-w-md truncate">{f.rule_title || '\u2014'}</div>
+                    <div className="max-w-md truncate">{f.rule_title || '-'}</div>
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm">
                     {statusBadge(f.status)}
@@ -281,7 +281,7 @@ export default function Findings() {
                     {severityBadge(f.severity)}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-sm text-dark-secondary">
-                    {f.auditor_override || '\u2014'}
+                    {f.auditor_override || '-'}
                   </td>
                   <td className="whitespace-nowrap px-6 py-4 text-right text-sm">
                     <Link

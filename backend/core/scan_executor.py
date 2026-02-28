@@ -138,7 +138,7 @@ def _evaluate_result(
         if expected_regex:
             comp_result = evaluate_expression(expected_regex, "")
             if comp_result.matched:
-                return "PASS", f"Not Configured — but expression matched empty: {comp_result.explanation}"
+                return "PASS", f"Not Configured - but expression matched empty: {comp_result.explanation}"
             return "FAIL", "Not Configured (registry key/GPO path missing)"
         return "FAIL", "Not Configured (registry key/GPO path missing)"
 

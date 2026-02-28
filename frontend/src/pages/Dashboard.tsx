@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Building2, Crosshair, FileText, Play, ArrowRight, Shield, Activity } from 'lucide-react';
+import { Building2, Crosshair, FileText, Play, ArrowRight, Shield, Activity, BarChart3 } from 'lucide-react';
 import { getDashboardStats } from '../services/api';
 
 export default function Dashboard() {
@@ -18,9 +18,9 @@ export default function Dashboard() {
 
   const cards = [
     { label: 'Clients', value: stats.clients, icon: Building2, accent: 'text-ey-yellow', bg: 'bg-ey-yellow/10', link: '/clients' },
-    { label: 'Active Missions', value: stats.active_missions, icon: Crosshair, accent: 'text-emerald-400', bg: 'bg-emerald-400/10', link: '/missions' },
+    { label: 'Active Missions', value: stats.active_missions, icon: Crosshair, accent: 'text-emerald-400', bg: 'bg-emerald-400/10', link: '/clients' },
     { label: 'Benchmarks', value: stats.benchmarks, icon: FileText, accent: 'text-purple-400', bg: 'bg-purple-400/10', link: '/benchmarks' },
-    { label: 'Scans', value: stats.scans, icon: Play, accent: 'text-sky-400', bg: 'bg-sky-400/10', link: '/scans' },
+    { label: 'Scans', value: stats.scans, icon: Play, accent: 'text-sky-400', bg: 'bg-sky-400/10', link: '/clients' },
   ];
 
   return (
@@ -77,9 +77,9 @@ export default function Dashboard() {
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {[
-            { to: '/clients', icon: Building2, label: 'Create a Client', accent: 'text-ey-yellow' },
+            { to: '/clients', icon: Building2, label: 'Manage Clients & Missions', accent: 'text-ey-yellow' },
             { to: '/benchmarks', icon: FileText, label: 'Import a Benchmark', accent: 'text-purple-400' },
-            { to: '/scans', icon: Play, label: 'Run a Scan', accent: 'text-sky-400' },
+            { to: '/reports', icon: BarChart3, label: 'Generate Reports', accent: 'text-sky-400' },
           ].map((action) => (
             <Link
               key={action.to}

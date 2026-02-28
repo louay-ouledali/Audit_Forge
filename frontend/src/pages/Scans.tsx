@@ -308,12 +308,12 @@ export default function Scans() {
   // Inline target creation
   async function handleCreateTarget(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedMissionId || (!targetHostname.trim() && !targetIp.trim())) return;
+    if (!selectedClientId || !selectedMissionId || (!targetHostname.trim() && !targetIp.trim())) return;
     setCreatingTarget(true);
     setError('');
     try {
       const created = await api.createTarget({
-        mission_id: selectedMissionId as number,
+        client_id: selectedClientId as number,
         hostname: targetHostname.trim() || undefined,
         ip_address: targetIp.trim() || undefined,
         target_type: targetType,
@@ -323,6 +323,8 @@ export default function Scans() {
         port: targetPort ? Number(targetPort) : undefined,
         notes: targetNotes.trim() || undefined,
       } as any);
+      // Assign the new target to the selected mission
+      await api.assignTargetToMission(selectedMissionId as number, created.id);
       // Refresh targets and select the new one
       const updatedTargets = await api.getTargets(selectedMissionId as number);
       setTargets(updatedTargets);
@@ -556,7 +558,7 @@ export default function Scans() {
                           {discoveredHosts.map((host) => (
                             <tr key={host.ip} className="hover:bg-dark-elevated">
                               <td className="px-4 py-2 font-mono text-white">{host.ip}</td>
-                              <td className="px-4 py-2 text-gray-300">{host.hostname || <span className="text-dark-muted">{'\u2014'}</span>}</td>
+                              <td className="px-4 py-2 text-gray-300">{host.hostname || <span className="text-dark-muted">-</span>}</td>
                               <td className="px-4 py-2">
                                 <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
                                   host.os_guess === 'windows' ? 'bg-sky-500/10 text-sky-400' :
@@ -573,7 +575,7 @@ export default function Scans() {
                                 {host.open_ports.map(p => `${p.port}/${p.service}`).join(', ')}
                               </td>
                               <td className="px-4 py-2 text-dark-secondary text-xs">
-                                {host.connection_methods.join(', ') || '\u2014'}
+                                {host.connection_methods.join(', ') || '-'}
                               </td>
                               <td className="px-4 py-2 text-right">
                                 {(host as any)._added ? (
@@ -988,7 +990,7 @@ export default function Scans() {
               <div className="mb-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-white">
-                    Scan #{scanStatus.scan_id} {'\u2014'} {statusBadge(scanStatus.status)}
+                    Scan #{scanStatus.scan_id} {' - '} {statusBadge(scanStatus.status)}
                   </h2>
                   {scanStatus.current_rule && (
                     <span className="text-sm text-dark-secondary">
@@ -1004,7 +1006,7 @@ export default function Scans() {
                   if (bm) parts.push(`${bm.name} ${bm.version || ''}`);
                   if (tgt) parts.push(tgt.hostname || tgt.ip_address || `Target #${tgt.id}`);
                   return parts.length > 0 ? (
-                    <p className="mt-1 text-xs text-dark-secondary">{parts.join(' \u2014 ')}</p>
+                    <p className="mt-1 text-xs text-dark-secondary">{parts.join(' - ')}</p>
                   ) : null;
                 })()}
               </div>
@@ -1190,7 +1192,7 @@ export default function Scans() {
           {scriptPreview && (
             <div className="rounded-xl border border-dark-border bg-dark-card p-6">
               <h3 className="mb-4 text-lg font-semibold text-white">
-                Script Preview {'\u2014'} {scriptPreview.total_rules} rules
+                Script Preview {' - '} {scriptPreview.total_rules} rules
               </h3>
               {scriptPreview.rules.length === 0 ? (
                 <p className="text-sm text-dark-secondary">No rules found for the selected criteria.</p>
@@ -1208,7 +1210,7 @@ export default function Scans() {
                       {scriptPreview.rules.map((rule) => (
                         <tr key={rule.id}>
                           <td className="whitespace-nowrap px-4 py-2 text-sm font-mono text-white">{rule.section_number}</td>
-                          <td className="px-4 py-2 text-sm text-gray-300">{rule.title ?? '\u2014'}</td>
+                          <td className="px-4 py-2 text-sm text-gray-300">{rule.title ?? '-'}</td>
                           <td className="whitespace-nowrap px-4 py-2">
                             <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
                               rule.severity === 'high' ? 'bg-red-500/10 text-red-400' :

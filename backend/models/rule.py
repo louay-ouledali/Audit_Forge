@@ -34,6 +34,15 @@ class Rule(Base):
     severity = Column(String, default="medium")
     enabled = Column(Boolean, default=True)
 
+    # ── Pre-loaded benchmark intelligence fields ──
+    narrative_group = Column(String, nullable=True)       # Key into report_profile.narrative_groups
+    security_themes_json = Column(Text, nullable=True)    # JSON array of theme strings
+    attack_chain_tags_json = Column(Text, nullable=True)  # JSON array of attack chain identifiers
+    mitre_attack_json = Column(Text, nullable=True)       # JSON array of MITRE ATT&CK technique IDs
+    risk_weight = Column(Integer, nullable=True, default=5)  # 1-10 risk weight for scoring
+    related_rules_json = Column(Text, nullable=True)      # JSON array of related section numbers
+    group_with_json = Column(Text, nullable=True)         # JSON array of section numbers to co-group
+
     benchmark = relationship("Benchmark", back_populates="rules")
     commands = relationship("RuleCommand", back_populates="rule", cascade="all, delete-orphan", uselist=False)
     tags = relationship("RuleTag", back_populates="rule", cascade="all, delete-orphan")

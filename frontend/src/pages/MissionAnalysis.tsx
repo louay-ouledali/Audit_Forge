@@ -157,10 +157,10 @@ export default function MissionAnalysis() {
               onChange={(e) => setSelectedCompareId(e.target.value ? Number(e.target.value) : null)}
               className="block w-full max-w-md rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none"
             >
-              <option value="">{`\u2014 Select mission \u2014`}</option>
+              <option value="">{`-- Select mission --`}</option>
               {comparableMissions.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name} {m.compliance != null ? `(${m.compliance}% compliance)` : ''} {m.start_date ? `\u2014 ${m.start_date}` : ''}
+                  {m.name} {m.compliance != null ? `(${m.compliance}% compliance)` : ''} {m.start_date ? `- ${m.start_date}` : ''}
                 </option>
               ))}
             </select>

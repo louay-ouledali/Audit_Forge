@@ -51,6 +51,35 @@ BENCHMARKS_DIR = PROJECT_ROOT / "benchmarks"
 BENCHMARKS_DIR.mkdir(exist_ok=True)
 
 
+@router.get("/catalog")
+def get_benchmark_catalog(db: Session = Depends(get_db)):
+    """Return benchmarks organized into a hierarchical catalog.
+
+    Structure: Category → Vendor → Product Line → Benchmarks
+    The classifier uses intelligent pattern matching on benchmark names.
+    """
+    from backend.core.benchmark_classifier import build_catalog
+
+    benchmarks = db.query(Benchmark).order_by(Benchmark.id.desc()).all()
+    benchmark_dicts = []
+    for b in benchmarks:
+        benchmark_dicts.append({
+            "id": b.id,
+            "name": b.name,
+            "version": b.version,
+            "platform": b.platform,
+            "platform_family": b.platform_family,
+            "total_rules": b.total_rules or 0,
+            "phase1_status": b.phase1_status or "pending",
+            "phase2_status": b.phase2_status or "pending",
+            "verification_status": b.verification_status or "pending",
+            "is_ready": b.is_ready or False,
+            "source": b.source or "user_imported",
+            "import_date": b.import_date.isoformat() if b.import_date else None,
+        })
+    return build_catalog(benchmark_dicts)
+
+
 @router.get("", response_model=BenchmarkListResponse)
 def list_benchmarks(db: Session = Depends(get_db)):
     benchmarks = db.query(Benchmark).order_by(Benchmark.id.desc()).all()

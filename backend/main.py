@@ -19,6 +19,7 @@ from backend.api.rules import router as rules_router
 from backend.api.scans import router as scans_router
 from backend.api.settings import router as settings_router
 from backend.api.reports import router as reports_router
+from backend.api.saved_reports import router as saved_reports_router
 from backend.api.targets import router as targets_router
 from backend.api.analyses import router as analyses_router
 from backend.config import settings
@@ -59,6 +60,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:
         logger.warning("Failed to reset stale statuses: %s", exc)
     init_db()
+
+    # ── Sync pre-loaded benchmark packs from backend/preloaded/ ──────────
+    try:
+        from backend.core.preloaded_loader import sync_preloaded
+        from backend.database import SessionLocal as _SL
+        _db = _SL()
+        try:
+            result = sync_preloaded(_db)
+            if result["loaded"] or result["upgraded"]:
+                logger.info(
+                    "Preloaded sync: %d loaded, %d upgraded, %d skipped, %d errors",
+                    result["loaded"], result["upgraded"],
+                    result["skipped"], result["errors"],
+                )
+        finally:
+            _db.close()
+    except Exception as exc:
+        logger.warning("Preloaded benchmark sync failed: %s", exc)
+
     yield
 
 
@@ -89,6 +109,7 @@ app.include_router(scans_router, prefix="/api")
 app.include_router(findings_router, prefix="/api")
 app.include_router(llm_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
+app.include_router(saved_reports_router, prefix="/api")
 app.include_router(analyses_router, prefix="/api")
 
 

@@ -175,8 +175,8 @@ export default function Clients() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredClients.map((client) => (
             <div key={client.id} className="glow-card group relative rounded-xl border border-dark-border bg-dark-card p-5 transition-all duration-300">
-              {/* Actions */}
-              <div className="absolute right-3 top-3 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              {/* Actions – always visible for touch accessibility */}
+              <div className="absolute right-3 top-3 flex gap-1">
                 <button onClick={(e) => { e.stopPropagation(); handleEdit(client); }} className="rounded-md p-1.5 text-dark-muted hover:bg-ey-yellow/10 hover:text-ey-yellow" title="Edit"><Pencil className="h-4 w-4" /></button>
                 <button onClick={(e) => { e.stopPropagation(); handleDelete(client.id); }} className="rounded-md p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400" title="Delete"><Trash2 className="h-4 w-4" /></button>
               </div>
@@ -196,7 +196,7 @@ export default function Clients() {
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t border-dark-border pt-3">
                   <span className="text-xs text-dark-muted">{client.mission_count} mission{client.mission_count !== 1 ? 's' : ''}</span>
-                  <span className="text-xs font-medium text-ey-yellow opacity-0 transition-opacity group-hover:opacity-100">View details →</span>
+                  <span className="text-xs font-medium text-ey-yellow">View details →</span>
                 </div>
               </button>
             </div>

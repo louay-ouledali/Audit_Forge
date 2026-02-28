@@ -14,14 +14,22 @@ class FindingResponse(BaseModel):
     status: str
     actual_output: str | None = None
     expected_output: str | None = None
-    expected_output_display: str | None = None  # Human-readable form of expected_output
-    evaluation_explanation: str | None = None  # How the comparison was evaluated
+    expected_output_display: str | None = None
+    evaluation_explanation: str | None = None
     severity: str | None = None
     ai_advice: str | None = None
     ai_advice_generated_at: datetime | None = None
     auditor_notes: str | None = None
     auditor_override: str | None = None
     created_at: datetime | None = None
+
+    # Auditor override fields
+    auditor_status_override: str | None = None
+    auditor_severity_override: str | None = None
+    auditor_description: str | None = None
+    auditor_remediation: str | None = None
+    override_reason: str | None = None
+    overridden_at: datetime | None = None
 
     # Joined fields from rule
     section_number: str | None = None
@@ -32,7 +40,12 @@ class FindingResponse(BaseModel):
 
 class FindingUpdateRequest(BaseModel):
     auditor_notes: str | None = None
-    auditor_override: str | None = None  # confirmed, false_positive, accepted_risk
+    auditor_override: str | None = None
+    auditor_status_override: str | None = None
+    auditor_severity_override: str | None = None
+    auditor_description: str | None = None
+    auditor_remediation: str | None = None
+    override_reason: str | None = None
 
 
 class FindingAIAdviceResponse(BaseModel):

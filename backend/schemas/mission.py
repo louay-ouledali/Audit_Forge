@@ -24,6 +24,14 @@ class MissionUpdate(BaseModel):
     notes: str | None = None
 
 
+class MissionLockRequest(BaseModel):
+    password: str
+
+
+class MissionUnlockRequest(BaseModel):
+    password: str
+
+
 class MissionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,6 +46,10 @@ class MissionResponse(BaseModel):
     created_at: datetime | None = None
     target_count: int = 0
     client_name: str | None = None
+    # Lock info
+    is_locked: bool = False
+    locked_at: datetime | None = None
+    locked_by: str | None = None
 
 
 class MissionDetailEnvelope(BaseModel):

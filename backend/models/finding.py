@@ -25,7 +25,15 @@ class Finding(Base):
     ai_advice_generated_at = Column(DateTime)
 
     auditor_notes = Column(Text)
-    auditor_override = Column(String)
+    auditor_override = Column(String)  # confirmed / false_positive / accepted_risk
+
+    # ── Auditor override fields ──────────────────────────
+    auditor_status_override = Column(String, nullable=True)    # PASS / FAIL / N/A
+    auditor_severity_override = Column(String, nullable=True)  # critical / high / medium / low
+    auditor_description = Column(Text, nullable=True)
+    auditor_remediation = Column(Text, nullable=True)
+    override_reason = Column(Text, nullable=True)
+    overridden_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

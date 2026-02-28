@@ -453,7 +453,7 @@ export default function Missions() {
                     {(mission.start_date || mission.end_date) && (
                       <div className="flex items-center gap-1 text-xs text-dark-muted">
                         <Calendar className="h-3 w-3" />
-                        {mission.start_date ?? '\u2014'} \u2192 {mission.end_date ?? '\u2014'}
+                        {mission.start_date ?? '-'} \u2192 {mission.end_date ?? '-'}
                       </div>
                     )}
                     <span className="text-xs text-dark-muted">
@@ -514,12 +514,12 @@ export default function Missions() {
                               const label = [
                                 s.benchmark_name ? (s.benchmark_name.replace(/^CIS\s+/, '') + (s.benchmark_version ? ` ${s.benchmark_version}` : '')) : null,
                                 s.target_hostname || s.target_ip,
-                              ].filter(Boolean).join(' \u2014 ') || `Scan #${s.id}`;
+                              ].filter(Boolean).join(' - ') || `Scan #${s.id}`;
 
                               return (
                                 <div key={s.id} className="flex items-center gap-3 rounded-lg bg-dark-elevated px-3 py-2 text-xs">
                                   <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                                    s.status === 'completed' ? 'bg-emerald-400' :
+                                    (s.status === 'completed' || s.status === 'imported') ? 'bg-emerald-400' :
                                     s.status === 'running' ? 'bg-sky-400 animate-pulse' :
                                     s.status === 'failed' ? 'bg-red-400' : 'bg-dark-muted'
                                   }`} />

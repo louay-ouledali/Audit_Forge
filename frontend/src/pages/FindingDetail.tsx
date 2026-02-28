@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Loader2,
@@ -45,6 +45,7 @@ function severityBadge(severity: string | null) {
 
 export default function FindingDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [finding, setFinding] = useState<Finding | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -123,9 +124,9 @@ export default function FindingDetail() {
   if (error || !finding) {
     return (
       <div className="space-y-4">
-        <Link to="/findings" className="inline-flex items-center gap-1 text-sm text-ey-yellow hover:text-ey-yellow-hover">
-          <ArrowLeft className="h-4 w-4" /> Back to findings
-        </Link>
+        <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1 text-sm text-ey-yellow hover:text-ey-yellow-hover">
+          <ArrowLeft className="h-4 w-4" /> Back
+        </button>
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
           {error || 'Finding not found'}
         </div>
@@ -137,12 +138,12 @@ export default function FindingDetail() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <Link to="/findings" className="inline-flex items-center gap-1 text-sm text-ey-yellow hover:text-ey-yellow-hover">
-          <ArrowLeft className="h-4 w-4" /> Back to findings
-        </Link>
+        <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1 text-sm text-ey-yellow hover:text-ey-yellow-hover">
+          <ArrowLeft className="h-4 w-4" /> Back
+        </button>
         <div className="mt-3 flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">
-            {finding.section_number || 'Finding'} {'\u2014'} {finding.rule_title || `Finding #${finding.id}`}
+            {finding.section_number || 'Finding'} {' - '} {finding.rule_title || `Finding #${finding.id}`}
           </h1>
           {statusBadge(finding.status)}
           {severityBadge(finding.severity)}

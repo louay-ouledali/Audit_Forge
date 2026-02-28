@@ -27,6 +27,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+from backend.core.text_utils import normalize_unicode
+
 logger = logging.getLogger("auditforge.comparison")
 
 # Operator prefix pattern: >=, <=, >, <, ==, !=, contains:, not_contains:, regex:, not_empty
@@ -101,7 +103,7 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
             matched=True,
             expression=expression or "",
             actual_value=actual_output.strip(),
-            explanation="No expected output defined — accepted by default",
+            explanation="No expected output defined - accepted by default",
         )
 
     expr = expression.strip()
@@ -347,7 +349,7 @@ def _evaluate_regex(
         matched=matched,
         expression=full_expr,
         actual_value=actual,
-        explanation=f"{'PASS' if matched else 'FAIL'}: regex {'matched' if matched else 'no match'} — /{pattern}/",
+        explanation=f"{'PASS' if matched else 'FAIL'}: regex {'matched' if matched else 'no match'} - /{pattern}/",
     )
 
 
@@ -400,12 +402,12 @@ def validate_expression(expression: str) -> str | None:
         (r"^\d+\s+or\s+(?:more|fewer|greater|less)", "Looks like English text, not a comparison expression"),
         (r"enabled\s+or\s+greater", "Looks like English text, not a comparison expression"),
         (r"(?:should|must|needs?\s+to)\b", "Contains English prose, not a comparison expression"),
-        (r"\bshould\s+be\b", "Contains 'should be' — use ==, >=, <= instead"),
-        (r"\bor\s+(?:higher|lower|above|below)\b", "Contains 'or higher/lower' — use >=, <= instead"),
-        (r"\bat\s+least\s+\d+", "Contains 'at least N' — use >=N instead"),
-        (r"\bno\s+more\s+than\b", "Contains 'no more than' — use <= instead"),
-        (r"\bgreater\s+than\b", "Contains 'greater than' — use > instead"),
-        (r"\bless\s+than\b", "Contains 'less than' — use < instead"),
+        (r"\bshould\s+be\b", "Contains 'should be' - use ==, >=, <= instead"),
+        (r"\bor\s+(?:higher|lower|above|below)\b", "Contains 'or higher/lower' - use >=, <= instead"),
+        (r"\bat\s+least\s+\d+", "Contains 'at least N' - use >=N instead"),
+        (r"\bno\s+more\s+than\b", "Contains 'no more than' - use <= instead"),
+        (r"\bgreater\s+than\b", "Contains 'greater than' - use > instead"),
+        (r"\bless\s+than\b", "Contains 'less than' - use < instead"),
     ]
     for pattern, message in english_patterns:
         if re.search(pattern, expr, re.IGNORECASE):

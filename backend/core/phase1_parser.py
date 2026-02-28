@@ -199,7 +199,10 @@ def _clean_pdf_text(text: str) -> str:
     - Standalone page numbers (e.g. "42", "Page 42")
     - Running headers/footers (e.g. "CIS Microsoft Windows 11 Benchmark v5.0.0")
     - Excessive blank lines collapsed to double newlines
+    - Typographic Unicode characters normalised to ASCII equivalents
     """
+    from backend.core.text_utils import normalize_unicode
+    text = normalize_unicode(text)
     text = _PAGE_NUMBER_LINE.sub("", text)
     text = _RUNNING_HEADER.sub("", text)
     text = _EXCESSIVE_BLANK_LINES.sub("\n\n", text)

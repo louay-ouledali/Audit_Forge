@@ -20,3 +20,4 @@ class Client(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     missions = relationship("Mission", back_populates="client", cascade="all, delete-orphan")
+    targets = relationship("Target", back_populates="client", cascade="all, delete-orphan")

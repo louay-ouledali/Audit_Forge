@@ -12,7 +12,8 @@ class Target(Base):
     __tablename__ = "targets"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    mission_id = Column(Integer, ForeignKey("missions.id", ondelete="CASCADE"), nullable=False)
+    # Targets now belong to a CLIENT (not a mission)
+    client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     hostname = Column(String)
     ip_address = Column(String)
     target_type = Column(String, nullable=False)
@@ -28,5 +29,38 @@ class Target(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    mission = relationship("Mission", back_populates="targets")
+    # ── Phase 1 — Scanning Enhancement Fields ────────────────
+    # Platform sub-type for more specific connector/benchmark matching
+    # e.g. "cisco_ios", "ubuntu", "server_2022", "postgresql", …
+    platform_subtype = Column(String, nullable=True)
+
+    # Default benchmark to use when scanning this target
+    default_benchmark_id = Column(
+        Integer,
+        ForeignKey("benchmarks.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Connection health tracking
+    last_connection_test = Column(DateTime, nullable=True)
+    connection_status = Column(String, nullable=True)   # "ok" | "failed" | "untested"
+    connection_error = Column(Text, nullable=True)
+
+    # Database-specific fields
+    db_name = Column(String, nullable=True)       # default database name
+    db_instance = Column(String, nullable=True)    # MSSQL named instance
+
+    # Network device specific
+    enable_password_encrypted = Column(Text, nullable=True)  # enable/privilege password
+    device_type = Column(String, nullable=True)              # netmiko device_type string
+
+    # Relationships
+    client = relationship("Client", back_populates="targets")
+    default_benchmark = relationship("Benchmark", foreign_keys=[default_benchmark_id])
     scans = relationship("Scan", back_populates="target", cascade="all, delete-orphan")
+    # Many-to-many with missions via junction table
+    missions = relationship(
+        "Mission",
+        secondary="mission_targets",
+        back_populates="targets",
+    )

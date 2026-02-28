@@ -30,4 +30,9 @@ class Benchmark(Base):
     phase3_stats = Column(Text)  # JSON: {total, processed, validated, corrected, flagged}
     notes = Column(Text)
 
+    # ── Pre-loaded benchmark fields ──
+    source = Column(String, default="user_imported")  # "preloaded" or "user_imported"
+    preloaded_version = Column(String, nullable=True)  # Pack version for upgrade tracking
+    pack_hash = Column(String, nullable=True)  # SHA-256 of the .auditforge.json file
+
     rules = relationship("Rule", back_populates="benchmark", cascade="all, delete-orphan")

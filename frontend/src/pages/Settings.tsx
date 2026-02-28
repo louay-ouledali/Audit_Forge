@@ -208,7 +208,7 @@ export default function Settings() {
           </div>
           <p className={helpClass}>
             {settings.llm_mode === 'offline'
-              ? 'Uses a local Ollama instance. You can run cloud models through Ollama too \u2014 see the setup guide.'
+              ? 'Uses a local Ollama instance. You can run cloud models through Ollama too - see the setup guide.'
               : 'Connects directly to a cloud API (OpenAI, Mistral, Groq, OpenRouter, or any OpenAI-compatible endpoint).'}
           </p>
         </fieldset>

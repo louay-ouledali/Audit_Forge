@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveryProgress } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -70,10 +70,39 @@ export async function getMission(id: number): Promise<Mission> {
   return data.data;
 }
 
+// Mission Locking
+export async function lockMission(missionId: number, password: string): Promise<Mission> {
+  const { data } = await api.post(`/missions/${missionId}/lock`, { password });
+  return data.data;
+}
+
+export async function unlockMission(missionId: number, password: string): Promise<Mission> {
+  const { data } = await api.post(`/missions/${missionId}/unlock`, { password });
+  return data.data;
+}
+
+export async function verifyMissionLock(missionId: number, password: string): Promise<{ valid: boolean; message: string }> {
+  const { data } = await api.post(`/missions/${missionId}/verify-lock`, { password });
+  return data;
+}
+
 // Targets
 export async function getTargets(missionId: number): Promise<Target[]> {
   const { data } = await api.get(`/missions/${missionId}/targets`);
   return data.data;
+}
+
+export async function getClientTargets(clientId: number): Promise<Target[]> {
+  const { data } = await api.get(`/clients/${clientId}/targets`);
+  return data.data;
+}
+
+export async function assignTargetToMission(missionId: number, targetId: number): Promise<void> {
+  await api.post(`/missions/${missionId}/targets/${targetId}`);
+}
+
+export async function unassignTargetFromMission(missionId: number, targetId: number): Promise<void> {
+  await api.delete(`/missions/${missionId}/targets/${targetId}`);
 }
 
 export async function createTarget(payload: Partial<Target>): Promise<Target> {
@@ -105,6 +134,11 @@ export async function updateSettings(payload: Settings): Promise<Settings> {
 export async function getBenchmarks(): Promise<Benchmark[]> {
   const { data } = await api.get('/benchmarks');
   return data.data;
+}
+
+export async function getBenchmarkCatalog(): Promise<BenchmarkCatalog> {
+  const { data } = await api.get('/benchmarks/catalog');
+  return data;
 }
 
 export async function getBenchmark(id: number): Promise<Benchmark> {
@@ -424,10 +458,11 @@ export async function importResults(scanId: number, file: File): Promise<ImportR
   return data;
 }
 
-export async function importWithNewScan(targetId: number, benchmarkId: number, file: File): Promise<ImportResultsResponse> {
+export async function importWithNewScan(targetId: number, benchmarkId: number, file: File, missionId?: number | null): Promise<ImportResultsResponse> {
   const formData = new FormData();
   formData.append('target_id', targetId.toString());
   formData.append('benchmark_id', benchmarkId.toString());
+  if (missionId) formData.append('mission_id', missionId.toString());
   formData.append('file', file);
   const { data } = await api.post('/scans/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -446,6 +481,34 @@ export async function generateReport(payload: ReportGenerateRequest): Promise<Bl
 
 export async function generateAISummary(payload: AISummaryRequest): Promise<AISummaryResponse> {
   const { data } = await api.post('/reports/ai-summary', payload);
+  return data;
+}
+
+// ── Report Builder ───────────────────────────────────────────
+
+export async function getBuilderFindings(scanIds: number[]): Promise<BuilderFindingsResponse> {
+  const { data } = await api.post('/reports/builder/findings', { scan_ids: scanIds });
+  return data;
+}
+
+export async function getBuilderPreview(payload: BuilderPreviewRequest): Promise<string> {
+  const { data } = await api.post('/reports/builder/preview', payload, {
+    responseType: 'text',
+    headers: { Accept: 'text/html' },
+  });
+  return data;
+}
+
+export async function autoGroupRules(scanIds: number[], excludedRuleIds?: number[]): Promise<AutoGroupResponse> {
+  const { data } = await api.post('/reports/builder/auto-group', {
+    scan_ids: scanIds,
+    excluded_rule_ids: excludedRuleIds,
+  });
+  return data;
+}
+
+export async function getGroupSummary(payload: GroupSummaryRequest): Promise<GroupSummaryResponse> {
+  const { data } = await api.post('/reports/builder/group-summary', payload);
   return data;
 }
 
@@ -475,6 +538,62 @@ export async function getComparableMissions(clientId: number): Promise<Comparabl
   return data.data;
 }
 
+// ── Target Connection & Readiness ────────────────────────────
+
+export async function testTargetConnection(targetId: number): Promise<ConnectionTestResult> {
+  const { data } = await api.post(`/targets/${targetId}/test-connection`);
+  return data;
+}
+
+export async function getTargetScanReadiness(targetId: number): Promise<ScanReadiness> {
+  const { data } = await api.get(`/targets/${targetId}/scan-readiness`);
+  return data;
+}
+
+export async function getTargetPrerequisites(targetId: number): Promise<PrerequisiteGuide> {
+  const { data } = await api.get(`/targets/${targetId}/prerequisites`);
+  return data;
+}
+
+export async function matchTargetBenchmark(targetId: number): Promise<BenchmarkMatchResult[]> {
+  const { data } = await api.post(`/targets/${targetId}/benchmark-match`);
+  return data.matches;
+}
+
+export async function getTargetLastScan(targetId: number): Promise<ScanDetail | null> {
+  try {
+    const { data } = await api.get(`/targets/${targetId}/last-scan`);
+    return data.data || null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Scan Batch Operations ────────────────────────────────────
+
+export async function startScanBatch(payload: ScanBatchRequest): Promise<ScanBatchResponse> {
+  const { data } = await api.post('/scans/batch', payload);
+  return data;
+}
+
+export async function getScanBatchStatus(batchId: number): Promise<ScanBatchStatus> {
+  const { data } = await api.get(`/scans/batch/${batchId}/status`);
+  return data;
+}
+
+export async function cancelScanBatch(batchId: number): Promise<void> {
+  await api.post(`/scans/batch/${batchId}/cancel`);
+}
+
+// ── Enhanced Discovery (with mission context) ────────────────
+
+export async function discoverNetworkEnhanced(subnet: string, missionId?: number): Promise<{ hosts: DiscoveredHostEnriched[]; total_scanned: number }> {
+  const payload: Record<string, unknown> = { subnet };
+  if (missionId) payload.mission_id = missionId;
+  const { data } = await api.post('/scans/discover/scan', payload);
+  return data;
+}
+
 // ── Database Backup & Restore ────────────────────────────────
 
 export async function createBackup(): Promise<Blob> {
@@ -491,4 +610,21 @@ export async function restoreBackup(file: File): Promise<{ message: string; tabl
     headers: { 'Content-Type': 'multipart/form-data' },
   });
   return data;
+}
+
+// ── Saved Reports ────────────────────────────────────────────
+
+export async function getSavedReports(missionId?: number): Promise<SavedReport[]> {
+  const params = missionId ? { mission_id: missionId } : {};
+  const { data } = await api.get('/saved-reports', { params });
+  return data.data;
+}
+
+export async function createSavedReport(payload: { mission_id: number; title: string; format: string; config_json?: Record<string, unknown> }): Promise<SavedReport> {
+  const { data } = await api.post('/saved-reports', payload);
+  return data.data;
+}
+
+export async function deleteSavedReport(id: number): Promise<void> {
+  await api.delete(`/saved-reports/${id}`);
 }

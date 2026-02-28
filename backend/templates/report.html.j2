@@ -4,9 +4,25 @@
 <meta charset="UTF-8">
 <title>{{ title or "Audit Report" }}</title>
 <style>
-  @page { size: A4; margin: 18mm 20mm 22mm 20mm; @bottom-center { content: "AuditForge — Page " counter(page) " of " counter(pages); font-size: 8px; color: #999; } }
+  @page {
+    size: A4;
+    margin: 18mm 20mm 22mm 20mm;
+    @top-right {
+      content: "CONFIDENTIAL";
+      font-size: 7px;
+      color: #cbd5e1;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    @bottom-center {
+      content: "AuditForge - Page " counter(page) " of " counter(pages);
+      font-size: 8px;
+      color: #999;
+    }
+  }
+  @page :first { @top-right { content: none; } @bottom-center { content: none; } }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 10.5px; color: #1e293b; line-height: 1.6; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 10.5px; color: #1e293b; line-height: 1.6; orphans: 3; widows: 3; }
 
   /* ── Cover page ── */
   .cover { text-align: center; padding: 100px 50px 60px; page-break-after: always; position: relative; }
@@ -19,8 +35,17 @@
   .cover .meta-line strong { color: #0f172a; min-width: 90px; display: inline-block; }
   .cover::after { content: ''; display: block; width: 60px; height: 3px; background: #3b82f6; border-radius: 2px; margin: 50px auto 0; }
 
-  h2 { font-size: 15px; color: #1e40af; margin: 24px 0 10px; border-bottom: 2px solid #dbeafe; padding-bottom: 5px; letter-spacing: 0.3px; }
-  h3 { font-size: 12px; color: #334155; margin: 14px 0 6px; font-weight: 600; }
+  /* ── Headings with WeasyPrint PDF bookmarks ── */
+  h2 {
+    font-size: 15px; color: #1e40af; margin: 24px 0 10px;
+    border-bottom: 2px solid #dbeafe; padding-bottom: 5px; letter-spacing: 0.3px;
+    bookmark-level: 1;
+    bookmark-state: open;
+  }
+  h3 {
+    font-size: 12px; color: #334155; margin: 14px 0 6px; font-weight: 600;
+    bookmark-level: 2;
+  }
 
   .section { margin-bottom: 22px; }
 
@@ -51,61 +76,197 @@
   .st-fail { background: #dc2626; }
   .st-error { background: #7c3aed; }
 
+  /* ── Enhanced finding cards ── */
   .finding-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; page-break-inside: avoid; background: #fff; }
+  .finding-card.sev-border-critical { border-left: 4px solid #dc2626; }
+  .finding-card.sev-border-high { border-left: 4px solid #ea580c; }
+  .finding-card.sev-border-medium { border-left: 4px solid #d97706; }
+  .finding-card.sev-border-low { border-left: 4px solid #2563eb; }
   .finding-card .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; }
   .finding-card .header .rule-id { font-weight: 700; font-size: 11px; color: #0f172a; }
   .finding-card p { margin: 4px 0; font-size: 10px; }
-  .finding-card code { background: #f1f5f9; padding: 2px 5px; border-radius: 3px; font-size: 9.5px; font-family: 'Consolas', 'Courier New', monospace; color: #334155; }
+  .finding-card code { background: #f1f5f9; padding: 2px 5px; border-radius: 3px; font-size: 9.5px; font-family: 'Consolas', 'Courier New', monospace; color: #334155; word-break: break-all; }
   .finding-card .field-label { font-weight: 600; color: #475569; display: inline-block; min-width: 80px; }
+
+  .ai-advice-box { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 6px 10px; margin: 6px 0; border-radius: 0 4px 4px 0; font-size: 9.5px; }
+  .eval-box { background: #f0fdf4; border-left: 3px solid #22c55e; padding: 6px 10px; margin: 6px 0; border-radius: 0 4px 4px 0; font-size: 9.5px; }
+  .rationale-box { background: #fefce8; border-left: 3px solid #eab308; padding: 6px 10px; margin: 6px 0; border-radius: 0 4px 4px 0; font-size: 9.5px; }
 
   .passed-summary { margin-top: 12px; }
   .passed-summary li { margin-left: 18px; font-size: 10px; }
 
   .ai-summary { background: #eff6ff; border-left: 4px solid #1e40af; padding: 12px 16px; margin-bottom: 16px; white-space: pre-wrap; font-size: 10px; border-radius: 0 6px 6px 0; line-height: 1.7; }
 
+  /* ── Table of Contents ── */
   .toc { page-break-after: always; }
-  .toc h2 { border-bottom: none; }
-  .toc ul { list-style: none; margin-top: 12px; }
-  .toc li { padding: 4px 0; font-size: 11px; border-bottom: 1px dotted #e2e8f0; }
+  .toc h2 { border-bottom: none; bookmark-level: none; }
+  .toc-title { font-size: 18px; color: #1e40af; font-weight: 700; margin-bottom: 20px; border-bottom: 3px solid #1e40af; padding-bottom: 8px; }
+  .toc-list { list-style: none; margin: 0; padding: 0; }
+  .toc-list li { padding: 6px 0; font-size: 11px; border-bottom: 1px dotted #cbd5e1; }
+  .toc-list li a { color: #1e293b; text-decoration: none; display: flex; justify-content: space-between; }
+  .toc-list li a::after { content: target-counter(attr(href), page); color: #64748b; font-weight: 600; }
+  .toc-list li.toc-sub { padding-left: 18px; font-size: 10px; border-bottom: 1px dotted #e2e8f0; }
+  .toc-list li.toc-sub a::after { font-weight: 400; }
+
+  /* ── Severity group headers ── */
+  .severity-group-header {
+    margin: 18px 0 10px; padding: 8px 14px; border-radius: 6px;
+    font-size: 12px; font-weight: 700; color: #fff; page-break-after: avoid;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .severity-group-header.sev-bg-critical { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+  .severity-group-header.sev-bg-high { background: linear-gradient(135deg, #ea580c, #c2410c); }
+  .severity-group-header.sev-bg-medium { background: linear-gradient(135deg, #d97706, #b45309); }
+  .severity-group-header.sev-bg-low { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+  .severity-group-header .count-badge { background: rgba(255,255,255,0.25); padding: 2px 10px; border-radius: 10px; font-size: 10px; }
+
+  /* ── Section count badge ── */
+  .section-count { display: inline-block; background: #dbeafe; color: #1e40af; padding: 1px 8px; border-radius: 10px; font-size: 9px; font-weight: 600; margin-left: 8px; vertical-align: middle; }
+
+  /* ── Audience Badge ── */
+  .audience-badge { display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 12px; }
+  .audience-executive { background: #dbeafe; color: #1e40af; }
+  .audience-technical  { background: #dcfce7; color: #166534; }
+  .audience-compliance { background: #fef3c7; color: #92400e; }
+
+  /* ── Group Section Cards (grouped mode) ── */
+  .group-card { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; page-break-inside: avoid; overflow: hidden; }
+  .group-card-header { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); padding: 10px 14px; border-bottom: 2px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; bookmark-level: 2; }
+  .group-card-header h3 { font-size: 12px; font-weight: 700; color: #0f172a; margin: 0; }
+  .group-card-stats span { font-size: 8px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-left: 6px; }
+  .group-card-stats .g-pass { background: #dcfce7; color: #166534; }
+  .group-card-stats .g-fail { background: #fee2e2; color: #991b1b; }
+  .group-summary { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 8px 12px; margin: 8px 10px; border-radius: 0 4px 4px 0; font-size: 9.5px; line-height: 1.6; color: #334155; white-space: pre-wrap; }
+  .group-summary-lbl { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: #1e40af; margin-bottom: 4px; }
+
+  /* ── Group Overview Table ── */
+  .group-overview-tbl { width: 100%; border-collapse: collapse; font-size: 9px; margin: 10px 0 16px; }
+  .group-overview-tbl th { background: #f1f5f9; padding: 5px 6px; font-weight: 700; text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: 0.3px; color: #475569; border: 1px solid #e2e8f0; }
+  .group-overview-tbl td { padding: 4px 6px; border: 1px solid #e2e8f0; }
+  .group-overview-tbl tr:nth-child(even) { background: #f8fafc; }
+  .group-overview-tbl .sev-cell { text-align: center; font-weight: 700; }
+  .group-overview-tbl .sev-cell.has-val { color: #dc2626; }
+  .group-overview-tbl .sev-cell.zero-val { color: #cbd5e1; }
+
+  /* ── Severity Chips ── */
+  .sev-chip { display: inline-block; font-size: 7.5px; padding: 1px 6px; border-radius: 3px; font-weight: 700; margin-right: 3px; }
+  .sev-chip-critical { background: #fee2e2; color: #991b1b; }
+  .sev-chip-high { background: #ffedd5; color: #9a3412; }
+  .sev-chip-medium { background: #fef3c7; color: #92400e; }
+  .sev-chip-low { background: #dbeafe; color: #1e40af; }
+
+  /* ── False-Positive Suspect Styles ── */
+  .fp-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 8px; font-weight: 700; letter-spacing: 0.3px; margin-left: 6px; }
+  .fp-badge.fp-high { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .fp-badge.fp-medium { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+  .fp-badge.fp-low { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+  .fp-analysis-box { background: #fefce8; border-left: 3px solid #eab308; padding: 6px 10px; margin: 6px 0; border-radius: 0 4px 4px 0; font-size: 9px; }
+  .fp-signals { margin: 4px 0 0 12px; font-size: 8.5px; color: #64748b; }
+  .fp-signals li { margin-bottom: 2px; }
+  .fp-section-card { border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; background: #fffbeb; page-break-inside: avoid; }
+  .fp-section-card h3 { font-size: 12px; color: #92400e; margin-bottom: 8px; }
+  .fp-stat-row { display: flex; gap: 10px; margin-bottom: 8px; }
+  .fp-stat { background: #fff; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; text-align: center; flex: 1; }
+  .fp-stat .val { font-size: 18px; font-weight: 700; }
+  .fp-stat .lbl { font-size: 7px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
 </style>
 </head>
 <body>
 
-<!-- Cover -->
+<!-- ═══ Cover ═══ -->
 <div class="cover">
   <div class="brand">AuditForge</div>
-  <h1>{{ title or "Configuration Audit Report" }}</h1>
+  <h1 style="bookmark-level: none;">{{ title or "Configuration Audit Report" }}</h1>
   <div class="subtitle">{{ mission_name }}</div>
   <div class="meta-block">
     <div class="meta-line"><strong>Client:</strong> {{ client_name }}</div>
     <div class="meta-line"><strong>Date Range:</strong> {{ date_range }}</div>
     <div class="meta-line"><strong>Generated:</strong> {{ generated_at }}</div>
     <div class="meta-line"><strong>Total Rules:</strong> {{ summary.total_rules }} &nbsp; | &nbsp; <strong>Compliance:</strong> {{ summary.overall_compliance }}%</div>
+    {% if has_builder and audience %}<div class="meta-line"><strong>Audience:</strong> <span class="audience-badge audience-{{ audience }}">{{ audience }}</span></div>{% endif %}
   </div>
 </div>
 
-<!-- Table of Contents -->
+<!-- ═══ Table of Contents (with page numbers via WeasyPrint target-counter) ═══ -->
+{# Pre-count findings by status #}
+{% set fail_count = namespace(val=0) %}
+{% set error_count = namespace(val=0) %}
+{% set pass_count = namespace(val=0) %}
+{% for f in findings %}
+  {% if f.status == "FAIL" %}{% set fail_count.val = fail_count.val + 1 %}
+  {% elif f.status == "ERROR" %}{% set error_count.val = error_count.val + 1 %}
+  {% elif f.status == "PASS" %}{% set pass_count.val = pass_count.val + 1 %}
+  {% endif %}
+{% endfor %}
+
 <div class="toc">
-  <h2>Table of Contents</h2>
-  <ul>
-    {% if ai_summary %}<li>1. AI Executive Summary</li>{% endif %}
-    <li>{% if ai_summary %}2{% else %}1{% endif %}. Executive Summary & Compliance Overview</li>
-    <li>{% if ai_summary %}3{% else %}2{% endif %}. Audit Scope</li>
-    <li>{% if ai_summary %}4{% else %}3{% endif %}. Detailed Findings — Failed Rules</li>
-    {% if include_passed %}<li>{% if ai_summary %}5{% else %}4{% endif %}. Passed Rules Summary</li>{% endif %}
+  <div class="toc-title">Table of Contents</div>
+  <ul class="toc-list">
+    {% set ns = namespace(n=1) %}
+
+    {% if ai_summary %}
+    <li><a href="#sec-ai-summary">{{ ns.n }}. AI Executive Summary</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
+
+    <li><a href="#sec-visual-dashboard">{{ ns.n }}. Visual Dashboard</a></li>
+    {% set ns.n = ns.n + 1 %}
+
+    <li><a href="#sec-executive-summary">{{ ns.n }}. Executive Summary &amp; Compliance Overview</a></li>
+    {% set ns.n = ns.n + 1 %}
+
+    <li><a href="#sec-audit-scope">{{ ns.n }}. Audit Scope</a></li>
+    {% set ns.n = ns.n + 1 %}
+
+    {% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
+    <li><a href="#sec-fp-analysis">{{ ns.n }}. False Positive Analysis</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
+
+    {% if has_builder and grouped_findings %}
+    {# Builder mode: TOC entries for each group #}
+    {% for group in grouped_findings %}
+    <li><a href="#sec-group-{{ loop.index }}">{{ ns.n }}. {{ group.name }} ({{ group.findings|length }})</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endfor %}
+    {% else %}
+    {# Default mode: severity-based TOC #}
+    {% set ns_fail = ns.n %}
+    <li><a href="#sec-failed-rules">{{ ns.n }}. Failed Rules ({{ fail_count.val }})</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {# Sub-entries for severity groups within failed #}
+    {% for sev in ["critical", "high", "medium", "low"] %}
+      {% set sev_fail = namespace(val=0) %}
+      {% for f in findings if f.status == "FAIL" and f.severity == sev %}{% set sev_fail.val = sev_fail.val + 1 %}{% endfor %}
+      {% if sev_fail.val > 0 %}
+      <li class="toc-sub"><a href="#sec-fail-{{ sev }}">{{ ns_fail }}.{{ loop.index }}. {{ sev | capitalize }} Severity ({{ sev_fail.val }})</a></li>
+      {% endif %}
+    {% endfor %}
+
+    {% if error_count.val > 0 %}
+    <li><a href="#sec-error-rules">{{ ns.n }}. Errors ({{ error_count.val }})</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
+
+    {% if include_passed and pass_count.val > 0 %}
+    <li><a href="#sec-passed-rules">{{ ns.n }}. Passed Rules ({{ pass_count.val }})</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
+    {% endif %}
   </ul>
 </div>
 
-<!-- AI Summary -->
+<!-- ═══ AI Executive Summary ═══ -->
 {% if ai_summary %}
-<div class="section">
+<div class="section" id="sec-ai-summary">
   <h2>AI Executive Summary</h2>
   <div class="ai-summary">{{ ai_summary }}</div>
 </div>
 {% endif %}
 
-<!-- Visual Dashboard -->
-<div class="section">
+<!-- ═══ Visual Dashboard ═══ -->
+{% if not section_toggles or section_toggles.get('charts', true) %}
+<div class="section" id="sec-visual-dashboard">
   <h2>Visual Dashboard</h2>
   <div style="display: flex; gap: 40px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 20px 0;">
     {% if chart_donut %}{{ chart_donut|safe }}{% endif %}
@@ -116,11 +277,48 @@
     {{ chart_targets|safe }}
   </div>
   {% endif %}
+  {% if chart_categories %}
+  <div style="margin-top: 16px; text-align: center;">
+    {{ chart_categories|safe }}
+  </div>
+  {% endif %}
+  {% if chart_group_compliance %}
+  <div style="margin-top: 16px; text-align: center;">
+    {{ chart_group_compliance|safe }}
+  </div>
+  {% endif %}
+  {% if chart_risk_heatmap %}
+  <div style="margin-top: 16px; text-align: center;">
+    {{ chart_risk_heatmap|safe }}
+  </div>
+  {% endif %}
+  {% if chart_fp_gauge %}
+  <div style="margin-top: 16px; text-align: center;">
+    {{ chart_fp_gauge|safe }}
+  </div>
+  {% endif %}
+  {% if chart_radar %}
+  <div style="margin-top: 20px; text-align: center;">
+    {{ chart_radar|safe }}
+  </div>
+  {% endif %}
+  {% if chart_treemap %}
+  <div style="margin-top: 20px; text-align: center;">
+    {{ chart_treemap|safe }}
+  </div>
+  {% endif %}
+  {% if chart_waterfall %}
+  <div style="margin-top: 20px; text-align: center;">
+    {{ chart_waterfall|safe }}
+  </div>
+  {% endif %}
 </div>
+{% endif %}
 
-<!-- Executive Summary -->
-<div class="section">
-  <h2>Executive Summary</h2>
+<!-- ═══ Executive Summary ═══ -->
+{% if not section_toggles or section_toggles.get('executive_summary', true) %}
+<div class="section" id="sec-executive-summary">
+  <h2>Executive Summary &amp; Compliance Overview</h2>
   <div class="stats">
     <div class="stat-card">
       <div class="val">{{ summary.overall_compliance }}%</div>
@@ -181,9 +379,10 @@
   </table>
   {% endif %}
 </div>
+{% endif %}
 
-<!-- Scope -->
-<div class="section">
+<!-- ═══ Audit Scope ═══ -->
+<div class="section" id="sec-audit-scope">
   <h2>Audit Scope</h2>
   <table>
     <thead><tr><th>Target</th><th>IP Address</th><th>Type</th><th>OS</th><th>Benchmark</th><th>Compliance</th><th>Scan Date</th></tr></thead>
@@ -210,48 +409,296 @@
   </table>
 </div>
 
-<!-- Detailed Findings (FAIL only) -->
-<div class="section">
-  <h2>Detailed Findings — Failed Rules</h2>
-  {% for f in findings if f.status == "FAIL" %}
-  <div class="finding-card">
-    <div class="header">
-      <span class="rule-id">{{ f.section_number }} — {{ f.rule_title }}</span>
-      <span><span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span> <span class="badge st-fail">FAIL</span></span>
+<!-- ═══ False Positive Analysis ═══ -->
+{% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
+<div class="section" id="sec-fp-analysis">
+  <h2>False Positive Analysis</h2>
+  <div class="fp-section-card">
+    <h3>⚠ Potential False Positives Detected</h3>
+    <p style="font-size: 9.5px; margin-bottom: 10px; color: #475569;">
+      The intelligent analysis engine has identified <strong>{{ fp_summary.total_suspects }}</strong> finding(s) that may be false positives.
+      These should be reviewed by an auditor before finalizing the report.
+    </p>
+    <div class="fp-stat-row">
+      <div class="fp-stat"><div class="val" style="color:#dc2626">{{ fp_summary.high_confidence }}</div><div class="lbl">High Confidence</div></div>
+      <div class="fp-stat"><div class="val" style="color:#d97706">{{ fp_summary.medium_confidence }}</div><div class="lbl">Medium Confidence</div></div>
+      <div class="fp-stat"><div class="val" style="color:#3b82f6">{{ fp_summary.low_confidence }}</div><div class="lbl">Low Confidence</div></div>
     </div>
+
+    <h3 style="font-size: 10px; margin-top: 12px;">Suspect Findings Detail</h3>
+    <table style="font-size: 9px;">
+      <thead>
+        <tr><th>Section</th><th>Rule</th><th>Severity</th><th>FP Confidence</th><th>Primary Reason</th></tr>
+      </thead>
+      <tbody>
+        {% for f in findings if f.status == "FAIL" and f.fp_analysis is defined and f.fp_analysis.is_suspect %}
+        <tr>
+          <td>{{ f.section_number }}</td>
+          <td>{{ f.rule_title }}</td>
+          <td><span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span></td>
+          <td>
+            <span class="fp-badge fp-{{ f.fp_analysis.confidence_label | lower }}">
+              {{ f.fp_analysis.confidence_label }} ({{ f.fp_analysis.confidence }}%)
+            </span>
+          </td>
+          <td style="font-size: 8.5px; color: #64748b;">{{ f.fp_analysis.top_reason }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if has_builder and grouped_findings %}
+<!-- ═══ Builder Mode — Group Overview Summary ═══ -->
+<div class="section">
+  <h2>Group Overview</h2>
+  <table class="group-overview-tbl">
+    <thead>
+      <tr>
+        <th>Group</th><th>Total</th><th>Passed</th><th>Failed</th><th>Errors</th>
+        <th style="text-align:center">CRIT</th><th style="text-align:center">HIGH</th>
+        <th style="text-align:center">MED</th><th style="text-align:center">LOW</th>
+        <th>Compliance</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for group in grouped_findings %}
+      <tr>
+        <td style="font-weight:700">{{ group.name }}</td>
+        <td>{{ group.total_count }}</td>
+        <td style="color:#16a34a;font-weight:700">{{ group.pass_count }}</td>
+        <td style="color:#dc2626;font-weight:700">{{ group.fail_count }}</td>
+        <td style="color:#7c3aed">{{ group.error_count }}</td>
+        {% for sev in ["critical", "high", "medium", "low"] %}
+        {% set sc = group.sev_counts.get(sev, 0) %}
+        <td class="sev-cell {{ 'has-val' if sc > 0 else 'zero-val' }}">{{ sc }}</td>
+        {% endfor %}
+        <td>
+          <strong style="{% if group.compliance_pct >= 80 %}color:#16a34a{% elif group.compliance_pct >= 50 %}color:#d97706{% else %}color:#dc2626{% endif %}">{{ group.compliance_pct }}%</strong>
+          <div class="compliance-bar">
+            <div class="fill {% if group.compliance_pct >= 80 %}fill-good{% elif group.compliance_pct >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width:{{ group.compliance_pct }}%"></div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══ Builder Mode — Grouped Findings ═══ -->
+{% for group in grouped_findings %}
+<div class="section group-card" id="sec-group-{{ loop.index }}">
+  <div class="group-card-header">
+    <div style="display:flex;align-items:center;gap:8px;">
+      {% if group.mini_donut %}{{ group.mini_donut|safe }}{% endif %}
+      <div>
+        <h2 style="margin:0">{{ group.name }}</h2>
+        <span style="font-size:8px;color:#64748b">{{ group.total_count }} rules - {{ group.compliance_pct }}% compliant</span>
+      </div>
+    </div>
+    <div class="group-card-stats">
+      <span class="g-pass" style="font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;background:#dcfce7;color:#166534">{{ group.pass_count }} Passed</span>
+      <span class="g-fail" style="font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;background:#fee2e2;color:#991b1b">{{ group.fail_count }} Failed</span>
+      {% if group.error_count > 0 %}
+      <span style="font-size:8px;font-weight:700;padding:2px 8px;border-radius:4px;background:#f3e8ff;color:#6b21a8">{{ group.error_count }} Errors</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if group.sev_detail %}
+  <div style="padding:4px 10px;">
+    {% for sev in ["critical", "high", "medium", "low"] %}
+      {% if group.sev_detail.get(sev) %}
+      {% set sd = group.sev_detail[sev] %}
+      <span class="sev-chip sev-chip-{{ sev }}">{{ sev|upper }}: {{ sd.failed }}F / {{ sd.passed }}P</span>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if group.summary %}
+  <div class="group-summary">
+    <span class="group-summary-lbl">AI Group Summary</span>
+    {{ group.summary }}
+  </div>
+  {% endif %}
+
+  {% if not section_toggles or section_toggles.get('findings_detail', true) %}
+  {% for f in group.findings %}
+  <div class="finding-card sev-border-{{ f.severity }}">
+    <div class="header">
+      <span class="rule-id">{{ f.section_number }} - {{ f.rule_title }}</span>
+      <span>
+        <span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span>
+        <span class="badge st-{{ f.status | lower }}">{{ f.status }}</span>
+        {% if f.fp_analysis is defined and f.fp_analysis.is_suspect %}
+        <span class="fp-badge fp-{{ f.fp_analysis.confidence_label | lower }}">⚠ FP {{ f.fp_analysis.confidence_label }}</span>
+        {% endif %}
+      </span>
+    </div>
+    {% if f.fp_analysis is defined and f.fp_analysis.is_suspect %}
+    <div class="fp-analysis-box">
+      <strong>⚠ Potential False Positive ({{ f.fp_analysis.confidence }}% confidence):</strong> {{ f.fp_analysis.top_reason }}
+      {% if f.fp_analysis.signal_count > 1 %}
+      <ul class="fp-signals">
+        {% for sig in f.fp_analysis.signals %}
+        <li>{{ sig.reason }} ({{ sig.confidence }}%)</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endif %}
     {% if f.description %}<p><span class="field-label">Description:</span> {{ f.description }}</p>{% endif %}
+    {% if f.rationale %}
+    <div class="rationale-box"><strong>Rationale:</strong> {{ f.rationale }}</div>
+    {% endif %}
     <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
     <p><span class="field-label">Actual:</span> <code>{{ f.actual_output }}</code></p>
+    {% if f.evaluation_explanation %}
+    <div class="eval-box"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</div>
+    {% endif %}
+    {% if not section_toggles or section_toggles.get('recommendations', true) %}
     {% if f.remediation %}<p><span class="field-label">Remediation:</span> {{ f.remediation }}</p>{% endif %}
+    {% if f.ai_advice %}
+    <div class="ai-advice-box"><strong>AI Advice:</strong> {{ f.ai_advice }}</div>
+    {% endif %}
+    {% endif %}
+    {% if f.default_value %}<p><span class="field-label">Default Value:</span> <code>{{ f.default_value }}</code></p>{% endif %}
     {% if f.auditor_notes %}<p><span class="field-label">Notes:</span> {{ f.auditor_notes }}</p>{% endif %}
     {% if f.auditor_override %}<p><span class="field-label">Override:</span> {{ f.auditor_override }}</p>{% endif %}
   </div>
   {% endfor %}
+  {% endif %}
+</div>
+{% endfor %}
+
+{% else %}
+<!-- ═══ Default Mode — Failed Rules Grouped by Severity ═══ -->
+<div class="section" id="sec-failed-rules" style="page-break-before: always;">
+  <h2>Failed Rules <span class="section-count">{{ fail_count.val }}</span></h2>
+
+  {% for sev in ["critical", "high", "medium", "low"] %}
+    {% set sev_findings = [] %}
+    {% for f in findings if f.status == "FAIL" and f.severity == sev %}
+      {% if sev_findings.append(f) %}{% endif %}
+    {% endfor %}
+
+    {% if sev_findings | length > 0 %}
+    <div id="sec-fail-{{ sev }}">
+      <div class="severity-group-header sev-bg-{{ sev }}">
+        <span>{{ sev | upper }} SEVERITY</span>
+        <span class="count-badge">{{ sev_findings | length }} rule{{ 's' if sev_findings | length != 1 else '' }}</span>
+      </div>
+
+      {% for f in sev_findings %}
+      <div class="finding-card sev-border-{{ f.severity }}">
+        <div class="header">
+          <span class="rule-id">{{ f.section_number }} - {{ f.rule_title }}</span>
+          <span>
+            <span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span>
+            <span class="badge st-fail">FAIL</span>
+            {% if f.fp_analysis is defined and f.fp_analysis.is_suspect %}
+            <span class="fp-badge fp-{{ f.fp_analysis.confidence_label | lower }}">⚠ FP {{ f.fp_analysis.confidence_label }}</span>
+            {% endif %}
+          </span>
+        </div>
+        {% if f.fp_analysis is defined and f.fp_analysis.is_suspect %}
+        <div class="fp-analysis-box">
+          <strong>⚠ Potential False Positive ({{ f.fp_analysis.confidence }}% confidence):</strong> {{ f.fp_analysis.top_reason }}
+          {% if f.fp_analysis.signal_count > 1 %}
+          <ul class="fp-signals">
+            {% for sig in f.fp_analysis.signals %}
+            <li>{{ sig.reason }} ({{ sig.confidence }}%)</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% if f.description %}<p><span class="field-label">Description:</span> {{ f.description }}</p>{% endif %}
+        {% if f.rationale %}
+        <div class="rationale-box"><strong>Rationale:</strong> {{ f.rationale }}</div>
+        {% endif %}
+        <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
+        <p><span class="field-label">Actual:</span> <code>{{ f.actual_output }}</code></p>
+        {% if f.evaluation_explanation %}
+        <div class="eval-box"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</div>
+        {% endif %}
+        {% if f.remediation %}<p><span class="field-label">Remediation:</span> {{ f.remediation }}</p>{% endif %}
+        {% if f.ai_advice %}
+        <div class="ai-advice-box"><strong>AI Advice:</strong> {{ f.ai_advice }}</div>
+        {% endif %}
+        {% if f.default_value %}<p><span class="field-label">Default Value:</span> <code>{{ f.default_value }}</code></p>{% endif %}
+        {% if f.auditor_notes %}<p><span class="field-label">Notes:</span> {{ f.auditor_notes }}</p>{% endif %}
+        {% if f.auditor_override %}<p><span class="field-label">Override:</span> {{ f.auditor_override }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endfor %}
 </div>
 
-<!-- Passed Rules Summary -->
-{% if include_passed %}
-<div class="section">
-  <h2>Passed Rules Summary</h2>
+<!-- ═══ Errors Section ═══ -->
+{% set error_findings = [] %}
+{% for f in findings if f.status == "ERROR" %}
+  {% if error_findings.append(f) %}{% endif %}
+{% endfor %}
+{% if error_findings | length > 0 %}
+<div class="section" id="sec-error-rules">
+  <h2>Errors <span class="section-count">{{ error_findings | length }}</span></h2>
   <table>
-    <thead><tr><th>Section</th><th>Rule</th><th>Severity</th><th>Target</th></tr></thead>
+    <thead><tr><th>Section</th><th>Rule</th><th>Severity</th><th>Target</th><th>Output</th></tr></thead>
     <tbody>
-      {% set has_passed = namespace(val=false) %}
-      {% for f in findings if f.status == "PASS" %}
-      {% set has_passed.val = true %}
+      {% for f in error_findings %}
       <tr>
         <td>{{ f.section_number }}</td>
         <td>{{ f.rule_title }}</td>
         <td><span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span></td>
         <td>{{ f.target_hostname }}</td>
+        <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><code>{{ f.actual_output[:120] }}</code></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  {% if not has_passed.val %}
-  <p>No passed rules recorded.</p>
-  {% endif %}
 </div>
+{% endif %}
+
+<!-- ═══ Passed Rules Summary ═══ -->
+{% if include_passed %}
+{% set passed_findings = [] %}
+{% for f in findings if f.status == "PASS" %}
+  {% if passed_findings.append(f) %}{% endif %}
+{% endfor %}
+{% if passed_findings | length > 0 %}
+<div class="section" id="sec-passed-rules">
+  <h2>Passed Rules <span class="section-count">{{ passed_findings | length }}</span></h2>
+
+  {# Group passed rules by severity too #}
+  {% for sev in ["critical", "high", "medium", "low"] %}
+    {% set sev_passed = [] %}
+    {% for f in passed_findings if f.severity == sev %}
+      {% if sev_passed.append(f) %}{% endif %}
+    {% endfor %}
+    {% if sev_passed | length > 0 %}
+    <h3>{{ sev | capitalize }} ({{ sev_passed | length }})</h3>
+    <table>
+      <thead><tr><th>Section</th><th>Rule</th><th>Target</th></tr></thead>
+      <tbody>
+        {% for f in sev_passed %}
+        <tr>
+          <td>{{ f.section_number }}</td>
+          <td>{{ f.rule_title }}</td>
+          <td>{{ f.target_hostname }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
 {% endif %}
 
 </body>
