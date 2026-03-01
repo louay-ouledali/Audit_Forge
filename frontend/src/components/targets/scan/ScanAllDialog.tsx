@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Crosshair,
@@ -53,18 +54,18 @@ export default function ScanAllDialog({ targets, open, onClose, onLaunch }: Prop
     if (ids.length > 0) onLaunch(ids, concurrency);
   };
 
-  return (
+  return createPortal(
     <>
-      {/* Backdrop */}
+      {/* Backdrop — portaled to body to escape backdrop-blur containing block */}
       <div
-        className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+        className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
 
       {/* Dialog */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
         <div
-          className="w-full max-w-lg rounded-2xl border border-dark-border bg-dark-card shadow-2xl shadow-black/50"
+          className="pointer-events-auto w-full max-w-lg rounded-2xl border border-dark-border bg-dark-card shadow-2xl shadow-black/50"
           onClick={e => e.stopPropagation()}
         >
           {/* Header */}
@@ -165,6 +166,7 @@ export default function ScanAllDialog({ targets, open, onClose, onLaunch }: Prop
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

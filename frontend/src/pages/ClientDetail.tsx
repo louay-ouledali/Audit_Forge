@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Plus, Pencil, Trash2, X } from 'lucide-react';
 import type { Client, Mission } from '@/types';
@@ -99,9 +100,11 @@ export default function ClientDetail() {
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">{error}</div>}
 
       {/* Form Modal */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <form onSubmit={handleSubmit} className="w-full max-w-lg rounded-xl border border-dark-border bg-dark-elevated p-6 shadow-2xl space-y-4">
+      {showForm && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={handleCancel} />
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
+          <form onSubmit={handleSubmit} className="pointer-events-auto w-full max-w-lg rounded-xl border border-dark-border bg-dark-elevated p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium text-white">{editingId ? 'Edit Mission' : 'New Mission'}</h3>
               <button type="button" onClick={handleCancel} className="rounded-md p-1 text-dark-muted hover:bg-dark-overlay hover:text-white"><X className="h-5 w-5" /></button>
@@ -133,7 +136,9 @@ export default function ClientDetail() {
               <button type="submit" className="rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover">{editingId ? 'Update' : 'Create'}</button>
             </div>
           </form>
-        </div>
+          </div>
+        </>,
+        document.body,
       )}
 
       {/* Missions Table */}

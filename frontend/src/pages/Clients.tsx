@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Search, Building2, Mail, User, X, LayoutGrid, List, ArrowUpDown, ArrowRight } from 'lucide-react';
 import type { Client } from '@/types';
@@ -175,9 +176,11 @@ export default function Clients() {
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">{error}</div>}
 
       {/* Modal */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <form onSubmit={handleSubmit} className="w-full max-w-lg rounded-xl border border-dark-border bg-dark-elevated p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+      {showForm && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={handleCancel} />
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
+          <form onSubmit={handleSubmit} className="pointer-events-auto w-full max-w-lg rounded-xl border border-dark-border bg-dark-elevated p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-dark-border pb-4">
               <h3 className="text-xl font-semibold text-white">{editingId ? 'Edit Client' : 'New Client'}</h3>
               <button type="button" onClick={handleCancel} className="rounded-md p-1.5 text-dark-muted hover:bg-dark-overlay hover:text-white transition-colors"><X className="h-5 w-5" /></button>
@@ -214,7 +217,9 @@ export default function Clients() {
               <button type="submit" className="rounded-lg bg-ey-yellow px-5 py-2 text-sm font-semibold text-black hover:bg-ey-yellow-hover shadow-lg shadow-ey-yellow/10 transition-all">{editingId ? 'Save Changes' : 'Create Client'}</button>
             </div>
           </form>
-        </div>
+          </div>
+        </>,
+        document.body,
       )}
 
       {/* Empty State vs Client List */}

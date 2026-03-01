@@ -18,17 +18,21 @@ import {
   User,
   Calendar,
   Monitor,
-  Globe,
   Activity,
   LayoutDashboard,
   BarChart3,
   ShieldAlert,
   ShieldCheck,
+  Terminal,
+  Network,
+  Database,
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 import type { Client, Mission, Target, ScanDetail } from '@/types';
 import * as api from '../services/api';
 import logoImg from '../assets/logo.png';
+import TargetCardGrid from '@/components/targets/TargetCardGrid';
+import TargetConfigDrawer from '@/components/targets/TargetConfigDrawer';
 
 /* ── Status styling ──────────────────────────────────────────── */
 const STATUS_STYLES: Record<string, string> = {
@@ -38,23 +42,23 @@ const STATUS_STYLES: Record<string, string> = {
 };
 const STATUS_LABELS: Record<string, string> = { in_progress: 'In Progress', completed: 'Completed', cancelled: 'Cancelled' };
 
-const TARGET_ICONS: Record<string, typeof Monitor> = { windows: Monitor, linux: Server, network: Globe };
-
 /* ── Tab type ────────────────────────────────────────────────── */
 type WorkspaceTab = 'overview' | 'missions' | 'targets';
 
-/* ── Target form ─────────────────────────────────────────────── */
-interface TargetForm {
+/* ── New target quick-create form ─────────────────────────────── */
+const PLATFORM_OPTIONS = [
+  { key: 'windows', label: 'Windows', icon: Monitor, color: 'sky' },
+  { key: 'linux', label: 'Linux', icon: Terminal, color: 'emerald' },
+  { key: 'network', label: 'Network', icon: Network, color: 'purple' },
+  { key: 'database', label: 'Database', icon: Database, color: 'orange' },
+] as const;
+
+interface NewTargetForm {
   hostname: string;
   ip_address: string;
   target_type: string;
-  connection_method: string;
-  ssh_username: string;
-  ssh_password: string;
-  port: string;
-  notes: string;
 }
-const emptyTargetForm: TargetForm = { hostname: '', ip_address: '', target_type: 'windows', connection_method: 'ssh', ssh_username: '', ssh_password: '', port: '', notes: '' };
+const emptyNewTargetForm: NewTargetForm = { hostname: '', ip_address: '', target_type: 'windows' };
 
 /* ── Mission form ────────────────────────────────────────────── */
 interface MissionForm {
@@ -99,10 +103,12 @@ export default function ClientWorkspace() {
   const [editingMissionId, setEditingMissionId] = useState<number | null>(null);
   const [missionForm, setMissionForm] = useState<MissionForm>(emptyMissionForm);
 
-  /* ── Target form state ───────────────────────────────────── */
-  const [showTargetForm, setShowTargetForm] = useState(false);
-  const [editingTargetId, setEditingTargetId] = useState<number | null>(null);
-  const [targetForm, setTargetForm] = useState<TargetForm>(emptyTargetForm);
+  /* ── Target state (new card grid + config drawer) ─────────── */
+  const [showNewTargetForm, setShowNewTargetForm] = useState(false);
+  const [newTargetForm, setNewTargetForm] = useState<NewTargetForm>(emptyNewTargetForm);
+  const [drawerTarget, setDrawerTarget] = useState<Target | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [creatingTarget, setCreatingTarget] = useState(false);
 
   /* ── Fetch data ──────────────────────────────────────────── */
   const fetchData = useCallback(async () => {
@@ -273,46 +279,47 @@ export default function ClientWorkspace() {
     catch { setError('Failed to delete mission'); }
   };
 
-  /* ── Target CRUD ─────────────────────────────────────────── */
-  const handleTargetSubmit = async (e: React.FormEvent) => {
+  /* ── Target CRUD (new: quick-create + drawer) ─────────────── */
+  const handleNewTargetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newTargetForm.hostname && !newTargetForm.ip_address) {
+      setError('Please enter a hostname or IP address');
+      return;
+    }
     setError('');
+    setCreatingTarget(true);
     try {
-      const payload: Partial<Target> & { client_id: number; ssh_password?: string } = {
+      const created = await api.createTarget({
         client_id: clientId,
-        hostname: targetForm.hostname || null,
-        ip_address: targetForm.ip_address || null,
-        target_type: targetForm.target_type,
-        connection_method: targetForm.connection_method || null,
-        ssh_username: targetForm.ssh_username || null,
-        port: targetForm.port ? parseInt(targetForm.port) : null,
-        notes: targetForm.notes || null,
-        ssh_password: targetForm.ssh_password || undefined,
-      };
-      if (editingTargetId) await api.updateTarget(editingTargetId, payload);
-      else await api.createTarget(payload);
-      setShowTargetForm(false);
-      setEditingTargetId(null);
-      setTargetForm(emptyTargetForm);
+        hostname: newTargetForm.hostname || null,
+        ip_address: newTargetForm.ip_address || null,
+        target_type: newTargetForm.target_type,
+      });
+      setShowNewTargetForm(false);
+      setNewTargetForm(emptyNewTargetForm);
       await fetchData();
+      // Open the config drawer immediately so user can fill in creds & benchmark
+      setDrawerTarget(created);
+      setDrawerOpen(true);
     } catch {
-      setError(editingTargetId ? 'Failed to update target' : 'Failed to create target');
+      setError('Failed to create target');
+    } finally {
+      setCreatingTarget(false);
     }
   };
 
-  const handleEditTarget = (target: Target) => {
-    setTargetForm({
-      hostname: target.hostname ?? '',
-      ip_address: target.ip_address ?? '',
-      target_type: target.target_type,
-      connection_method: target.connection_method ?? 'ssh',
-      ssh_username: target.ssh_username ?? '',
-      ssh_password: '',
-      port: target.port?.toString() ?? '',
-      notes: target.notes ?? '',
-    });
-    setEditingTargetId(target.id);
-    setShowTargetForm(true);
+  const handleConfigure = (target: Target) => {
+    setDrawerTarget(target);
+    setDrawerOpen(true);
+  };
+
+  const handleDrawerClose = () => {
+    setDrawerOpen(false);
+    setTimeout(() => setDrawerTarget(null), 300);
+  };
+
+  const handleDrawerSaved = async () => {
+    await fetchData();
   };
 
   const handleDeleteTarget = async (targetId: number) => {
@@ -321,8 +328,8 @@ export default function ClientWorkspace() {
     catch { setError('Failed to delete target'); }
   };
 
+  const cancelNewTargetForm = () => { setShowNewTargetForm(false); setNewTargetForm(emptyNewTargetForm); };
   const cancelMissionForm = () => { setShowMissionForm(false); setEditingMissionId(null); setMissionForm(emptyMissionForm); };
-  const cancelTargetForm = () => { setShowTargetForm(false); setEditingTargetId(null); setTargetForm(emptyTargetForm); };
 
   /* ── Loading / Not found ─────────────────────────────────── */
   if (loading) {
@@ -551,7 +558,7 @@ export default function ClientWorkspace() {
             )}
           </div>
           <button
-            onClick={() => activeTab === 'missions' ? (setShowMissionForm(true), setEditingMissionId(null), setMissionForm(emptyMissionForm)) : (setShowTargetForm(true), setEditingTargetId(null), setTargetForm(emptyTargetForm))}
+            onClick={() => activeTab === 'missions' ? (setShowMissionForm(true), setEditingMissionId(null), setMissionForm(emptyMissionForm)) : (setShowNewTargetForm(true), setNewTargetForm(emptyNewTargetForm))}
             className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2.5 text-sm font-semibold text-black shadow-sm transition-colors hover:bg-ey-yellow-hover"
           >
             <Plus className="h-4 w-4" /> New {activeTab === 'missions' ? 'Mission' : 'Target'}
@@ -776,120 +783,105 @@ export default function ClientWorkspace() {
 
       {/* ── Targets Tab ────────────────────────────────────── */}
       {activeTab === 'targets' && (
-        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-          {/* Target Form Modal */}
-          {showTargetForm && (
-            <div className="mb-6 rounded-xl border border-dark-border bg-dark-card p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
-              <h3 className="mb-4 text-lg font-semibold text-white border-b border-dark-border pb-3">{editingTargetId ? 'Edit Target' : 'New Target'}</h3>
-              <form onSubmit={handleTargetSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-6">
+          {/* New Target Quick-Create Panel */}
+          {showNewTargetForm && (
+            <div className="rounded-xl border border-dark-border bg-dark-card p-6 shadow-xl animate-in fade-in zoom-in-95 duration-200">
+              <h3 className="mb-4 text-lg font-semibold text-white border-b border-dark-border pb-3">New Target</h3>
+              <form onSubmit={handleNewTargetSubmit} className="space-y-5">
+                {/* Platform type selector (visual) */}
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Hostname</label>
-                  <input value={targetForm.hostname} onChange={e => setTargetForm({ ...targetForm, hostname: e.target.value })} className={inputClass} placeholder="server01.local" />
+                  <label className="mb-2 block text-sm font-medium text-dark-secondary">Platform Type</label>
+                  <div className="grid grid-cols-4 gap-3">
+                    {PLATFORM_OPTIONS.map(opt => {
+                      const PIcon = opt.icon;
+                      const selected = newTargetForm.target_type === opt.key;
+                      const colorMap: Record<string, { ring: string; bg: string; text: string }> = {
+                        sky: { ring: 'ring-sky-500/60', bg: 'bg-sky-500/10 border-sky-500/30', text: 'text-sky-400' },
+                        emerald: { ring: 'ring-emerald-500/60', bg: 'bg-emerald-500/10 border-emerald-500/30', text: 'text-emerald-400' },
+                        purple: { ring: 'ring-purple-500/60', bg: 'bg-purple-500/10 border-purple-500/30', text: 'text-purple-400' },
+                        orange: { ring: 'ring-orange-500/60', bg: 'bg-orange-500/10 border-orange-500/30', text: 'text-orange-400' },
+                      };
+                      const c = colorMap[opt.color];
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setNewTargetForm({ ...newTargetForm, target_type: opt.key })}
+                          className={`flex flex-col items-center gap-2 rounded-xl border p-4 transition-all ${
+                            selected
+                              ? `${c.bg} ring-2 ${c.ring}`
+                              : 'border-dark-border bg-dark-elevated hover:border-dark-hover'
+                          }`}
+                        >
+                          <PIcon className={`h-7 w-7 ${selected ? c.text : 'text-dark-muted'}`} />
+                          <span className={`text-xs font-bold uppercase tracking-wider ${selected ? c.text : 'text-dark-secondary'}`}>
+                            {opt.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-dark-secondary">IP Address</label>
-                  <input value={targetForm.ip_address} onChange={e => setTargetForm({ ...targetForm, ip_address: e.target.value })} className={inputClass} placeholder="192.168.1.100" />
+
+                {/* Hostname + IP */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-dark-secondary">Hostname</label>
+                    <input
+                      value={newTargetForm.hostname}
+                      onChange={e => setNewTargetForm({ ...newTargetForm, hostname: e.target.value })}
+                      className={inputClass}
+                      placeholder="server01.local"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-dark-secondary">IP Address</label>
+                    <input
+                      value={newTargetForm.ip_address}
+                      onChange={e => setNewTargetForm({ ...newTargetForm, ip_address: e.target.value })}
+                      className={inputClass}
+                      placeholder="192.168.1.100"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Type *</label>
-                  <select value={targetForm.target_type} onChange={e => setTargetForm({ ...targetForm, target_type: e.target.value })} className={inputClass}>
-                    <option value="windows">Windows</option>
-                    <option value="linux">Linux</option>
-                    <option value="network">Network</option>
-                    <option value="database">Database</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Connection Method</label>
-                  <select value={targetForm.connection_method} onChange={e => setTargetForm({ ...targetForm, connection_method: e.target.value })} className={inputClass}>
-                    <option value="ssh">SSH</option>
-                    <option value="winrm">WinRM</option>
-                    <option value="local">Local</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-dark-secondary">SSH Username</label>
-                  <input value={targetForm.ssh_username} onChange={e => setTargetForm({ ...targetForm, ssh_username: e.target.value })} className={inputClass} placeholder="admin" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-dark-secondary">SSH Password</label>
-                  <input type="password" value={targetForm.ssh_password} onChange={e => setTargetForm({ ...targetForm, ssh_password: e.target.value })} className={inputClass} placeholder="••••••••" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Port</label>
-                  <input value={targetForm.port} onChange={e => setTargetForm({ ...targetForm, port: e.target.value })} className={inputClass} placeholder="22" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Notes</label>
-                  <input value={targetForm.notes} onChange={e => setTargetForm({ ...targetForm, notes: e.target.value })} className={inputClass} placeholder="Optional notes…" />
-                </div>
-                <div className="flex gap-3 justify-end sm:col-span-2 pt-4 border-t border-dark-border mt-2">
-                  <button type="button" onClick={cancelTargetForm} className="rounded-lg border border-dark-border bg-dark-card px-5 py-2 text-sm font-medium text-dark-secondary hover:bg-dark-overlay hover:text-white transition-colors">
+
+                <div className="flex gap-3 justify-end pt-4 border-t border-dark-border">
+                  <button type="button" onClick={cancelNewTargetForm} className="rounded-lg border border-dark-border bg-dark-card px-5 py-2 text-sm font-medium text-dark-secondary hover:bg-dark-overlay hover:text-white transition-colors">
                     Cancel
                   </button>
-                  <button type="submit" className="rounded-lg bg-ey-yellow px-5 py-2 text-sm font-semibold text-black hover:bg-ey-yellow-hover shadow-lg shadow-ey-yellow/10 transition-all">
-                    {editingTargetId ? 'Update Target' : 'Create Target'}
+                  <button
+                    type="submit"
+                    disabled={creatingTarget}
+                    className="rounded-lg bg-ey-yellow px-5 py-2 text-sm font-semibold text-black hover:bg-ey-yellow-hover shadow-lg shadow-ey-yellow/10 transition-all disabled:opacity-50"
+                  >
+                    {creatingTarget ? 'Creating…' : 'Create & Configure'}
                   </button>
                 </div>
               </form>
             </div>
           )}
 
-          {/* Target Cards */}
-          {filteredTargets.length === 0 ? (
-            <div className="rounded-xl border-2 border-dashed border-dark-border bg-dark-card/50 p-16 text-center">
-              <Server className="mx-auto h-12 w-12 text-dark-muted" />
-              <p className="mt-4 font-medium text-white">No targets found</p>
-              <p className="mt-1 text-sm text-dark-secondary">Add targets to this client to begin scanning.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredTargets.map((target, index) => {
-                const TargetIcon = TARGET_ICONS[target.target_type] || Server;
-                return (
-                  <div key={target.id} className="glow-card group rounded-xl border border-dark-border bg-dark-card p-5 transition-all duration-300 hover:border-dark-hover shadow-sm" style={{ animationDelay: `${index * 50}ms` }}>
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-dark-elevated border border-dark-border group-hover:border-sky-500/30 transition-colors">
-                          <TargetIcon className="h-6 w-6 text-sky-400" />
-                        </div>
-                        <div>
-                          <h4 className="text-base font-bold text-white group-hover:text-sky-400 transition-colors">{target.hostname || target.ip_address || `Target #${target.id}`}</h4>
-                          <span className="inline-block mt-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-dark-overlay text-dark-secondary border border-dark-border/50">
-                            {target.target_type}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={() => handleEditTarget(target)} className="rounded-md p-1.5 text-dark-muted hover:bg-ey-yellow/10 hover:text-ey-yellow transition-colors bg-dark-elevated/50 md:bg-transparent">
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => handleDeleteTarget(target.id)} className="rounded-md p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400 transition-colors bg-dark-elevated/50 md:bg-transparent">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
+          {/* Target Cards Grid */}
+          <TargetCardGrid
+            targets={filteredTargets}
+            onConfigure={handleConfigure}
+            onDelete={handleDeleteTarget}
+            emptyMessage="No targets found for this client."
+            emptyHint={
+              <p className="mt-1.5 text-xs text-dark-muted leading-relaxed max-w-sm mx-auto">
+                Click <strong className="text-ey-yellow">New Target</strong> to add a target with platform-specific configuration.
+              </p>
+            }
+          />
 
-                    <div className="mt-5 space-y-2 text-sm">
-                      <div className="flex items-center justify-between border-b border-dark-border/50 pb-2">
-                        <span className="text-dark-muted">IP / Port</span>
-                        <span className="font-medium text-dark-secondary">{target.ip_address || 'N/A'}{target.port ? `:${target.port}` : ''}</span>
-                      </div>
-                      <div className="flex items-center justify-between border-b border-dark-border/50 pb-2">
-                        <span className="text-dark-muted">Method</span>
-                        <span className="font-medium text-dark-secondary uppercase text-xs tracking-wider">{target.connection_method || 'N/A'}</span>
-                      </div>
-                      {target.notes && (
-                        <div className="pt-1">
-                          <p className="text-xs text-dark-muted truncate" title={target.notes}>{target.notes}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {/* Config Drawer */}
+          <TargetConfigDrawer
+            target={drawerTarget}
+            open={drawerOpen}
+            onClose={handleDrawerClose}
+            onSaved={handleDrawerSaved}
+          />
         </div>
       )}
     </div>

@@ -33,7 +33,7 @@ export default function LinuxForm({ form, setField, setConnectionMethod: _setCM,
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* ── Connection ─────────────────────────────────────── */}
       <FormSection title="Connection">
         <div>
@@ -42,7 +42,7 @@ export default function LinuxForm({ form, setField, setConnectionMethod: _setCM,
             <option value="ssh">SSH</option>
           </select>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           <div className="col-span-2">
             <label className={fieldLabel}>IP Address</label>
             <input
@@ -135,7 +135,7 @@ export default function LinuxForm({ form, setField, setConnectionMethod: _setCM,
 
       {/* ── Benchmark ──────────────────────────────────────── */}
       <FormSection title="Benchmark">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2">
           <div>
             <label className={fieldLabel}>Default Benchmark</label>
             <select

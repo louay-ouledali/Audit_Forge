@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Package,
@@ -119,13 +120,14 @@ export default function UsbBulkExportDialog({ targets, open, onClose, missionId:
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={dlState?.downloading ? undefined : handleDismiss} />
+  return createPortal(
+    <>
+      {/* Backdrop — portaled to body to escape backdrop-blur containing block */}
+      <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={dlState?.downloading ? undefined : handleDismiss} />
 
       {/* Dialog */}
-      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-dark-border bg-dark-card shadow-2xl shadow-ey-yellow/5">
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
+        <div className="pointer-events-auto w-full max-w-lg rounded-2xl border border-dark-border bg-dark-card shadow-2xl shadow-ey-yellow/5">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-dark-border p-5">
           <div className="flex items-center gap-3">
@@ -302,8 +304,10 @@ export default function UsbBulkExportDialog({ targets, open, onClose, missionId:
             </button>
           )}
         </div>
+        </div>
       </div>
-    </div>
+    </>,
+    document.body,
   );
 }
 

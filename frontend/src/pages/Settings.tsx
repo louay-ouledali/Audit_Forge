@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import {
   Save, CheckCircle2, XCircle, Download, Upload, Database,
@@ -501,9 +502,11 @@ export default function Settings() {
       </section>
 
       {/* Restore Confirmation Dialog */}
-      {showRestoreConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="mx-4 w-full max-w-md rounded-xl border border-dark-border bg-dark-card p-6 shadow-2xl">
+      {showRestoreConfirm && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={() => { setShowRestoreConfirm(false); restoreFileRef.current = null; }} />
+          <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ pointerEvents: 'none' }}>
+            <div className="pointer-events-auto mx-4 w-full max-w-md rounded-xl border border-dark-border bg-dark-card p-6 shadow-2xl">
             <div className="flex items-center gap-3 mb-4">
               <AlertTriangle className="h-6 w-6 text-amber-400" />
               <h4 className="text-lg font-semibold text-white">Confirm Restore</h4>
@@ -529,8 +532,10 @@ export default function Settings() {
                 Restore
               </button>
             </div>
+            </div>
           </div>
-        </div>
+        </>,
+        document.body,
       )}
 
       <div className="flex justify-end">

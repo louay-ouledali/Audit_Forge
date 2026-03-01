@@ -35,7 +35,7 @@ export default function DatabaseForm({ form, setField, setConnectionMethod, benc
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* ── Connection ─────────────────────────────────────── */}
       <FormSection title="Connection">
         <div>
@@ -50,7 +50,7 @@ export default function DatabaseForm({ form, setField, setConnectionMethod, benc
             ))}
           </select>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           <div className="col-span-2">
             <label className={fieldLabel}>Host</label>
             <input
@@ -70,7 +70,7 @@ export default function DatabaseForm({ form, setField, setConnectionMethod, benc
             />
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-2">
           <div>
             <label className={fieldLabel}>Database Name</label>
             <input

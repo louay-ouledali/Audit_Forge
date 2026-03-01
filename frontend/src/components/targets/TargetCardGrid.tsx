@@ -6,13 +6,15 @@ interface Props {
   targets: Target[];
   onConfigure: (target: Target) => void;
   onDelete: (targetId: number) => void;
-  onScan: (target: Target) => void;
-  onUsbExport: (target: Target) => void;
-  onImportResults: (target: Target) => void;
-  onSetupHelp: (target: Target) => void;
-  onViewFindings: (target: Target) => void;
+  onScan?: (target: Target) => void;
+  onUsbExport?: (target: Target) => void;
+  onImportResults?: (target: Target) => void;
+  onSetupHelp?: (target: Target) => void;
+  onViewFindings?: (target: Target) => void;
   scanningTargetIds?: Set<number>;
   scanProgressMap?: Map<number, number>;
+  emptyMessage?: string;
+  emptyHint?: React.ReactNode;
 }
 
 export default function TargetCardGrid({
@@ -26,16 +28,20 @@ export default function TargetCardGrid({
   onViewFindings,
   scanningTargetIds = new Set(),
   scanProgressMap = new Map(),
+  emptyMessage,
+  emptyHint,
 }: Props) {
   if (targets.length === 0) {
     return (
       <div className="rounded-xl border-2 border-dashed border-dark-border bg-dark-card p-12 text-center">
         <Server className="mx-auto h-10 w-10 text-dark-muted" />
-        <p className="mt-3 text-sm font-medium text-dark-secondary">No targets assigned to this mission.</p>
-        <p className="mt-1.5 text-xs text-dark-muted leading-relaxed max-w-sm mx-auto">
-          Use the <Radar className="inline h-3 w-3 text-ey-yellow mx-0.5" /> Discovery bar above to find devices on your network, 
-          assign an existing client target, or bulk import targets via CSV.
-        </p>
+        <p className="mt-3 text-sm font-medium text-dark-secondary">{emptyMessage || 'No targets found.'}</p>
+        {emptyHint ?? (
+          <p className="mt-1.5 text-xs text-dark-muted leading-relaxed max-w-sm mx-auto">
+            Use the <Radar className="inline h-3 w-3 text-ey-yellow mx-0.5" /> Discovery bar above to find devices on your network, 
+            assign an existing client target, or bulk import targets via CSV.
+          </p>
+        )}
       </div>
     );
   }

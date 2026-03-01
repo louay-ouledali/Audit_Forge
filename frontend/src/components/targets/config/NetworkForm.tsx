@@ -31,7 +31,7 @@ export default function NetworkForm({ form, setField, setConnectionMethod: _setC
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* ── Connection ─────────────────────────────────────── */}
       <FormSection title="Connection">
         <div>
@@ -40,7 +40,7 @@ export default function NetworkForm({ form, setField, setConnectionMethod: _setC
             <option value="ssh">SSH (Netmiko)</option>
           </select>
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-3 gap-2">
           <div className="col-span-2">
             <label className={fieldLabel}>IP Address</label>
             <input

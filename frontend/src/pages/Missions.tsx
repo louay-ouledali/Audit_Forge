@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Search, Crosshair, Calendar, X, Building2, ChevronDown, ChevronUp, Activity, Server, Loader2 } from 'lucide-react';
 import type { Client, Mission, Target, ScanDetail } from '@/types';
@@ -261,11 +262,13 @@ export default function Missions() {
       )}
 
       {/* Create/Edit Form — Modal overlay */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      {showForm && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={handleCancel} />
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
           <form
             onSubmit={handleSubmit}
-            className="w-full max-w-lg rounded-xl border border-dark-border bg-dark-card p-6 shadow-2xl space-y-5"
+            className="pointer-events-auto w-full max-w-lg rounded-xl border border-dark-border bg-dark-card p-6 shadow-2xl space-y-5"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-white">
@@ -368,6 +371,8 @@ export default function Missions() {
             </div>
           </form>
         </div>
+        </>,
+        document.body,
       )}
 
       {/* Mission Cards */}

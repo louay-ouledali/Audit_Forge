@@ -106,11 +106,11 @@ interface Props {
   target: Target;
   onConfigure: (target: Target) => void;
   onDelete: (targetId: number) => void;
-  onScan: (target: Target) => void;
-  onUsbExport: (target: Target) => void;
-  onImportResults: (target: Target) => void;
-  onSetupHelp: (target: Target) => void;
-  onViewFindings: (target: Target) => void;
+  onScan?: (target: Target) => void;
+  onUsbExport?: (target: Target) => void;
+  onImportResults?: (target: Target) => void;
+  onSetupHelp?: (target: Target) => void;
+  onViewFindings?: (target: Target) => void;
   isScanning?: boolean;
   scanProgress?: number;
 }
@@ -278,7 +278,7 @@ export default function TargetCard({
         </div>
 
         {/* Setup Help link (shown when connection failed) */}
-        {connStatus === 'failed' && (
+        {connStatus === 'failed' && onSetupHelp && (
           <div className="flex items-center justify-end">
             <button
               onClick={() => onSetupHelp(target)}
@@ -306,9 +306,11 @@ export default function TargetCard({
         </div>
       </div>
 
-      {/* ── Action buttons ────────────────────────────────────── */}
+      {/* ── Action buttons (only in mission context) ─────────── */}
+      {(onScan || onUsbExport) && (
       <div className="mt-4 flex gap-2">
         {/* Scan Now */}
+        {onScan && (
         <button
           onClick={() => onScan(target)}
           disabled={!hasCreds || isScanning || !hasBenchmark}
@@ -321,8 +323,10 @@ export default function TargetCard({
             <><Play className="h-3.5 w-3.5" /> Scan Now</>
           )}
         </button>
+        )}
 
         {/* USB Export */}
+        {onUsbExport && (
         <div className="relative group/usb">
           <button
             onClick={() => onUsbExport(target)}
@@ -346,7 +350,9 @@ export default function TargetCard({
             </div>
           )}
         </div>
+        )}
       </div>
+      )}
 
       {/* ── Unconfigured CTA ──────────────────────────────────── */}
       {isUnconfigured && (
@@ -376,19 +382,21 @@ export default function TargetCard({
                 {target.last_scan_compliance.toFixed(1)}%
               </span>
             )}
+            {onViewFindings && (
             <button
               onClick={() => onViewFindings(target)}
               className="flex items-center gap-1 text-[11px] text-dark-secondary hover:text-ey-yellow transition-colors"
             >
               View <ExternalLink className="h-3 w-3" />
             </button>
+            )}
           </div>
         </div>
       ) : (
         <div className="mt-4 border-t border-dark-border/50 pt-3">
           <div className="flex items-center justify-between">
             <p className="text-xs text-dark-muted">Never scanned</p>
-            {hasBenchmark && (
+            {hasBenchmark && onImportResults && (
               <button
                 onClick={() => onImportResults(target)}
                 className="flex items-center gap-1 text-[11px] text-dark-secondary hover:text-ey-yellow transition-colors"
