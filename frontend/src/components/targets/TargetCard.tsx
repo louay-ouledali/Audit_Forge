@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import type { Target, ConnectionTestResult } from '@/types';
 import * as api from '@/services/api';
+import PrerequisiteGuideModal from './PrerequisiteGuideModal';
 
 /* ── Platform config (static classes for Tailwind) ───────────── */
 const PLATFORM: Record<string, {
@@ -131,6 +132,7 @@ export default function TargetCard({
   const Icon = p.icon;
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+  const [showLocalPrereqs, setShowLocalPrereqs] = useState(false);
 
   const hasCreds = !!(target.ssh_username || target.has_enable_password);
   const hasBenchmark = !!target.default_benchmark_id;
@@ -278,20 +280,18 @@ export default function TargetCard({
         </div>
 
         {/* Setup Help link — always visible, highlighted when connection failed */}
-        {onSetupHelp && (
-          <div className="flex items-center justify-end">
-            <button
-              onClick={() => onSetupHelp(target)}
-              className={`flex items-center gap-1 text-[11px] transition-colors ${
-                connStatus === 'failed'
-                  ? 'text-amber-400 hover:text-ey-yellow font-medium'
-                  : 'text-dark-muted hover:text-dark-secondary'
-              }`}
-            >
-              <BookOpen className="h-3 w-3" /> Setup Help
-            </button>
-          </div>
-        )}
+        <div className="flex items-center justify-end">
+          <button
+            onClick={() => onSetupHelp ? onSetupHelp(target) : setShowLocalPrereqs(true)}
+            className={`flex items-center gap-1 text-[11px] transition-colors ${
+              connStatus === 'failed'
+                ? 'text-amber-400 hover:text-ey-yellow font-medium'
+                : 'text-dark-muted hover:text-dark-secondary'
+            }`}
+          >
+            <BookOpen className="h-3 w-3" /> Setup Help
+          </button>
+        </div>
 
         {/* Benchmark */}
         <div className="flex items-center justify-between text-xs">
@@ -412,6 +412,15 @@ export default function TargetCard({
         <div className="mt-4 border-t border-dark-border/50 pt-3">
           <p className="text-xs text-dark-muted">Never scanned</p>
         </div>
+      )}
+
+      {/* Inline prerequisite modal (used when parent doesn't provide onSetupHelp) */}
+      {!onSetupHelp && (
+        <PrerequisiteGuideModal
+          target={showLocalPrereqs ? target : null}
+          open={showLocalPrereqs}
+          onClose={() => setShowLocalPrereqs(false)}
+        />
       )}
     </div>
   );
