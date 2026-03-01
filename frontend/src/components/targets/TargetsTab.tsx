@@ -17,6 +17,7 @@ import ScanAllDialog from './scan/ScanAllDialog';
 import ActiveScansPanel from './scan/ActiveScansPanel';
 import UsbBulkExportDialog from './scan/UsbBulkExportDialog';
 import PrerequisiteGuideModal from './PrerequisiteGuideModal';
+import ScanHistoryPanel from './ScanHistoryPanel';
 
 interface Props {
   missionId: number;
@@ -36,8 +37,17 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: number; failed: number } | null>(null);
 
+  // Scan history refresh key (incremented after scans complete)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
+
+  // Wrap onRefresh to also bump scan history
+  const handleRefreshAll = async () => {
+    await onRefresh();
+    setHistoryRefreshKey(k => k + 1);
+  };
+
   // Scan manager (Phase 7)
-  const scan = useScanManager(missionId, missionTargets, onRefresh);
+  const scan = useScanManager(missionId, missionTargets, handleRefreshAll);
 
   // Config drawer state
   const [drawerTarget, setDrawerTarget] = useState<Target | null>(null);
@@ -127,6 +137,11 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   const handleViewFindings = (target: Target) => {
     // Will switch to Findings tab filtered to this target
     console.log('View findings for target:', target.id);
+  };
+
+  const handleViewScanFindings = (scanId: number) => {
+    // Will switch to Findings tab with this specific scan selected
+    console.log('View findings for scan:', scanId);
   };
 
   const handleImportResults = (target: Target) => {
@@ -330,7 +345,16 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         scanProgressMap={scan.scanProgressMap}
       />
 
-      {/* ── 5. Scan All Dialog ────────────────────────────── */}
+      {/* ── 5. Scan History Panel (collapsible) ────────────── */}
+      <ScanHistoryPanel
+        missionId={missionId}
+        targets={missionTargets}
+        onViewFindings={handleViewScanFindings}
+        onImportResults={handleImportResults}
+        refreshKey={historyRefreshKey}
+      />
+
+      {/* ── 6. Scan All Dialog ────────────────────────────── */}
       <ScanAllDialog
         targets={missionTargets}
         open={scan.showScanAllDialog}
