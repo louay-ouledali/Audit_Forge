@@ -1,35 +1,16 @@
 import { useState } from 'react';
 import {
-  Server,
   X,
   Upload,
   CheckCircle2,
   AlertCircle,
-  Monitor,
-  Terminal,
-  Network,
-  Database,
-  HelpCircle,
-  Plus,
-  Wifi,
 } from 'lucide-react';
 import type { Target } from '@/types';
 import * as api from '@/services/api';
 import { inputClass } from '../mission/badgeHelpers';
 import DiscoveryBar from './DiscoveryBar';
-
-/* ── Platform icon + accent mapping ─────────────────────────── */
-const PLATFORM_CONFIG: Record<string, { icon: typeof Monitor; accent: string }> = {
-  windows:  { icon: Monitor,   accent: 'sky' },
-  linux:    { icon: Terminal,   accent: 'emerald' },
-  network:  { icon: Network,    accent: 'purple' },
-  database: { icon: Database,   accent: 'orange' },
-};
-
-function getPlatform(t: Target) {
-  const key = (t.target_type || '').toLowerCase();
-  return PLATFORM_CONFIG[key] || { icon: HelpCircle, accent: 'gray' };
-}
+import TargetActionBar from './TargetActionBar';
+import TargetCardGrid from './TargetCardGrid';
 
 interface Props {
   missionId: number;
@@ -47,12 +28,22 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState<{ success: number, failed: number } | null>(null);
+  const [importResult, setImportResult] = useState<{ success: number; failed: number } | null>(null);
+
+  // Scanning state (will be enhanced in Phase 7)
+  const [scanningTargetIds] = useState<Set<number>>(new Set());
+  const [scanProgressMap] = useState<Map<number, number>>(new Map());
 
   const unassignedTargets = clientTargets.filter(
     ct => !missionTargets.some(mt => mt.id === ct.id),
   );
 
+  // Targets that could be scanned (have creds + benchmark)
+  const hasScannable = missionTargets.some(
+    t => !!(t.ssh_username || t.has_enable_password) && !!t.default_benchmark_id,
+  );
+
+  /* ── Handlers ──────────────────────────────────────────────── */
   const handleAssignTarget = async () => {
     if (!assignTargetId) return;
     try {
@@ -65,12 +56,44 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   };
 
   const handleUnassignTarget = async (targetId: number) => {
+    if (!confirm('Unassign this target from the mission?')) return;
     try {
       await api.unassignTargetFromMission(missionId, targetId);
       await onRefresh();
     } catch {
       setError('Failed to unassign target');
     }
+  };
+
+  const handleConfigure = (target: Target) => {
+    // Phase 6 will open the TargetConfigDrawer
+    // For now, we could navigate to client workspace or show a placeholder
+    console.log('Configure target:', target.id);
+  };
+
+  const handleScan = (target: Target) => {
+    // Phase 7 will implement per-target scan launch
+    console.log('Scan target:', target.id);
+  };
+
+  const handleUsbExport = (target: Target) => {
+    // Phase 8 will implement per-target USB export
+    console.log('USB export target:', target.id);
+  };
+
+  const handleViewFindings = (target: Target) => {
+    // Will switch to Findings tab filtered to this target
+    console.log('View findings for target:', target.id);
+  };
+
+  const handleScanAll = () => {
+    // Phase 7 will open the ScanAllDialog
+    console.log('Scan All targets');
+  };
+
+  const handleUsbAll = () => {
+    // Phase 8 will open UsbBulkExportDialog
+    console.log('USB Export All');
   };
 
   const handleBulkImport = async () => {
@@ -100,7 +123,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
           connection_method: connectionMethod,
           ssh_username: username,
           ssh_password: password,
-          port: connectionMethod === 'ssh' ? 22 : connectionMethod === 'winrm' ? 5985 : null
+          port: connectionMethod === 'ssh' ? 22 : connectionMethod === 'winrm' ? 5985 : null,
         });
         await api.assignTargetToMission(missionId, newTarget.id);
         successCount++;
@@ -125,10 +148,11 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
 
   return (
     <div className="space-y-6">
+      {/* Error banner */}
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
           {error}
-          <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white">×</button>
+          <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white transition-colors">×</button>
         </div>
       )}
 
@@ -140,47 +164,30 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       />
 
       {/* ── 2. Action Bar ────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row gap-4 items-end sm:items-center justify-between">
-        {/* Assign existing target */}
-        {unassignedTargets.length > 0 ? (
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <select
-              value={assignTargetId}
-              onChange={e => setAssignTargetId(e.target.value ? Number(e.target.value) : '')}
-              className={`${inputClass} max-w-[200px]`}
-            >
-              <option value="">Assign existing target…</option>
-              {unassignedTargets.map(t => (
-                <option key={t.id} value={t.id}>{t.hostname || t.ip_address || `Target #${t.id}`} ({t.target_type})</option>
-              ))}
-            </select>
-            <button
-              onClick={handleAssignTarget}
-              disabled={!assignTargetId}
-              className="rounded-lg bg-ey-yellow px-4 py-2 text-sm font-semibold text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-colors whitespace-nowrap"
-            >
-              Assign
-            </button>
-          </div>
-        ) : <div />}
-
-        <button
-          onClick={() => { setShowImport(!showImport); setImportResult(null); }}
-          className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${showImport ? 'border-ey-yellow text-ey-yellow bg-ey-yellow/10' : 'border-dark-border bg-dark-card text-dark-secondary hover:text-white hover:bg-dark-elevated'}`}
-        >
-          <Upload className="h-4 w-4" /> Bulk Import
-        </button>
-      </div>
+      <TargetActionBar
+        unassignedTargets={unassignedTargets}
+        assignTargetId={assignTargetId}
+        onAssignChange={setAssignTargetId}
+        onAssign={handleAssignTarget}
+        onBulkImportToggle={() => { setShowImport(!showImport); setImportResult(null); }}
+        showImport={showImport}
+        onScanAll={handleScanAll}
+        onUsbAll={handleUsbAll}
+        targetCount={missionTargets.length}
+        hasScannable={hasScannable}
+      />
 
       {/* Bulk Import Panel */}
       {showImport && (
-        <div className="rounded-xl border border-ey-yellow/30 bg-dark-card p-5 animate-in slide-in-from-top-2 fade-in duration-200 shadow-lg shadow-ey-yellow/5">
+        <div className="rounded-xl border border-ey-yellow/30 bg-dark-card p-5 shadow-lg shadow-ey-yellow/5">
           <div className="flex justify-between items-start mb-4">
             <div>
               <h3 className="text-base font-semibold text-white">Bulk Import Targets</h3>
               <p className="text-xs text-dark-secondary mt-1">Paste CSV data to quickly create and assign targets.</p>
             </div>
-            <button onClick={() => setShowImport(false)} className="text-dark-muted hover:text-white"><X className="h-5 w-5" /></button>
+            <button onClick={() => setShowImport(false)} className="text-dark-muted hover:text-white transition-colors">
+              <X className="h-5 w-5" />
+            </button>
           </div>
 
           <div className="bg-dark-elevated rounded-lg p-3 mb-4 text-xs font-mono text-dark-muted border border-dark-border/50">
@@ -204,8 +211,16 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
             <div>
               {importResult && (
                 <div className="flex items-center gap-4 text-sm font-medium">
-                  {importResult.success > 0 && <span className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 className="h-4 w-4" /> {importResult.success} Imported</span>}
-                  {importResult.failed > 0 && <span className="flex items-center gap-1.5 text-red-400"><AlertCircle className="h-4 w-4" /> {importResult.failed} Failed</span>}
+                  {importResult.success > 0 && (
+                    <span className="flex items-center gap-1.5 text-emerald-400">
+                      <CheckCircle2 className="h-4 w-4" /> {importResult.success} Imported
+                    </span>
+                  )}
+                  {importResult.failed > 0 && (
+                    <span className="flex items-center gap-1.5 text-red-400">
+                      <AlertCircle className="h-4 w-4" /> {importResult.failed} Failed
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -215,7 +230,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
               className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-5 py-2 text-sm font-semibold text-black shadow-sm transition-colors hover:bg-ey-yellow-hover disabled:opacity-50"
             >
               {importing ? (
-                <><div className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" /> Processing...</>
+                <><div className="h-4 w-4 animate-spin rounded-full border-2 border-black border-t-transparent" /> Processing…</>
               ) : (
                 <><Upload className="h-4 w-4" /> Import Targets</>
               )}
@@ -225,102 +240,16 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       )}
 
       {/* ── 3. Target Cards Grid ─────────────────────────────── */}
-      {missionTargets.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed border-dark-border bg-dark-card p-12 text-center">
-          <Server className="mx-auto h-10 w-10 text-dark-muted" />
-          <p className="mt-3 text-dark-secondary font-medium">No targets assigned to this mission.</p>
-          <p className="mt-1 text-xs text-dark-muted">
-            Discover your network above, assign an existing client target, or bulk import new ones.
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {missionTargets.map(t => {
-            const platform = getPlatform(t);
-            const Icon = platform.icon;
-            const a = platform.accent;
-
-            return (
-              <div
-                key={t.id}
-                className={`group relative rounded-xl border bg-dark-card p-5 transition-all duration-200 hover:shadow-lg hover:shadow-black/20
-                  ${t.connection_status === 'ok'
-                    ? 'border-l-2 border-l-emerald-500 border-t-dark-border border-r-dark-border border-b-dark-border'
-                    : t.connection_status === 'failed'
-                      ? 'border-l-2 border-l-red-500 border-t-dark-border border-r-dark-border border-b-dark-border'
-                      : 'border-dark-border'
-                  }`}
-              >
-                {/* Top row: Icon + Name + Actions */}
-                <div className="flex items-start gap-3">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-${a}-500/10 border border-${a}-500/20`}>
-                    <Icon className={`h-5 w-5 text-${a}-400`} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-white">{t.hostname || `Target #${t.id}`}</p>
-                    <p className="text-xs text-dark-muted font-mono">{t.ip_address || 'No IP'}</p>
-                  </div>
-                  <button
-                    onClick={() => handleUnassignTarget(t.id)}
-                    className="rounded-md bg-dark-elevated p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                    title="Unassign from mission"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {/* Status row */}
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${
-                      t.connection_status === 'ok' ? 'bg-emerald-400' : t.connection_status === 'failed' ? 'bg-red-400' : 'bg-dark-muted'
-                    }`} />
-                    <span className="text-dark-secondary capitalize">
-                      {t.connection_status === 'ok' ? 'Reachable' : t.connection_status === 'failed' ? 'Unreachable' : 'Untested'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className={`inline-flex items-center rounded-full bg-${a}-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-${a}-400`}>
-                      {t.target_type}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Connection + port info */}
-                <div className="mt-2 flex items-center gap-3 text-xs text-dark-muted">
-                  {t.connection_method && (
-                    <span className="flex items-center gap-1">
-                      <Wifi className="h-3 w-3" /> {t.connection_method.toUpperCase()}
-                    </span>
-                  )}
-                  {t.port && <span>Port {t.port}</span>}
-                </div>
-
-                {/* Benchmark */}
-                {t.default_benchmark_name && (
-                  <div className="mt-2 truncate text-xs text-dark-muted">
-                    📋 {t.default_benchmark_name}
-                  </div>
-                )}
-
-                {/* Scan stats (if any) */}
-                {t.last_scan_date && (
-                  <div className="mt-3 flex items-center justify-between border-t border-dark-border/50 pt-2.5 text-xs">
-                    <span className="text-dark-muted">
-                      Last: {new Date(t.last_scan_date).toLocaleDateString()}
-                    </span>
-                    {t.last_scan_compliance != null && (
-                      <span className={`font-semibold ${t.last_scan_compliance >= 80 ? 'text-emerald-400' : t.last_scan_compliance >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
-                        {t.last_scan_compliance.toFixed(1)}%
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <TargetCardGrid
+        targets={missionTargets}
+        onConfigure={handleConfigure}
+        onDelete={handleUnassignTarget}
+        onScan={handleScan}
+        onUsbExport={handleUsbExport}
+        onViewFindings={handleViewFindings}
+        scanningTargetIds={scanningTargetIds}
+        scanProgressMap={scanProgressMap}
+      />
     </div>
   );
 }
