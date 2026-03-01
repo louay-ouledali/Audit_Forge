@@ -83,6 +83,11 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
       const connMethod = guessConnection(host);
       const port = guessPort(host);
       const portsNote = (host.open_ports || []).map(p => `${p.port}/${p.service || p.platform_hint || ''}`).join(', ');
+      const detailParts: string[] = [];
+      if (host.vendor) detailParts.push(`Vendor: ${host.vendor}`);
+      if (host.os_version) detailParts.push(`OS: ${host.os_version}`);
+      if (portsNote) detailParts.push(`Ports: ${portsNote}`);
+      const notes = detailParts.join(' | ') || null;
 
       // 1. Create target under the client
       const newTarget = await api.createTarget({
@@ -92,7 +97,7 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
         target_type: targetType,
         connection_method: connMethod,
         port,
-        notes: portsNote ? `Discovered ports: ${portsNote}` : null,
+        notes: notes,
         default_benchmark_id: host.suggested_benchmark_id ?? null,
       });
 

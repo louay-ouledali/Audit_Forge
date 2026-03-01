@@ -359,6 +359,9 @@ export interface DiscoveredHost {
   open_ports: { port: number; service: string; platform_hint: string }[];
   os_guess: string;
   connection_methods: string[];
+  os_version: string;
+  vendor: string;
+  banners: Record<number, string>;
 }
 
 export interface DiscoveryProgress {

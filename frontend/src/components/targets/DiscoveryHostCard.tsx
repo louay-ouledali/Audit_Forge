@@ -55,11 +55,21 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
         </div>
       </div>
 
-      {/* OS label */}
-      <div className="mt-3 flex items-center gap-2">
+      {/* OS label + version + vendor */}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className={`inline-flex items-center rounded-full bg-${cfg.accent}/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-${cfg.accent}`}>
           {cfg.label}
         </span>
+        {host.os_version && (
+          <span className="truncate text-[10px] text-dark-secondary" title={host.os_version}>
+            {host.os_version}
+          </span>
+        )}
+        {host.vendor && (
+          <span className="inline-flex items-center rounded-full bg-dark-elevated px-2 py-0.5 text-[10px] text-dark-muted" title={`Vendor: ${host.vendor}`}>
+            {host.vendor}
+          </span>
+        )}
       </div>
 
       {/* Open ports */}

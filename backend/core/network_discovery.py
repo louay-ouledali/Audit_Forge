@@ -1,7 +1,12 @@
 """Network discovery — scan a subnet to find live hosts and identify their type.
 
-Uses pure-Python TCP probing (no external dependencies like nmap/scapy)
-so it works inside a minimal Docker container.
+Uses pure-Python TCP probing and banner grabbing (no external dependencies
+like nmap/scapy) so it works inside a minimal Docker container.
+
+Banner grabbing reads the first response bytes from open services (SSH, HTTP,
+FTP, Telnet, SMTP, SMB, databases) to extract:
+  - **os_version**: e.g. "Ubuntu 22.04", "Windows 11", "Cisco IOS 15.7"
+  - **vendor**: e.g. "Canonical", "Microsoft", "Cisco", "PostgreSQL Global"
 """
 
 from __future__ import annotations
@@ -9,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import logging
+import re
 import socket
 import struct
 import time
@@ -48,6 +54,15 @@ PROBE_PORTS: list[tuple[int, str, str]] = [
 MAX_CONCURRENT_HOSTS = 50
 MAX_CONCURRENT_PORTS = 20
 TCP_CONNECT_TIMEOUT = 1.5  # seconds per port probe
+BANNER_READ_TIMEOUT = 3.0  # seconds to wait for a service banner
+BANNER_MAX_BYTES = 1024    # max bytes to read from a banner
+
+# Ports that send a banner immediately upon connection (no request needed)
+BANNER_PORTS_PASSIVE = {22, 21, 23, 25, 110, 143}  # SSH, FTP, Telnet, SMTP, POP3, IMAP
+# Ports that need an HTTP request to get a useful banner
+BANNER_PORTS_HTTP = {80, 443, 8080, 8443}
+# Database ports that send a banner or respond to a probe
+BANNER_PORTS_DB = {3306, 5432}  # MySQL greeting, PostgreSQL
 
 
 @dataclass
@@ -57,6 +72,9 @@ class DiscoveredHost:
     hostname: str = ""
     open_ports: list[dict[str, Any]] = field(default_factory=list)
     os_guess: str = "unknown"  # windows | linux | network | database | unknown
+    os_version: str = ""       # e.g. "Ubuntu 22.04", "Windows Server 2022"
+    vendor: str = ""           # e.g. "Canonical", "Microsoft", "Cisco"
+    banners: dict[int, str] = field(default_factory=dict)  # port → raw banner
     connection_methods: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -65,6 +83,9 @@ class DiscoveredHost:
             "hostname": self.hostname,
             "open_ports": self.open_ports,
             "os_guess": self.os_guess,
+            "os_version": self.os_version,
+            "vendor": self.vendor,
+            "banners": self.banners,
             "connection_methods": self.connection_methods,
         }
 
@@ -94,6 +115,234 @@ async def _reverse_dns(ip: str) -> str:
         return result[0]
     except (socket.herror, socket.gaierror, asyncio.TimeoutError, OSError):
         return ""
+
+
+# ── Banner Grabbing ──────────────────────────────────────────
+
+async def _grab_banner(ip: str, port: int) -> str:
+    """Connect to ip:port and read a service banner.
+
+    For passive ports (SSH, FTP, Telnet…) we just read the first response.
+    For HTTP ports we send a minimal HEAD request to get Server header.
+    For MySQL (3306) we read the greeting packet.
+    Returns the raw banner string (up to BANNER_MAX_BYTES), or "".
+    """
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port),
+            timeout=TCP_CONNECT_TIMEOUT,
+        )
+    except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+        return ""
+
+    banner = ""
+    try:
+        if port in BANNER_PORTS_HTTP:
+            # Send a HEAD request
+            request = (
+                f"HEAD / HTTP/1.0\r\nHost: {ip}\r\n"
+                f"User-Agent: AuditForge-Discovery/1.0\r\n\r\n"
+            )
+            writer.write(request.encode())
+            await writer.drain()
+            data = await asyncio.wait_for(
+                reader.read(BANNER_MAX_BYTES), timeout=BANNER_READ_TIMEOUT
+            )
+            banner = data.decode("utf-8", errors="replace")
+        elif port == 5432:
+            # PostgreSQL: send a cancel-request code that prompts a response
+            cancel = struct.pack("!II", 16, 80877102)
+            writer.write(cancel)
+            await writer.drain()
+            data = await asyncio.wait_for(
+                reader.read(BANNER_MAX_BYTES), timeout=BANNER_READ_TIMEOUT
+            )
+            banner = data.decode("utf-8", errors="replace")
+        else:
+            # Passive banner (SSH, FTP, Telnet, SMTP, MySQL greeting…)
+            data = await asyncio.wait_for(
+                reader.read(BANNER_MAX_BYTES), timeout=BANNER_READ_TIMEOUT
+            )
+            banner = data.decode("utf-8", errors="replace")
+    except (asyncio.TimeoutError, ConnectionError, OSError):
+        pass
+    finally:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except OSError:
+            pass
+
+    return banner.strip()
+
+
+async def _grab_banners(ip: str, open_ports: list[dict[str, Any]]) -> dict[int, str]:
+    """Grab banners from interesting open ports concurrently."""
+    interesting = set()
+    for p in open_ports:
+        port = p["port"]
+        if port in BANNER_PORTS_PASSIVE or port in BANNER_PORTS_HTTP or port in BANNER_PORTS_DB:
+            interesting.add(port)
+
+    if not interesting:
+        return {}
+
+    tasks = {port: asyncio.create_task(_grab_banner(ip, port)) for port in interesting}
+    banners: dict[int, str] = {}
+    for port, task in tasks.items():
+        try:
+            result = await task
+            if result:
+                banners[port] = result
+        except Exception:
+            pass
+    return banners
+
+
+# ── OS Version & Vendor Detection (from banners) ────────────
+
+# SSH banner patterns: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.4"
+_SSH_PATTERNS: list[tuple[str, str, str]] = [
+    # (regex, os_version_template, vendor)
+    (r"OpenSSH[_\s]([\d.]+).*Ubuntu",          "Ubuntu (OpenSSH {0})",    "Canonical"),
+    (r"OpenSSH[_\s]([\d.]+).*Debian",          "Debian (OpenSSH {0})",    "Debian Project"),
+    (r"OpenSSH[_\s]([\d.]+).*el(\d+)",         "RHEL/CentOS {1} (OpenSSH {0})", "Red Hat"),
+    (r"OpenSSH[_\s]([\d.]+).*FreeBSD",         "FreeBSD (OpenSSH {0})",   "FreeBSD Foundation"),
+    (r"OpenSSH_for_Windows_([\d.]+)",           "Windows (OpenSSH {0})",   "Microsoft"),
+    (r"OpenSSH[_\s]([\d.]+)",                  "OpenSSH {0}",             ""),
+    (r"dropbear[_\s]([\d.]+)",                 "Dropbear {0}",            ""),
+    (r"Cisco[_\s-]([\d.]+)",                   "Cisco IOS {0}",           "Cisco"),
+    (r"ROSSSH",                                 "MikroTik RouterOS",       "MikroTik"),
+    (r"FortiSSH",                               "FortiOS",                "Fortinet"),
+]
+
+# HTTP Server header patterns
+_HTTP_PATTERNS: list[tuple[str, str, str]] = [
+    (r"Microsoft-IIS/([\d.]+)",            "Windows (IIS {0})",            "Microsoft"),
+    (r"Microsoft-HTTPAPI/([\d.]+)",        "Windows (HTTP API {0})",       "Microsoft"),
+    (r"Apache/([\d.]+).*Ubuntu",           "Ubuntu (Apache {0})",          "Canonical"),
+    (r"Apache/([\d.]+).*Debian",           "Debian (Apache {0})",          "Debian Project"),
+    (r"Apache/([\d.]+).*CentOS",           "CentOS (Apache {0})",          "Red Hat"),
+    (r"Apache/([\d.]+).*Win(?:32|64)",     "Windows (Apache {0})",         "Apache Foundation"),
+    (r"Apache/([\d.]+)",                   "Apache {0}",                   "Apache Foundation"),
+    (r"nginx/([\d.]+)",                    "nginx {0}",                    "F5/nginx"),
+    (r"lighttpd/([\d.]+)",                 "lighttpd {0}",                 "lighttpd"),
+    (r"Cisco",                             "Cisco Device",                 "Cisco"),
+    (r"ArubaOS",                           "Aruba Device",                 "HPE/Aruba"),
+    (r"Boa/([\d.]+)",                      "Embedded (Boa {0})",           ""),
+]
+
+# FTP banner patterns
+_FTP_PATTERNS: list[tuple[str, str, str]] = [
+    (r"Microsoft FTP Service",             "Windows (FTP)",                "Microsoft"),
+    (r"vsFTPd ([\d.]+)",                   "Linux (vsFTPd {0})",           ""),
+    (r"ProFTPD ([\d.]+)",                  "ProFTPD {0}",                  ""),
+    (r"FileZilla Server ([\d.]+)",         "Windows (FileZilla {0})",      "FileZilla"),
+]
+
+# Telnet banner patterns
+_TELNET_PATTERNS: list[tuple[str, str, str]] = [
+    (r"Cisco IOS.*Version ([\d.()A-Za-z]+)", "Cisco IOS {0}",            "Cisco"),
+    (r"Juniper Networks",                     "Junos OS",                 "Juniper"),
+    (r"User Access Verification",             "Cisco Device",             "Cisco"),
+    (r"MikroTik",                             "MikroTik RouterOS",        "MikroTik"),
+    (r"HP ProCurve",                          "HP ProCurve Switch",       "HPE"),
+    (r"Arista",                               "Arista EOS",               "Arista"),
+]
+
+# MySQL greeting pattern
+_MYSQL_PATTERNS: list[tuple[str, str, str]] = [
+    (r"([\d.]+)-MariaDB",                  "MariaDB {0}",                  "MariaDB"),
+    (r"mysql[_\s]?([\d.]+)",               "MySQL {0}",                    "Oracle/MySQL"),
+    (r"([\d.]+)",                           "MySQL {0}",                    "Oracle/MySQL"),
+]
+
+# SMTP banner patterns
+_SMTP_PATTERNS: list[tuple[str, str, str]] = [
+    (r"Microsoft ESMTP.*MAIL Service",      "Windows (Exchange)",           "Microsoft"),
+    (r"Postfix",                            "Linux (Postfix)",              ""),
+    (r"Exim ([\d.]+)",                      "Exim {0}",                     ""),
+]
+
+
+def _match_patterns(
+    banner: str, patterns: list[tuple[str, str, str]]
+) -> tuple[str, str]:
+    """Try each regex pattern against the banner.
+
+    Returns (os_version, vendor) on first match, or ("", "").
+    """
+    for regex, os_tpl, vendor in patterns:
+        m = re.search(regex, banner, re.IGNORECASE)
+        if m:
+            groups = m.groups()
+            os_version = os_tpl.format(*groups) if groups else os_tpl
+            return os_version, vendor
+    return "", ""
+
+
+def _detect_os_version_and_vendor(
+    banners: dict[int, str],
+    os_guess: str,
+    hostname: str,
+) -> tuple[str, str]:
+    """Analyze banners to determine OS version and vendor.
+
+    Checks SSH → HTTP → FTP → Telnet → MySQL → SMTP in priority order.
+    """
+    os_version = ""
+    vendor = ""
+
+    # SSH banner (usually the most informative)
+    if 22 in banners:
+        os_version, vendor = _match_patterns(banners[22], _SSH_PATTERNS)
+        if os_version:
+            return os_version, vendor
+
+    # HTTP Server header
+    for port in (80, 443, 8080, 8443):
+        if port in banners:
+            header_banner = banners[port]
+            server_match = re.search(
+                r"Server:\s*(.+)", header_banner, re.IGNORECASE
+            )
+            if server_match:
+                server_val = server_match.group(1).strip()
+                os_version, vendor = _match_patterns(server_val, _HTTP_PATTERNS)
+                if os_version:
+                    return os_version, vendor
+
+    # FTP banner
+    if 21 in banners:
+        os_version, vendor = _match_patterns(banners[21], _FTP_PATTERNS)
+        if os_version:
+            return os_version, vendor
+
+    # Telnet banner (network devices)
+    if 23 in banners:
+        os_version, vendor = _match_patterns(banners[23], _TELNET_PATTERNS)
+        if os_version:
+            return os_version, vendor
+
+    # MySQL banner
+    if 3306 in banners:
+        os_version, vendor = _match_patterns(banners[3306], _MYSQL_PATTERNS)
+        if os_version:
+            return os_version, vendor
+
+    # SMTP banner
+    if 25 in banners:
+        os_version, vendor = _match_patterns(banners[25], _SMTP_PATTERNS)
+        if os_version:
+            return os_version, vendor
+
+    # Fallback: infer vendor from os_guess + hostname
+    if os_guess == "windows":
+        return "Windows", "Microsoft"
+    if os_guess == "linux":
+        return "Linux", ""
+
+    return os_version, vendor
 
 
 def _guess_os(open_ports: list[dict[str, Any]]) -> str:
@@ -185,12 +434,21 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
         os_guess = _guess_os(open_ports)
         conn_methods = _detect_connection_methods(os_guess, open_ports)
 
+        # Banner grabbing + OS/vendor detection
+        banners = await _grab_banners(ip, open_ports)
+        os_version, vendor = _detect_os_version_and_vendor(
+            banners, os_guess, hostname
+        )
+
         return DiscoveredHost(
             ip=ip,
             hostname=hostname,
             open_ports=open_ports,
             os_guess=os_guess,
             connection_methods=conn_methods,
+            os_version=os_version,
+            vendor=vendor,
+            banners=banners,
         )
 
 
