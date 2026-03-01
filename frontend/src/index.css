@@ -22,7 +22,9 @@
 }
 
 /* ── Base dark background ── */
-html, body, #root {
+html,
+body,
+#root {
   background-color: #000;
   color: #e5e5e5;
 }
@@ -31,6 +33,7 @@ html, body, #root {
 .glow-ambient {
   position: relative;
 }
+
 .glow-ambient::before {
   content: '';
   position: absolute;
@@ -47,6 +50,7 @@ html, body, #root {
 .glow-card {
   transition: box-shadow 0.3s ease, border-color 0.3s ease;
 }
+
 .glow-card:hover {
   box-shadow: 0 0 20px rgba(255, 230, 0, 0.06), 0 0 40px rgba(255, 230, 0, 0.03);
   border-color: rgba(255, 230, 0, 0.15) !important;
@@ -61,13 +65,16 @@ html, body, #root {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: #0A0A0A;
 }
+
 ::-webkit-scrollbar-thumb {
   background: #2A2A2A;
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: #3A3A3A;
 }

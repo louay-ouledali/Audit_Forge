@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bot, Trash2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Shield, Target, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Bot, Trash2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Target, BarChart3 } from 'lucide-react';
 import type { Mission, MissionAnalysisResult, ComparableMission } from '@/types';
 import * as api from '@/services/api';
+import logoImg from '../assets/logo.png';
 
 type AnalysisTab = 'cross_target' | 'category_analysis' | 'cross_mission';
 
@@ -90,8 +91,8 @@ export default function MissionAnalysis() {
 
   const tabs: { key: AnalysisTab; label: string; icon: React.ReactNode }[] = [
     { key: 'cross_target', label: 'Cross-Target Analysis', icon: <Target className="h-4 w-4" /> },
-    { key: 'category_analysis', label: 'Category Analysis', icon: <BarChart3 className="h-4 w-4" /> },
-    { key: 'cross_mission', label: 'Compare with Previous Mission', icon: <Shield className="h-4 w-4" /> },
+    { key: 'category_analysis', label: 'Category & Deep Analysis', icon: <BarChart3 className="h-4 w-4" /> },
+    { key: 'cross_mission', label: 'Compare with Previous Mission', icon: <img src={logoImg} alt="logo" className="h-4 w-4" /> },
   ];
 
   if (loading) {
@@ -131,11 +132,10 @@ export default function MissionAnalysis() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab.key
-                ? 'bg-dark-card text-ey-yellow shadow-sm'
-                : 'text-dark-secondary hover:text-gray-300'
-            }`}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${activeTab === tab.key
+              ? 'bg-dark-card text-ey-yellow shadow-sm'
+              : 'text-dark-secondary hover:text-gray-300'
+              }`}
           >
             {tab.icon}
             {tab.label}
@@ -442,14 +442,13 @@ function CrossMissionResult({ result }: { result: Record<string, unknown> }) {
   return (
     <>
       {trend && (
-        <div className={`rounded-lg p-4 ${
-          trend.direction === 'improving' ? 'border border-emerald-500/30 bg-emerald-500/10' :
+        <div className={`rounded-lg p-4 ${trend.direction === 'improving' ? 'border border-emerald-500/30 bg-emerald-500/10' :
           trend.direction === 'declining' ? 'border border-red-500/30 bg-red-500/10' :
-          'border border-amber-500/30 bg-amber-500/10'
-        }`}>
+            'border border-amber-500/30 bg-amber-500/10'
+          }`}>
           <span className="text-sm font-medium text-white">
             {'Trend: '}{trend.direction === 'improving' ? 'Improving' :
-                    trend.direction === 'declining' ? 'Declining' : 'Stable'}
+              trend.direction === 'declining' ? 'Declining' : 'Stable'}
           </span>
           {!!trend.summary && <p className="text-sm text-gray-300 mt-1">{String(trend.summary)}</p>}
         </div>

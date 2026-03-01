@@ -37,6 +37,7 @@ export interface Target {
   connection_method: string | null;
   ssh_username: string | null;
   ssh_key_path: string | null;
+  ssh_password?: string | null;
   port: number | null;
   notes: string | null;
   created_at: string;

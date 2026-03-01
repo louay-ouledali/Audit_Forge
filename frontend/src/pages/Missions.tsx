@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Search, Crosshair, Calendar, X, Building2, ChevronDown, ChevronUp, Activity, Server, Shield, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Crosshair, Calendar, X, Building2, ChevronDown, ChevronUp, Activity, Server, Loader2 } from 'lucide-react';
 import type { Client, Mission, Target, ScanDetail } from '@/types';
 import * as api from '@/services/api';
+import logoImg from '../assets/logo.png';
 
 interface MissionForm {
   client_id: number | '';
@@ -214,11 +215,10 @@ export default function Missions() {
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setStatusFilter('')}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-              !statusFilter
-                ? 'bg-ey-yellow/15 text-ey-yellow ring-1 ring-ey-yellow/30'
-                : 'bg-dark-card text-dark-secondary hover:bg-dark-elevated hover:text-white'
-            }`}
+            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${!statusFilter
+              ? 'bg-ey-yellow/15 text-ey-yellow ring-1 ring-ey-yellow/30'
+              : 'bg-dark-card text-dark-secondary hover:bg-dark-elevated hover:text-white'
+              }`}
           >
             All ({missions.length})
           </button>
@@ -226,11 +226,10 @@ export default function Missions() {
             <button
               key={key}
               onClick={() => setStatusFilter(statusFilter === key ? '' : key)}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors ${
-                statusFilter === key
-                  ? STATUS_STYLES[key]
-                  : 'bg-dark-card text-dark-secondary ring-dark-border hover:bg-dark-elevated'
-              }`}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 ring-inset transition-colors ${statusFilter === key
+                ? STATUS_STYLES[key]
+                : 'bg-dark-card text-dark-secondary ring-dark-border hover:bg-dark-elevated'
+                }`}
             >
               {label} ({statusCounts[key] || 0})
             </button>
@@ -429,9 +428,8 @@ export default function Missions() {
                       {mission.name}
                     </h3>
                     <span
-                      className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                        STATUS_STYLES[mission.status] ?? STATUS_STYLES.in_progress
-                      }`}
+                      className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_STYLES[mission.status] ?? STATUS_STYLES.in_progress
+                        }`}
                     >
                       {STATUS_LABELS[mission.status] ?? mission.status}
                     </span>
@@ -474,26 +472,28 @@ export default function Missions() {
 
               {/* Mission Log — expanded detail panel */}
               {expandedMissionId === mission.id && (
-                <div className="mt-4 border-t border-dark-border pt-4 space-y-3">
+                <div className="mt-4 border-t border-dark-border pt-4">
                   {logLoading ? (
                     <div className="flex items-center justify-center py-4">
                       <Loader2 className="h-5 w-5 animate-spin text-ey-yellow" />
                     </div>
                   ) : (
-                    <>
+                    <div className="max-h-80 overflow-y-auto custom-scrollbar relative pr-2 space-y-6">
                       {/* Targets */}
                       {missionTargets.length > 0 && (
                         <div>
-                          <h4 className="flex items-center gap-1.5 text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
-                            <Server className="h-3 w-3 text-ey-yellow" />
-                            Targets ({missionTargets.length})
-                          </h4>
+                          <div className="sticky top-0 z-10 bg-dark-card/95 backdrop-blur-sm py-2 mb-2 border-b border-dark-border/50 -mt-2">
+                            <h4 className="flex items-center gap-1.5 text-xs font-semibold text-gray-300 uppercase tracking-wider">
+                              <Server className="h-3 w-3 text-ey-yellow" />
+                              Targets ({missionTargets.length})
+                            </h4>
+                          </div>
                           <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                             {missionTargets.map((t) => (
-                              <div key={t.id} className="flex items-center gap-2 rounded-lg bg-dark-elevated px-3 py-2 text-xs">
+                              <div key={t.id} className="flex items-center gap-2 rounded-lg bg-dark-elevated px-3 py-2 text-xs border border-dark-border/50">
                                 <span className="font-medium text-white">{t.hostname || t.ip_address || `Target #${t.id}`}</span>
-                                {t.hostname && t.ip_address && <span className="text-dark-muted">({t.ip_address})</span>}
-                                <span className="ml-auto rounded bg-dark-overlay px-1.5 py-0.5 text-[10px] text-dark-secondary">{t.target_type}</span>
+                                {t.hostname && t.ip_address && <span className="text-dark-muted hidden sm:inline">({t.ip_address})</span>}
+                                <span className="ml-auto rounded bg-dark-overlay px-1.5 py-0.5 text-[10px] text-dark-secondary uppercase">{t.target_type}</span>
                               </div>
                             ))}
                           </div>
@@ -502,10 +502,12 @@ export default function Missions() {
 
                       {/* Scans / Activity */}
                       <div>
-                        <h4 className="flex items-center gap-1.5 text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">
-                          <Shield className="h-3 w-3 text-ey-yellow" />
-                          Scan Activity ({missionScans.length})
-                        </h4>
+                        <div className="sticky top-0 z-10 bg-dark-card/95 backdrop-blur-sm py-2 mb-2 border-b border-dark-border/50">
+                          <div className="flex items-center gap-1 overflow-hidden" title={mission.name}>
+                            <img src={logoImg} alt="Target" className="h-3 w-3 object-contain opacity-80" />
+                            <span className="truncate">Scan Activity ({missionScans.length})</span>
+                          </div>
+                        </div>
                         {missionScans.length === 0 ? (
                           <p className="text-xs text-dark-muted italic px-1">No scans yet for this mission.</p>
                         ) : (
@@ -517,32 +519,33 @@ export default function Missions() {
                               ].filter(Boolean).join(' - ') || `Scan #${s.id}`;
 
                               return (
-                                <div key={s.id} className="flex items-center gap-3 rounded-lg bg-dark-elevated px-3 py-2 text-xs">
-                                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                                    (s.status === 'completed' || s.status === 'imported') ? 'bg-emerald-400' :
+                                <div key={s.id} className="flex items-center gap-3 rounded-lg bg-dark-elevated px-3 py-2 text-xs border border-dark-border/50">
+                                  <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${(s.status === 'completed' || s.status === 'imported') ? 'bg-emerald-400' :
                                     s.status === 'running' ? 'bg-sky-400 animate-pulse' :
-                                    s.status === 'failed' ? 'bg-red-400' : 'bg-dark-muted'
-                                  }`} />
+                                      s.status === 'failed' ? 'bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.5)]' : 'bg-dark-muted'
+                                    }`} />
                                   <span className="font-medium text-white truncate flex-1">{label}</span>
-                                  <span className="text-dark-muted whitespace-nowrap">{s.scan_mode}</span>
+                                  <span className="text-dark-muted whitespace-nowrap bg-dark-overlay px-1.5 py-0.5 rounded uppercase text-[10px] hidden sm:block">{s.scan_mode}</span>
                                   {s.compliance_percentage != null && (
-                                    <span className={`font-mono ${s.compliance_percentage >= 70 ? 'text-emerald-400' : s.compliance_percentage >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                                    <span className={`font-bold tabular-nums ${s.compliance_percentage >= 70 ? 'text-emerald-400' : s.compliance_percentage >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
                                       {s.compliance_percentage.toFixed(0)}%
                                     </span>
                                   )}
-                                  <span className="text-dark-muted whitespace-nowrap">
+                                  <span className="text-dark-muted whitespace-nowrap tabular-nums">
                                     {s.started_at ? new Date(s.started_at).toLocaleDateString() : s.created_at ? new Date(s.created_at).toLocaleDateString() : ''}
                                   </span>
                                 </div>
                               );
                             })}
                             {missionScans.length > 10 && (
-                              <p className="text-xs text-dark-muted italic px-1">…and {missionScans.length - 10} more</p>
+                              <p className="text-xs font-medium text-ey-yellow text-center pt-2 cursor-pointer hover:underline">
+                                View all {missionScans.length} scans
+                              </p>
                             )}
                           </div>
                         )}
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               )}

@@ -4,7 +4,7 @@ import {
   Upload, Trash2, RefreshCw, ChevronRight, ChevronLeft, Database,
   Monitor, Server, Network, Cloud, AppWindow, Smartphone, GitBranch,
   Box, Shield, Laptop, Globe, HardDrive, Flame, Router,
-  Search, CheckCircle2, Clock, AlertTriangle, X,
+  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List
 } from 'lucide-react';
 import type { CatalogCategory, CatalogVendor, ProductLine, BenchmarkCatalog, CatalogBenchmark } from '@/types';
 import * as api from '@/services/api';
@@ -40,14 +40,14 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const CATEGORY_COLORS: Record<string, { bg: string; border: string; icon: string; glow: string }> = {
-  'Operating Systems':  { bg: 'bg-sky-500/8',     border: 'border-sky-500/20',     icon: 'text-sky-400',     glow: 'hover:shadow-sky-500/10' },
-  'Server Software':    { bg: 'bg-emerald-500/8',  border: 'border-emerald-500/20',  icon: 'text-emerald-400',  glow: 'hover:shadow-emerald-500/10' },
-  'Network Devices':    { bg: 'bg-orange-500/8',   border: 'border-orange-500/20',   icon: 'text-orange-400',   glow: 'hover:shadow-orange-500/10' },
-  'Cloud Providers':    { bg: 'bg-violet-500/8',   border: 'border-violet-500/20',   icon: 'text-violet-400',   glow: 'hover:shadow-violet-500/10' },
-  'Desktop Software':   { bg: 'bg-pink-500/8',     border: 'border-pink-500/20',     icon: 'text-pink-400',     glow: 'hover:shadow-pink-500/10' },
-  'DevSecOps':          { bg: 'bg-amber-500/8',    border: 'border-amber-500/20',    icon: 'text-amber-400',    glow: 'hover:shadow-amber-500/10' },
-  'Mobile Devices':     { bg: 'bg-teal-500/8',     border: 'border-teal-500/20',     icon: 'text-teal-400',     glow: 'hover:shadow-teal-500/10' },
-  'Other':              { bg: 'bg-gray-500/8',     border: 'border-gray-500/20',     icon: 'text-gray-400',     glow: 'hover:shadow-gray-500/10' },
+  'Operating Systems': { bg: 'bg-sky-500/8', border: 'border-sky-500/20', icon: 'text-sky-400', glow: 'hover:shadow-sky-500/10' },
+  'Server Software': { bg: 'bg-emerald-500/8', border: 'border-emerald-500/20', icon: 'text-emerald-400', glow: 'hover:shadow-emerald-500/10' },
+  'Network Devices': { bg: 'bg-orange-500/8', border: 'border-orange-500/20', icon: 'text-orange-400', glow: 'hover:shadow-orange-500/10' },
+  'Cloud Providers': { bg: 'bg-violet-500/8', border: 'border-violet-500/20', icon: 'text-violet-400', glow: 'hover:shadow-violet-500/10' },
+  'Desktop Software': { bg: 'bg-pink-500/8', border: 'border-pink-500/20', icon: 'text-pink-400', glow: 'hover:shadow-pink-500/10' },
+  'DevSecOps': { bg: 'bg-amber-500/8', border: 'border-amber-500/20', icon: 'text-amber-400', glow: 'hover:shadow-amber-500/10' },
+  'Mobile Devices': { bg: 'bg-teal-500/8', border: 'border-teal-500/20', icon: 'text-teal-400', glow: 'hover:shadow-teal-500/10' },
+  'Other': { bg: 'bg-gray-500/8', border: 'border-gray-500/20', icon: 'text-gray-400', glow: 'hover:shadow-gray-500/10' },
 };
 
 const DEFAULT_COLOR = CATEGORY_COLORS['Other'];
@@ -317,6 +317,12 @@ export default function Benchmarks() {
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [nav, setNav] = useState<NavState>({ level: 'categories' });
+  const [viewMode, setViewMode] = useState<'hierarchy' | 'flat'>('hierarchy');
+
+  const allBenchmarksFlat = useMemo(() => {
+    if (!catalog) return [];
+    return catalog.categories.flatMap(c => c.vendors.flatMap(v => v.product_lines.flatMap(p => p.benchmarks)));
+  }, [catalog]);
 
   /* Fetch catalog */
   const fetchCatalog = () =>
@@ -407,24 +413,44 @@ export default function Benchmarks() {
         </div>
       )}
 
-      {/* ── Stats + Search ── */}
+      {/* ── Stats + Search + View Toggle ── */}
       {catalog && catalog.categories.length > 0 && (
         <>
           <StatsBar catalog={catalog} />
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-muted" />
-            <input
-              type="text"
-              placeholder="Search across all benchmarks..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-dark-border bg-dark-card py-2.5 pl-10 pr-10 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20 transition-colors"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-muted hover:text-white">
-                <X className="h-4 w-4" />
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-muted" />
+              <input
+                type="text"
+                placeholder="Search across all benchmarks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-lg border border-dark-border bg-dark-card py-2.5 pl-10 pr-10 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20 transition-colors"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-dark-muted hover:text-white">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+
+            {/* View Mode Toggle */}
+            <div className="flex rounded-lg border border-dark-border bg-dark-card p-1 shadow-sm shrink-0">
+              <button
+                onClick={() => setViewMode('hierarchy')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === 'hierarchy' ? 'bg-dark-elevated text-ey-yellow shadow-sm' : 'text-dark-secondary hover:text-white'
+                  }`}
+              >
+                <LayoutGrid className="h-4 w-4" /> Hierarchy
               </button>
-            )}
+              <button
+                onClick={() => setViewMode('flat')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === 'flat' ? 'bg-dark-elevated text-ey-yellow shadow-sm' : 'text-dark-secondary hover:text-white'
+                  }`}
+              >
+                <List className="h-4 w-4" /> Flat List
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -458,106 +484,126 @@ export default function Benchmarks() {
           <p className="mt-3 text-dark-secondary">No benchmarks yet. Upload a CIS PDF to begin.</p>
         </div>
       ) : (
-        /* ── Catalog Navigation ── */
+        /* ── Catalog Navigation or Flat List ── */
         <div className="space-y-4">
-          {/* Breadcrumbs + back */}
-          {nav.level !== 'categories' && (
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => {
-                  if (nav.level === 'vendors') goCategories();
-                  else if (nav.level === 'products') goVendors(nav.categoryIdx!);
-                  else if (nav.level === 'benchmarks') goProducts(nav.categoryIdx!, nav.vendorIdx!);
-                }}
-                className="flex items-center gap-1 rounded-lg border border-dark-border bg-dark-card px-3 py-1.5 text-xs text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" /> Back
-              </button>
-              <Breadcrumbs items={breadcrumbs} />
-            </div>
-          )}
 
-          {/* Level: Categories */}
-          {nav.level === 'categories' && (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {catalog.categories.map((cat, i) => (
-                <CategoryCard key={cat.name} category={cat} onClick={() => goVendors(i)} />
-              ))}
-            </div>
-          )}
-
-          {/* Level: Vendors */}
-          {nav.level === 'vendors' && currentCategory && (
-            <div>
-              <div className="mb-4 flex items-center gap-3">
-                {(() => { const CatIcon = getIcon(currentCategory.icon); const colors = CATEGORY_COLORS[currentCategory.name] ?? DEFAULT_COLOR;
-                  return <div className={`rounded-xl p-2.5 ${colors.bg}`}><CatIcon className={`h-6 w-6 ${colors.icon}`} /></div>;
-                })()}
-                <div>
-                  <h2 className="text-xl font-bold text-white">{currentCategory.name}</h2>
-                  <p className="text-xs text-dark-secondary">{currentCategory.benchmark_count} benchmarks across {currentCategory.vendors.length} vendors</p>
-                </div>
+          {viewMode === 'flat' ? (
+            <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-white">All Benchmarks</h2>
+                <span className="text-xs text-dark-secondary bg-dark-elevated px-2 py-1 rounded-md">{allBenchmarksFlat.length} items</span>
               </div>
-              {currentCategory.vendors.length === 1 ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {currentCategory.vendors[0].product_lines.map((pl, pIdx) => (
-                    <ProductLineCard key={pl.name} productLine={pl} categoryName={currentCategory.name} onClick={() => goBenchmarks(nav.categoryIdx!, 0, pIdx)} />
-                  ))}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {currentCategory.vendors.map((vendor, vIdx) => (
-                    <VendorCard key={vendor.name} vendor={vendor} categoryName={currentCategory.name}
-                      onClick={() => {
-                        if (vendor.product_lines.length === 1 && vendor.product_lines[0].benchmarks.length <= 3)
-                          goBenchmarks(nav.categoryIdx!, vIdx, 0);
-                        else goProducts(nav.categoryIdx!, vIdx);
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Level: Product Lines */}
-          {nav.level === 'products' && currentVendor && currentCategory && (
-            <div>
-              <div className="mb-4 flex items-center gap-3">
-                {(() => { const VIcon = getIcon(currentVendor.icon); const colors = CATEGORY_COLORS[currentCategory.name] ?? DEFAULT_COLOR;
-                  return <div className={`rounded-xl p-2.5 ${colors.bg}`}><VIcon className={`h-6 w-6 ${colors.icon}`} /></div>;
-                })()}
-                <div>
-                  <h2 className="text-xl font-bold text-white">{currentVendor.name}</h2>
-                  <p className="text-xs text-dark-secondary">{currentVendor.benchmark_count} benchmarks</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {currentVendor.product_lines.map((pl, pIdx) => (
-                  <ProductLineCard key={pl.name} productLine={pl} categoryName={currentCategory.name} onClick={() => goBenchmarks(nav.categoryIdx!, nav.vendorIdx!, pIdx)} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Level: Benchmarks (final list) */}
-          {nav.level === 'benchmarks' && currentProduct && currentCategory && (
-            <div>
-              <div className="mb-4 flex items-center gap-3">
-                {(() => { const PIcon = getIcon(currentProduct.icon); const colors = CATEGORY_COLORS[currentCategory.name] ?? DEFAULT_COLOR;
-                  return <div className={`rounded-xl p-2.5 ${colors.bg}`}><PIcon className={`h-6 w-6 ${colors.icon}`} /></div>;
-                })()}
-                <div>
-                  <h2 className="text-xl font-bold text-white">{currentProduct.name}</h2>
-                  <p className="text-xs text-dark-secondary">{currentProduct.benchmarks.length} benchmark version{currentProduct.benchmarks.length !== 1 ? 's' : ''}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {currentProduct.benchmarks.map((b) => (
+              <div className="space-y-2 max-h-[70vh] overflow-y-auto custom-scrollbar pr-2">
+                {allBenchmarksFlat.map((b) => (
                   <BenchmarkRow key={b.id} benchmark={b} onNavigate={(id) => navigate(`/benchmarks/${id}`)} onDelete={handleDelete} />
                 ))}
               </div>
             </div>
+          ) : (
+            <>
+              {/* Breadcrumbs + back */}
+              {nav.level !== 'categories' && (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => {
+                      if (nav.level === 'vendors') goCategories();
+                      else if (nav.level === 'products') goVendors(nav.categoryIdx!);
+                      else if (nav.level === 'benchmarks') goProducts(nav.categoryIdx!, nav.vendorIdx!);
+                    }}
+                    className="flex items-center gap-1 rounded-lg border border-dark-border bg-dark-card px-3 py-1.5 text-xs text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" /> Back
+                  </button>
+                  <Breadcrumbs items={breadcrumbs} />
+                </div>
+              )}
+
+              {/* Level: Categories */}
+              {nav.level === 'categories' && (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {catalog.categories.map((cat, i) => (
+                    <CategoryCard key={cat.name} category={cat} onClick={() => goVendors(i)} />
+                  ))}
+                </div>
+              )}
+
+              {/* Level: Vendors */}
+              {nav.level === 'vendors' && currentCategory && (
+                <div>
+                  <div className="mb-4 flex items-center gap-3">
+                    {(() => {
+                      const CatIcon = getIcon(currentCategory.icon); const colors = CATEGORY_COLORS[currentCategory.name] ?? DEFAULT_COLOR;
+                      return <div className={`rounded-xl p-2.5 ${colors.bg}`}><CatIcon className={`h-6 w-6 ${colors.icon}`} /></div>;
+                    })()}
+                    <div>
+                      <h2 className="text-xl font-bold text-white">{currentCategory.name}</h2>
+                      <p className="text-xs text-dark-secondary">{currentCategory.benchmark_count} benchmarks across {currentCategory.vendors.length} vendors</p>
+                    </div>
+                  </div>
+                  {currentCategory.vendors.length === 1 ? (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {currentCategory.vendors[0].product_lines.map((pl, pIdx) => (
+                        <ProductLineCard key={pl.name} productLine={pl} categoryName={currentCategory.name} onClick={() => goBenchmarks(nav.categoryIdx!, 0, pIdx)} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {currentCategory.vendors.map((vendor, vIdx) => (
+                        <VendorCard key={vendor.name} vendor={vendor} categoryName={currentCategory.name}
+                          onClick={() => {
+                            if (vendor.product_lines.length === 1 && vendor.product_lines[0].benchmarks.length <= 3)
+                              goBenchmarks(nav.categoryIdx!, vIdx, 0);
+                            else goProducts(nav.categoryIdx!, vIdx);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Level: Product Lines */}
+              {nav.level === 'products' && currentVendor && currentCategory && (
+                <div>
+                  <div className="mb-4 flex items-center gap-3">
+                    {(() => {
+                      const VIcon = getIcon(currentVendor.icon); const colors = CATEGORY_COLORS[currentCategory.name] ?? DEFAULT_COLOR;
+                      return <div className={`rounded-xl p-2.5 ${colors.bg}`}><VIcon className={`h-6 w-6 ${colors.icon}`} /></div>;
+                    })()}
+                    <div>
+                      <h2 className="text-xl font-bold text-white">{currentVendor.name}</h2>
+                      <p className="text-xs text-dark-secondary">{currentVendor.benchmark_count} benchmarks</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {currentVendor.product_lines.map((pl, pIdx) => (
+                      <ProductLineCard key={pl.name} productLine={pl} categoryName={currentCategory.name} onClick={() => goBenchmarks(nav.categoryIdx!, nav.vendorIdx!, pIdx)} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Level: Benchmarks (final list) */}
+              {nav.level === 'benchmarks' && currentProduct && currentCategory && (
+                <div>
+                  <div className="mb-4 flex items-center gap-3">
+                    {(() => {
+                      const PIcon = getIcon(currentProduct.icon); const colors = CATEGORY_COLORS[currentCategory.name] ?? DEFAULT_COLOR;
+                      return <div className={`rounded-xl p-2.5 ${colors.bg}`}><PIcon className={`h-6 w-6 ${colors.icon}`} /></div>;
+                    })()}
+                    <div>
+                      <h2 className="text-xl font-bold text-white">{currentProduct.name}</h2>
+                      <p className="text-xs text-dark-secondary">{currentProduct.benchmarks.length} benchmark version{currentProduct.benchmarks.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {currentProduct.benchmarks.map((b) => (
+                      <BenchmarkRow key={b.id} benchmark={b} onNavigate={(id) => navigate(`/benchmarks/${id}`)} onDelete={handleDelete} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

@@ -186,11 +186,10 @@ export default function MissionWorkspace() {
                   setShowLockDialog(true);
                   setLockPassword('');
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-                  mission.is_locked
-                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                    : 'border-dark-border bg-dark-elevated text-dark-secondary hover:bg-dark-elevated hover:text-white'
-                }`}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${mission.is_locked
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
+                  : 'border-dark-border bg-dark-elevated text-dark-secondary hover:bg-dark-elevated hover:text-white'
+                  }`}
               >
                 {mission.is_locked ? <Unlock className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
                 {mission.is_locked ? 'Unlock' : 'Lock'}
@@ -267,11 +266,10 @@ export default function MissionWorkspace() {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
-              activeTab === tab.key
-                ? 'border-ey-yellow text-ey-yellow'
-                : 'border-transparent text-dark-secondary hover:text-white'
-            }`}
+            className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === tab.key
+              ? 'border-ey-yellow text-ey-yellow'
+              : 'border-transparent text-dark-secondary hover:text-white'
+              }`}
           >
             <tab.icon className="h-4 w-4" />
             {tab.label}
@@ -282,12 +280,13 @@ export default function MissionWorkspace() {
 
       {/* ── Tab Content ──────────────────────────────────────── */}
       {activeTab === 'overview' && (
-        <MissionOverview scans={scans} missionTargets={missionTargets} />
+        <MissionOverview mission={mission} scans={scans} missionTargets={missionTargets} />
       )}
 
       {activeTab === 'targets' && (
         <TargetsTab
           missionId={missionId}
+          clientId={mission.client_id}
           missionTargets={missionTargets}
           clientTargets={clientTargets}
           onRefresh={fetchData}

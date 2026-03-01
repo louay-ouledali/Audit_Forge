@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Shield, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X } from 'lucide-react';
+import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X } from 'lucide-react';
 import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport } from '@/types';
 import * as api from '@/services/api';
+import logoImg from '../assets/logo.png';
 
 function severityBadge(severity: string) {
   const styles: Record<string, string> = {
@@ -69,7 +70,6 @@ export default function BenchmarkDetail() {
   const [verifyStatus, setVerifyStatus] = useState<VerifyStatus | null>(null);
   const [validateStatus, setValidateStatus] = useState<ValidateStatus | null>(null);
   const [validationResults, setValidationResults] = useState<ValidationResultItem[]>([]);
-  const [showValidationResults, setShowValidationResults] = useState(false);
   const [validationFilter, setValidationFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -89,6 +89,7 @@ export default function BenchmarkDetail() {
   const [actionLoading, setActionLoading] = useState(false);
   const rulesImportRef = useRef<HTMLInputElement>(null);
   const commandsImportRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'validation'>('overview');
 
   const fetchData = useCallback(async () => {
     try {
@@ -229,20 +230,6 @@ export default function BenchmarkDetail() {
     }
   };
 
-  const handleShowValidationResults = async () => {
-    if (showValidationResults) {
-      setShowValidationResults(false);
-      return;
-    }
-    try {
-      const params = validationFilter ? { status_filter: validationFilter } : undefined;
-      const result = await api.getValidationResults(benchmarkId, params);
-      setValidationResults(result.data);
-      setShowValidationResults(true);
-    } catch {
-      setValidationResults([]);
-    }
-  };
 
   const fetchValidationResults = async () => {
     try {
@@ -549,178 +536,191 @@ export default function BenchmarkDetail() {
         </div>
       )}
 
-      {/* Phase Status Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Phase 1 */}
-        <div className="rounded-xl border border-dark-border bg-dark-card p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-300">Phase 1: Parse</h3>
-            {statusBadge(benchmark.phase1_status)}
-          </div>
-          <p className="mt-2 text-2xl font-bold text-white">{benchmark.total_rules} <span className="text-sm font-normal text-dark-secondary">rules extracted</span></p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {benchmark.phase1_status === 'completed' && benchmark.total_rules > 0 && (
-              <button onClick={handleExportRules} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                <Download className="h-3 w-3" /> Export Rules
-              </button>
-            )}
-            <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-              <Upload className="h-3 w-3" /> Import Rules
-              <input ref={rulesImportRef} type="file" accept=".json" className="hidden" onChange={handleImportRules} disabled={actionLoading} />
-            </label>
-          </div>
-        </div>
-
-        {/* Phase 2 */}
-        <div className="rounded-xl border border-dark-border bg-dark-card p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-300">Phase 2: Enrich</h3>
-            {statusBadge(enrichStatus?.status || benchmark.phase2_status)}
-          </div>
-          {enrichStatus && enrichStatus.total > 0 && (
-            <>
-              <p className="mt-2 text-2xl font-bold text-white">
-                {enrichStatus.processed}/{enrichStatus.total}
-                <span className="text-sm font-normal text-dark-secondary"> commands</span>
-              </p>
-              <div className="mt-2 h-2 w-full rounded-full bg-dark-overlay">
-                <div className="h-2 rounded-full bg-ey-yellow transition-all" style={{ width: `${enrichPercent}%` }} />
-              </div>
-            </>
-          )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && benchmark.phase2_status !== 'completed' && (
-              <button onClick={handleEnrich} className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover">
-                <Play className="h-3 w-3" /> {benchmark.phase2_status === 'paused' ? 'Resume' : 'Start'} Enrichment
-              </button>
-            )}
-            {benchmark.phase2_status === 'processing' && (
-              <button onClick={handlePauseEnrich} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
-                <Pause className="h-3 w-3" /> Pause
-              </button>
-            )}
-            {benchmark.phase1_status === 'completed' && benchmark.phase2_status === 'completed' && (
-              <button onClick={handleExportCommands} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                <Download className="h-3 w-3" /> Export Commands
-              </button>
-            )}
-            {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && (
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                <Upload className="h-3 w-3" /> Import Commands
-                <input ref={commandsImportRef} type="file" accept=".json" className="hidden" onChange={handleImportCommands} disabled={actionLoading} />
-              </label>
-            )}
-          </div>
-        </div>
-
-        {/* Verification */}
-        <div className="rounded-xl border border-dark-border bg-dark-card p-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-gray-300">Verification</h3>
-            {statusBadge(verifyStatus?.status || benchmark.verification_status)}
-          </div>
-          {verifyStatus && verifyStatus.total > 0 && (
-            <div className="mt-2 flex gap-4">
-              <div>
-                <span className="text-2xl font-bold text-emerald-400">{verifyStatus.passed}</span>
-                <span className="text-sm text-dark-secondary"> passed</span>
-              </div>
-              <div>
-                <span className="text-2xl font-bold text-red-400">{verifyStatus.failed}</span>
-                <span className="text-sm text-dark-secondary"> failed</span>
-              </div>
-            </div>
-          )}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {benchmark.phase2_status === 'completed' && !['processing'].includes(benchmark.verification_status) && (
-              <button onClick={handleVerify} className="inline-flex items-center gap-1 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
-                <Shield className="h-3 w-3" /> {['completed', 'completed_with_issues', 'overridden'].includes(benchmark.verification_status) ? 'Re-run' : 'Run'} Verification
-              </button>
-            )}
-            {verifyStatus && verifyStatus.failed > 0 && (
-              <button onClick={handleBulkRegenerate} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50">
-                <RefreshCw className="h-3 w-3" /> Regenerate Flagged
-              </button>
-            )}
-            {['completed', 'completed_with_issues'].includes(benchmark.verification_status) && (
-              <button onClick={handleBulkAccept} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-                <CheckCheck className="h-3 w-3" /> Accept All
-              </button>
-            )}
-            {benchmark.verification_status === 'completed_with_issues' && !benchmark.is_ready && (
-              <button onClick={handleOverride} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50">
-                <AlertTriangle className="h-3 w-3" /> Override
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Phase 3: Validate & Correct (optional) */}
+      {/* Tab Navigation */}
+      <div className="flex border-b border-dark-border mb-6 overflow-x-auto custom-scrollbar">
+        <button onClick={() => setActiveTab('overview')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'overview' ? 'border-b-2 border-ey-yellow text-ey-yellow' : 'text-dark-secondary hover:text-white'}`}>Overview</button>
+        <button onClick={() => setActiveTab('rules')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'rules' ? 'border-b-2 border-ey-yellow text-ey-yellow' : 'text-dark-secondary hover:text-white'}`}>Rules & Commands</button>
         {benchmark.phase2_status === 'completed' && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-300">
-                <Sparkles className="mr-1 inline h-3.5 w-3.5 text-amber-400" />
-                Validate & Correct
-              </h3>
-              {validateStatus && validateStatus.status !== 'not_started' && statusBadge(validateStatus.status)}
-              {(!validateStatus || validateStatus.status === 'not_started') && (
-                <span className="inline-flex items-center rounded-full bg-dark-overlay px-2.5 py-0.5 text-xs font-medium text-dark-secondary">optional</span>
-              )}
-            </div>
-            {validateStatus && validateStatus.total > 0 && (
-              <>
-                <div className="mt-2 flex flex-wrap gap-3">
-                  <div>
-                    <span className="text-lg font-bold text-emerald-400">{validateStatus.validated}</span>
-                    <span className="text-xs text-dark-secondary"> ok</span>
-                  </div>
-                  <div>
-                    <span className="text-lg font-bold text-amber-400">{validateStatus.corrected}</span>
-                    <span className="text-xs text-dark-secondary"> corrected</span>
-                  </div>
-                  <div>
-                    <span className="text-lg font-bold text-red-400">{validateStatus.flagged}</span>
-                    <span className="text-xs text-dark-secondary"> flagged</span>
-                  </div>
-                </div>
-                {validateStatus.status === 'processing' && validateStatus.total > 0 && (
-                  <div className="mt-2 h-2 w-full rounded-full bg-dark-overlay">
-                    <div className="h-2 rounded-full bg-amber-500 transition-all" style={{ width: `${Math.round((validateStatus.processed / validateStatus.total) * 100)}%` }} />
-                  </div>
-                )}
-              </>
-            )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {benchmark.phase3_status !== 'processing' && (
-                <button onClick={handleStartValidation} className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
-                  <Sparkles className="h-3 w-3" /> {benchmark.phase3_status === 'paused' ? 'Resume' : benchmark.phase3_status === 'completed' ? 'Re-run' : 'Run'} Validation
-                </button>
-              )}
-              {benchmark.phase3_status === 'processing' && (
-                <button onClick={handlePauseValidation} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
-                  <Pause className="h-3 w-3" /> Pause
-                </button>
-              )}
-              {validateStatus && (validateStatus.corrected > 0 || validateStatus.flagged > 0) && (
-                <button onClick={handleShowValidationResults} className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-dark-elevated px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-dark-overlay">
-                  <Search className="h-3 w-3" /> {showValidationResults ? 'Hide' : 'View'} Results
-                </button>
-              )}
-              {validateStatus && validateStatus.corrected > 0 && (
-                <button onClick={handleBulkApplyCorrections} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-                  <Check className="h-3 w-3" /> Apply All (High)
-                </button>
-              )}
-            </div>
-            <p className="mt-2 text-xs text-dark-muted">LLM reviews generated commands for accuracy. Completely optional.</p>
-          </div>
+          <button onClick={() => { setActiveTab('validation'); if (validationResults.length === 0) fetchValidationResults(); }} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'validation' ? 'border-b-2 border-ey-yellow text-ey-yellow' : 'text-dark-secondary hover:text-white'}`}>Validation Results</button>
         )}
       </div>
 
+      {/* Phase Status Cards */}
+      {activeTab === 'overview' && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-gray-300">Phase 1: Parse</h3>
+              {statusBadge(benchmark.phase1_status)}
+            </div>
+            <p className="mt-2 text-2xl font-bold text-white">{benchmark.total_rules} <span className="text-sm font-normal text-dark-secondary">rules extracted</span></p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {benchmark.phase1_status === 'completed' && benchmark.total_rules > 0 && (
+                <button onClick={handleExportRules} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                  <Download className="h-3 w-3" /> Export Rules
+                </button>
+              )}
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                <Upload className="h-3 w-3" /> Import Rules
+                <input ref={rulesImportRef} type="file" accept=".json" className="hidden" onChange={handleImportRules} disabled={actionLoading} />
+              </label>
+            </div>
+          </div>
+
+          {/* Phase 2 */}
+          <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-gray-300">Phase 2: Enrich</h3>
+              {statusBadge(enrichStatus?.status || benchmark.phase2_status)}
+            </div>
+            {enrichStatus && enrichStatus.total > 0 && (
+              <>
+                <p className="mt-2 text-2xl font-bold text-white">
+                  {enrichStatus.processed}<span className="text-xl text-dark-secondary">/{enrichStatus.total}</span>
+                </p>
+                <p className="text-xs text-ey-yellow/80 mt-1 mb-2 font-medium">Processing rule {enrichStatus.processed} of {enrichStatus.total}{'\u2026'}</p>
+                <div className="mt-2 h-2 w-full rounded-full bg-dark-overlay overflow-hidden">
+                  <div className="h-full rounded-full bg-ey-yellow transition-all duration-300 relative overflow-hidden" style={{ width: `${enrichPercent}%` }}>
+                    {enrichStatus.status === 'processing' && <div className="absolute inset-0 bg-white/20 animate-pulse" />}
+                  </div>
+                </div>
+              </>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && benchmark.phase2_status !== 'completed' && (
+                <button onClick={handleEnrich} className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover">
+                  <Play className="h-3 w-3" /> {benchmark.phase2_status === 'paused' ? 'Resume' : 'Start'} Enrichment
+                </button>
+              )}
+              {benchmark.phase2_status === 'processing' && (
+                <button onClick={handlePauseEnrich} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
+                  <Pause className="h-3 w-3" /> Pause
+                </button>
+              )}
+              {benchmark.phase1_status === 'completed' && benchmark.phase2_status === 'completed' && (
+                <button onClick={handleExportCommands} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                  <Download className="h-3 w-3" /> Export Commands
+                </button>
+              )}
+              {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && (
+                <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                  <Upload className="h-3 w-3" /> Import Commands
+                  <input ref={commandsImportRef} type="file" accept=".json" className="hidden" onChange={handleImportCommands} disabled={actionLoading} />
+                </label>
+              )}
+            </div>
+          </div>
+
+          {/* Verification */}
+          <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-medium text-gray-300">Verification</h3>
+              {statusBadge(verifyStatus?.status || benchmark.verification_status)}
+            </div>
+            {verifyStatus && verifyStatus.total > 0 && (
+              <div className="mt-2 flex gap-4">
+                <div>
+                  <span className="text-2xl font-bold text-emerald-400">{verifyStatus.passed}</span>
+                  <span className="text-sm text-dark-secondary"> passed</span>
+                </div>
+                <div>
+                  <span className="text-2xl font-bold text-red-400">{verifyStatus.failed}</span>
+                  <span className="text-sm text-dark-secondary"> failed</span>
+                </div>
+              </div>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {benchmark.phase2_status === 'completed' && !['processing'].includes(benchmark.verification_status) && (
+                <button onClick={handleVerify} className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
+                  <img src={logoImg} alt="Verify Logo" className="h-3 w-3 object-contain invert brightness-0" />
+                  {['completed', 'completed_with_issues', 'overridden'].includes(benchmark.verification_status) ? 'Re-run' : 'Run'} Verification
+                </button>
+              )}
+              {verifyStatus && verifyStatus.failed > 0 && (
+                <button onClick={handleBulkRegenerate} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50">
+                  <RefreshCw className="h-3 w-3" /> Regenerate Flagged
+                </button>
+              )}
+              {['completed', 'completed_with_issues'].includes(benchmark.verification_status) && (
+                <button onClick={handleBulkAccept} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                  <CheckCheck className="h-3 w-3" /> Accept All
+                </button>
+              )}
+              {benchmark.verification_status === 'completed_with_issues' && !benchmark.is_ready && (
+                <button onClick={handleOverride} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50">
+                  <AlertTriangle className="h-3 w-3" /> Override
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Phase 3: Validate & Correct (optional) */}
+          {benchmark.phase2_status === 'completed' && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-gray-300">
+                  <Sparkles className="mr-1 inline h-3.5 w-3.5 text-amber-400" />
+                  Validate & Correct
+                </h3>
+                {validateStatus && validateStatus.status !== 'not_started' && statusBadge(validateStatus.status)}
+                {(!validateStatus || validateStatus.status === 'not_started') && (
+                  <span className="inline-flex items-center rounded-full bg-dark-overlay px-2.5 py-0.5 text-xs font-medium text-dark-secondary">optional</span>
+                )}
+              </div>
+              {validateStatus && validateStatus.total > 0 && (
+                <>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <div>
+                      <span className="text-lg font-bold text-emerald-400">{validateStatus.validated}</span>
+                      <span className="text-xs text-dark-secondary"> ok</span>
+                    </div>
+                    <div>
+                      <span className="text-lg font-bold text-amber-400">{validateStatus.corrected}</span>
+                      <span className="text-xs text-dark-secondary"> corrected</span>
+                    </div>
+                    <div>
+                      <span className="text-lg font-bold text-red-400">{validateStatus.flagged}</span>
+                      <span className="text-xs text-dark-secondary"> flagged</span>
+                    </div>
+                  </div>
+                  {validateStatus.status === 'processing' && validateStatus.total > 0 && (
+                    <div className="mt-2 h-2 w-full rounded-full bg-dark-overlay">
+                      <div className="h-2 rounded-full bg-amber-500 transition-all" style={{ width: `${Math.round((validateStatus.processed / validateStatus.total) * 100)}%` }} />
+                    </div>
+                  )}
+                </>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {benchmark.phase3_status !== 'processing' && (
+                  <button onClick={handleStartValidation} className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+                    <Sparkles className="h-3 w-3" /> {benchmark.phase3_status === 'paused' ? 'Resume' : benchmark.phase3_status === 'completed' ? 'Re-run' : 'Run'} Validation
+                  </button>
+                )}
+                {benchmark.phase3_status === 'processing' && (
+                  <button onClick={handlePauseValidation} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
+                    <Pause className="h-3 w-3" /> Pause
+                  </button>
+                )}
+                {validateStatus && (validateStatus.corrected > 0 || validateStatus.flagged > 0) && (
+                  <button onClick={() => { setActiveTab('validation'); if (validationResults.length === 0) fetchValidationResults(); }} className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-dark-elevated px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-dark-overlay">
+                    <Search className="h-3 w-3" /> View Results
+                  </button>
+                )}
+                {validateStatus && validateStatus.corrected > 0 && (
+                  <button onClick={handleBulkApplyCorrections} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                    <Check className="h-3 w-3" /> Apply All (High)
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-dark-muted">LLM reviews generated commands for accuracy. Completely optional.</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Phase 3: Validation Results */}
-      {showValidationResults && validationResults.length > 0 && (
-        <div className="rounded-xl border border-amber-500/30 bg-dark-card">
+      {activeTab === 'validation' && (
+        <div className="rounded-xl border border-amber-500/30 bg-dark-card animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="border-b border-amber-500/30 bg-amber-500/5 p-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-medium text-white">
@@ -755,11 +755,10 @@ export default function BenchmarkDetail() {
                   <span className="flex-1 text-sm font-medium text-white">{item.title}</span>
                   {statusBadge(item.validation_status || 'pending')}
                   {item.validation_confidence && (
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${
-                      item.validation_confidence === 'high' ? 'bg-emerald-500/10 text-emerald-400' :
+                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${item.validation_confidence === 'high' ? 'bg-emerald-500/10 text-emerald-400' :
                       item.validation_confidence === 'medium' ? 'bg-amber-500/10 text-amber-400' :
-                      'bg-red-500/10 text-red-400'
-                    }`}>
+                        'bg-red-500/10 text-red-400'
+                      }`}>
                       {item.validation_confidence}
                     </span>
                   )}
@@ -823,8 +822,8 @@ export default function BenchmarkDetail() {
       )}
 
       {/* Rules Section */}
-      {benchmark.phase1_status === 'completed' && (
-        <div className="rounded-xl border border-dark-border bg-dark-card">
+      {activeTab === 'rules' && benchmark.phase1_status === 'completed' && (
+        <div className="rounded-xl border border-dark-border bg-dark-card animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="border-b border-dark-border p-4">
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-lg font-medium text-white">Rules</h3>
@@ -1100,7 +1099,8 @@ export default function BenchmarkDetail() {
             )}
           </div>
         </div>
-      )}
-    </div>
+      )
+      }
+    </div >
   );
 }

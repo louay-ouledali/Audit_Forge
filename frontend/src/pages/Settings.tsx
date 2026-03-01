@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Save, CheckCircle2, XCircle, Download, Upload, Database,
-  AlertTriangle, Zap, Loader2, Trash2,
+  AlertTriangle, Zap, Loader2, Trash2
 } from 'lucide-react';
 import type { Settings as SettingsType, LLMTestResult } from '@/types';
 import * as api from '@/services/api';
@@ -170,11 +170,10 @@ export default function Settings() {
     <div className="mx-auto max-w-3xl space-y-6">
       {toast && (
         <div
-          className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${
-            toast.type === 'success'
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-              : 'border-red-500/30 bg-red-500/10 text-red-400'
-          }`}
+          className={`flex items-center gap-2 rounded-lg border p-3 text-sm ${toast.type === 'success'
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+            : 'border-red-500/30 bg-red-500/10 text-red-400'
+            }`}
         >
           {toast.type === 'success' ? (
             <CheckCircle2 className="h-4 w-4" />
@@ -290,12 +289,12 @@ export default function Settings() {
                   settings.llm_online_provider === 'openai'
                     ? 'e.g. gpt-4o, gpt-4o-mini'
                     : settings.llm_online_provider === 'mistral'
-                    ? 'e.g. mistral-large-latest'
-                    : settings.llm_online_provider === 'groq'
-                    ? 'e.g. llama-3.1-70b-versatile'
-                    : settings.llm_online_provider === 'openrouter'
-                    ? 'e.g. meta-llama/llama-3.1-70b-instruct'
-                    : 'e.g. gpt-4o'
+                      ? 'e.g. mistral-large-latest'
+                      : settings.llm_online_provider === 'groq'
+                        ? 'e.g. llama-3.1-70b-versatile'
+                        : settings.llm_online_provider === 'openrouter'
+                          ? 'e.g. meta-llama/llama-3.1-70b-instruct'
+                          : 'e.g. gpt-4o'
                 }
               />
             </div>
@@ -330,11 +329,10 @@ export default function Settings() {
 
           {llmTestResult && (
             <div
-              className={`mt-3 rounded-lg border p-3 text-sm ${
-                llmTestResult.success
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                  : 'border-red-500/30 bg-red-500/10 text-red-400'
-              }`}
+              className={`mt-3 rounded-lg border p-3 text-sm ${llmTestResult.success
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                : 'border-red-500/30 bg-red-500/10 text-red-400'
+                }`}
             >
               {llmTestResult.success ? (
                 <div className="space-y-1">

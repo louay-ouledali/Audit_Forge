@@ -22,6 +22,7 @@ import {
   Trash2,
   Pencil,
   Users,
+  RefreshCw,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -89,6 +90,12 @@ const AUDIENCES = [
   { value: 'compliance', label: 'Compliance', icon: '📋', desc: 'Control mapping focus', secs: { executive_summary: true, charts: true, findings_detail: true, recommendations: false } },
 ] as const;
 
+const REPORT_PRESETS = [
+  { id: 'exec', label: 'Executive Board', icon: '👔', audience: 'executive', format: 'pdf', includePassed: false, aiSummary: true },
+  { id: 'tech', label: 'Technical Deep-Dive', icon: '💻', audience: 'technical', format: 'html', includePassed: true, aiSummary: false },
+  { id: 'comp', label: 'Compliance Audit', icon: '📋', audience: 'compliance', format: 'excel', includePassed: true, aiSummary: false },
+] as const;
+
 const SEC_LABELS: Record<string, string> = {
   executive_summary: 'Executive Summary',
   charts: 'Charts & Graphs',
@@ -103,14 +110,13 @@ const QUICK_FILTERS = [
   { id: 'action', label: 'Action Required', icon: Zap, sev: 'critical,high', status: 'FAIL' },
 ] as const;
 
-type WorkspaceTab = 'rules' | 'organize' | 'customize' | 'preview';
+type WorkspaceTab = 'rules' | 'organize' | 'customize';
 type ScanViewMode = 'card' | 'list';
 
 const TABS: { id: WorkspaceTab; label: string; icon: typeof Filter }[] = [
   { id: 'rules', label: 'Rules', icon: Filter },
   { id: 'organize', label: 'Organize', icon: Layers },
   { id: 'customize', label: 'Customize', icon: SlidersHorizontal },
-  { id: 'preview', label: 'Preview', icon: Eye },
 ];
 
 /* ─── Component ───────────────────────────────────────────────── */
@@ -333,15 +339,24 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
   }
   function moveGroupUp(idx: number) {
     if (idx <= 0) return;
-    setGroups(prev => { const n = [...prev]; [n[idx - 1], n[idx]] = [n[idx], n[idx - 1]]; return n; });
+    setGroups(prev => { const n = [...prev];[n[idx - 1], n[idx]] = [n[idx], n[idx - 1]]; return n; });
   }
   function moveGroupDown(idx: number) {
     if (idx >= groups.length - 1) return;
-    setGroups(prev => { const n = [...prev]; [n[idx], n[idx + 1]] = [n[idx + 1], n[idx]]; return n; });
+    setGroups(prev => { const n = [...prev];[n[idx], n[idx + 1]] = [n[idx + 1], n[idx]]; return n; });
   }
 
   /* ── Audience & AI ────────────────────────────────────────── */
   function applyAudience(preset: typeof AUDIENCES[number]) { setAudience(preset.value); setSections({ ...preset.secs }); }
+  function applyPreset(preset: typeof REPORT_PRESETS[number]) {
+    setAudience(preset.audience);
+    const audObj = AUDIENCES.find(a => a.value === preset.audience);
+    if (audObj) setSections({ ...audObj.secs });
+    setExportFormat(preset.format);
+    setIncludePassedRules(preset.includePassed);
+    setIncludeAiSummary(preset.aiSummary);
+    setSuccess(`Applied ${preset.label} preset`);
+  }
   function toggleSection(key: string) { setSections(prev => ({ ...prev, [key]: !prev[key] })); }
 
   async function generateGroupSummary(groupName: string, ruleIds: number[]) {
@@ -380,7 +395,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
   }
 
   /* ── Preview & Export ─────────────────────────────────────── */
-  async function handlePreview() {
+  const handlePreview = useCallback(async () => {
     if (selectedScanIds.length === 0) return;
     setLoadingPreview(true); setError('');
     try {
@@ -394,9 +409,14 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
         group_summaries: Object.keys(groupSummaries).length > 0 ? groupSummaries : undefined,
       });
       setPreviewHtml(html);
-      setActiveTab('preview');
     } catch { setError('Failed to generate preview'); } finally { setLoadingPreview(false); }
-  }
+  }, [selectedScanIds, excludedRuleIds, includePassedRules, customTitle, groups, audience, sections, groupSummaries]);
+
+  useEffect(() => {
+    if (selectedScanIds.length === 0) return;
+    const timer = setTimeout(() => { handlePreview(); }, 800);
+    return () => clearTimeout(timer);
+  }, [handlePreview, selectedScanIds]);
 
   async function handleExport() {
     if (selectedScanIds.length === 0 || selectedCount === 0) return;
@@ -568,19 +588,17 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                       <button
                         key={scan.id}
                         onClick={() => toggleScan(scan.id)}
-                        className={`flex-shrink-0 w-[230px] snap-start rounded-xl border-2 p-4 text-left transition-all ${
-                          selected
-                            ? 'border-ey-yellow bg-ey-yellow/5 shadow-lg shadow-ey-yellow/5'
-                            : 'border-dark-border bg-dark-elevated hover:border-dark-secondary'
-                        }`}
+                        className={`flex-shrink-0 w-[230px] snap-start rounded-xl border-2 p-4 text-left transition-all ${selected
+                          ? 'border-ey-yellow bg-ey-yellow/5 shadow-lg shadow-ey-yellow/5'
+                          : 'border-dark-border bg-dark-elevated hover:border-dark-secondary'
+                          }`}
                       >
                         <div className="flex items-start justify-between mb-1">
                           <h3 className="text-sm font-semibold text-white truncate flex-1 pr-2">
                             {scan.target_hostname || scan.target_ip || `Scan #${scan.id}`}
                           </h3>
-                          <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${
-                            selected ? 'border-ey-yellow bg-ey-yellow' : 'border-dark-border bg-dark-elevated'
-                          }`}>
+                          <div className={`flex-shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors ${selected ? 'border-ey-yellow bg-ey-yellow' : 'border-dark-border bg-dark-elevated'
+                            }`}>
                             {selected && <CheckCircle2 className="h-3 w-3 text-black" />}
                           </div>
                         </div>
@@ -716,487 +734,502 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                 </div>
               )}
 
-              {/* ─── Tab Navigation ───────────────────────────── */}
-              <div className="rounded-xl border border-dark-border bg-dark-card overflow-hidden">
-                <div className="flex border-b border-dark-border">
-                  {TABS.map(tab => {
-                    const Icon = tab.icon;
-                    const isActive = activeTab === tab.id;
-                    let badge = '';
-                    if (tab.id === 'rules') badge = `${selectedCount}`;
-                    if (tab.id === 'organize') badge = `${groups.length}`;
-                    return (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`relative flex items-center gap-2 px-5 py-3.5 text-sm font-medium transition-colors ${
-                          isActive ? 'text-ey-yellow' : 'text-dark-secondary hover:text-white'
-                        }`}
-                      >
-                        <Icon className="h-4 w-4" />
-                        <span className="hidden sm:inline">{tab.label}</span>
-                        {badge && badge !== '0' && (
-                          <span className={`rounded-full px-1.5 py-0 text-[10px] font-medium ${
-                            isActive ? 'bg-ey-yellow/15 text-ey-yellow' : 'bg-dark-elevated text-dark-muted'
-                          }`}>{badge}</span>
-                        )}
-                        {isActive && <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-ey-yellow" />}
-                      </button>
-                    );
-                  })}
+              {/* ─── Template Presets ───────────────────────────── */}
+              <div className="flex bg-dark-card border border-dark-border rounded-lg overflow-x-auto p-2 gap-2 mb-2 custom-scrollbar items-center">
+                <div className="flex items-center px-3 border-r border-dark-border mr-2 shrink-0">
+                  <span className="text-sm font-semibold text-white flex items-center gap-1.5"><Sparkles className="h-4 w-4 text-ey-yellow" /> Template Presets</span>
                 </div>
+                {REPORT_PRESETS.map(preset => (
+                  <button key={preset.id} onClick={() => applyPreset(preset)}
+                    className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-1.5 border border-dark-border rounded-lg bg-dark-elevated hover:bg-dark-overlay hover:border-dark-secondary transition-colors">
+                    <span>{preset.icon}</span>
+                    <span className="text-xs font-medium text-white">{preset.label}</span>
+                  </button>
+                ))}
+              </div>
 
-                <div className="p-5">
+              {/* ─── Split Pane Layout ──────────────────────────── */}
+              <div className="flex flex-col xl:flex-row gap-6 items-start">
 
-                  {/* ══════════════════════════════════════════════ */}
-                  {/*  TAB: Rules                                   */}
-                  {/* ══════════════════════════════════════════════ */}
-                  {activeTab === 'rules' && (
-                    <div>
-                      {/* Quick Filter Presets */}
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {QUICK_FILTERS.map(f => {
-                          const QIcon = f.icon;
-                          const isActive = quickFilter === f.id;
-                          return (
-                            <button
-                              key={f.id}
-                              onClick={() => applyQuickFilter(f)}
-                              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${
-                                isActive
-                                  ? 'border-ey-yellow/40 bg-ey-yellow/10 text-ey-yellow'
-                                  : 'border-dark-border bg-dark-elevated text-dark-secondary hover:text-white hover:border-dark-secondary'
+                {/* Left Pane: Builder Controls */}
+                <div className="flex-1 w-full xl:w-5/12 flex flex-col gap-6">
+
+                  {/* ─── Tab Navigation (Left Pane) ────────────────── */}
+                  <div className="rounded-xl border border-dark-border bg-dark-card overflow-hidden">
+                    <div className="flex border-b border-dark-border overflow-x-auto custom-scrollbar">
+                      {TABS.map(tab => {
+                        const Icon = tab.icon;
+                        const isActive = activeTab === tab.id;
+                        let badge = '';
+                        if (tab.id === 'rules') badge = `${selectedCount}`;
+                        if (tab.id === 'organize') badge = `${groups.length}`;
+                        return (
+                          <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`relative flex items-center gap-2 px-5 py-3.5 text-sm font-medium transition-colors ${isActive ? 'text-ey-yellow' : 'text-dark-secondary hover:text-white'
                               }`}
-                            >
-                              <QIcon className="h-3 w-3" />
-                              {f.label}
+                          >
+                            <Icon className="h-4 w-4" />
+                            <span className="hidden sm:inline">{tab.label}</span>
+                            {badge && badge !== '0' && (
+                              <span className={`rounded-full px-1.5 py-0 text-[10px] font-medium ${isActive ? 'bg-ey-yellow/15 text-ey-yellow' : 'bg-dark-elevated text-dark-muted'
+                                }`}>{badge}</span>
+                            )}
+                            {isActive && <div className="absolute bottom-0 left-2 right-2 h-0.5 rounded-full bg-ey-yellow" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="p-5">
+
+                      {/* ══════════════════════════════════════════════ */}
+                      {/*  TAB: Rules                                   */}
+                      {/* ══════════════════════════════════════════════ */}
+                      {activeTab === 'rules' && (
+                        <div>
+                          {/* Quick Filter Presets */}
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            {QUICK_FILTERS.map(f => {
+                              const QIcon = f.icon;
+                              const isActive = quickFilter === f.id;
+                              return (
+                                <button
+                                  key={f.id}
+                                  onClick={() => applyQuickFilter(f)}
+                                  className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all ${isActive
+                                    ? 'border-ey-yellow/40 bg-ey-yellow/10 text-ey-yellow'
+                                    : 'border-dark-border bg-dark-elevated text-dark-secondary hover:text-white hover:border-dark-secondary'
+                                    }`}
+                                >
+                                  <QIcon className="h-3 w-3" />
+                                  {f.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Search + Filters + Bulk Ops */}
+                          <div className="flex flex-wrap items-center gap-3 mb-3">
+                            <div className="relative flex-1 min-w-0">
+                              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-muted" />
+                              <input
+                                type="text"
+                                placeholder="Search by title, section, or description…"
+                                className="w-full rounded-lg border border-dark-border bg-dark-elevated pl-9 pr-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none"
+                                value={searchQuery}
+                                onChange={e => { setSearchQuery(e.target.value); setQuickFilter(''); }}
+                              />
+                            </div>
+                            <select className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/50 focus:outline-none" value={severityFilter} onChange={e => { setSeverityFilter(e.target.value); setQuickFilter(''); }}>
+                              <option value="all">All Severity</option>
+                              {availableSeverities.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                            </select>
+                            <select className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/50 focus:outline-none" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setQuickFilter(''); }}>
+                              <option value="all">All Status</option>
+                              {availableStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                            <div className="flex gap-1">
+                              <button onClick={selectAll} className="rounded-md bg-dark-elevated px-2 py-1.5 text-xs text-dark-secondary hover:text-white transition-colors" title="Select all"><ListChecks className="h-3.5 w-3.5" /></button>
+                              <button onClick={deselectAll} className="rounded-md bg-dark-elevated px-2 py-1.5 text-xs text-dark-secondary hover:text-white transition-colors" title="Deselect all"><ListX className="h-3.5 w-3.5" /></button>
+                              <button onClick={() => { setExcludedRuleIds(new Set()); setSearchQuery(''); setSeverityFilter('all'); setStatusFilter('all'); setQuickFilter('all'); }} className="rounded-md bg-dark-elevated px-2 py-1.5 text-xs text-dark-secondary hover:text-white transition-colors" title="Reset"><RotateCcw className="h-3.5 w-3.5" /></button>
+                            </div>
+                          </div>
+
+                          {/* Filtered bulk ops */}
+                          {(searchQuery || severityFilter !== 'all' || statusFilter !== 'all') && (
+                            <div className="flex gap-2 mb-3">
+                              <button onClick={selectFiltered} className="rounded-md bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 text-xs text-emerald-400 hover:bg-emerald-500/20 transition-colors">
+                                Select filtered ({filteredRules.length})
+                              </button>
+                              <button onClick={deselectFiltered} className="rounded-md bg-red-500/10 border border-red-500/30 px-2.5 py-1 text-xs text-red-400 hover:bg-red-500/20 transition-colors">
+                                Deselect filtered
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Rules list */}
+                          {filteredRules.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-dark-muted">
+                              <Search className="h-8 w-8 mb-2 opacity-40" />
+                              <p className="text-sm">No rules match your filters</p>
+                            </div>
+                          ) : (
+                            <div className="max-h-[440px] overflow-y-auto rounded-lg border border-dark-border divide-y divide-dark-border">
+                              {filteredRules.map(rule => {
+                                const isIncluded = !excludedRuleIds.has(rule.rule_id);
+                                const StIcon = STATUS_ICONS[rule.status] || ShieldAlert;
+                                const stColor = STATUS_COLORS[rule.status] || 'text-dark-muted';
+                                const sevClass = SEV_COLORS[rule.severity] || SEV_COLORS.medium;
+                                return (
+                                  <label key={rule.rule_id} className={`flex items-start gap-3 px-3 py-2.5 cursor-pointer transition-colors ${isIncluded ? 'hover:bg-dark-elevated' : 'bg-dark-elevated/40 opacity-50'}`}>
+                                    <input type="checkbox" className="mt-1 h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow focus:ring-ey-yellow/50 accent-ey-yellow" checked={isIncluded} onChange={() => toggleRule(rule.rule_id)} />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-mono text-dark-muted">{rule.section_number}</span>
+                                        <span className="text-sm font-medium text-white truncate">{rule.rule_title}</span>
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${sevClass}`}>{rule.severity}</span>
+                                        <span className={`inline-flex items-center gap-1 text-xs ${stColor}`}><StIcon className="h-3.5 w-3.5" />{rule.status}</span>
+                                        {rule.target_hostname && <span className="text-xs text-dark-muted">· {rule.target_hostname}</span>}
+                                      </div>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Footer stats */}
+                          {totalCount > 0 && (
+                            <div className="mt-3 flex items-center justify-between text-xs text-dark-secondary">
+                              <span>Showing {filteredRules.length} of {totalCount} rules{(searchQuery || severityFilter !== 'all' || statusFilter !== 'all') ? ' (filtered)' : ''}</span>
+                              <span>
+                                <span className="text-emerald-400 font-medium">{selectedCount}</span> included ·{' '}
+                                <span className="text-red-400 font-medium">{excludedRuleIds.size}</span> excluded
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ══════════════════════════════════════════════ */}
+                      {/*  TAB: Organize                                */}
+                      {/* ══════════════════════════════════════════════ */}
+                      {activeTab === 'organize' && (
+                        <div>
+                          {/* Toolbar */}
+                          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                            <div>
+                              <p className="text-sm text-dark-secondary">
+                                Group your <span className="text-white font-medium">{selectedCount}</span> rules into report sections. Drag rules between groups or use AI.
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={handleAutoGroup} disabled={loadingAutoGroup || selectedCount === 0}
+                                className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-sm font-medium text-purple-400 transition-colors hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-50">
+                                {loadingAutoGroup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                                {loadingAutoGroup ? 'Grouping…' : 'AI Auto-Group'}
+                              </button>
+                              <button onClick={addNewGroup} className="flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm font-medium text-dark-secondary hover:text-white transition-colors">
+                                <Plus className="h-4 w-4" /> New Group
+                              </button>
+                              {groups.length > 0 && (
+                                <button onClick={() => { setGroups([]); setGroupSummaries({}); }} className="flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm font-medium text-dark-secondary hover:text-red-400 transition-colors">
+                                  <RotateCcw className="h-4 w-4" /> Clear
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Groups content */}
+                          {groups.length === 0 ? (
+                            <div className="rounded-xl border-2 border-dashed border-dark-border p-10 text-center">
+                              <FolderPlus className="h-12 w-12 mx-auto text-dark-muted opacity-20 mb-4" />
+                              <h3 className="text-base font-semibold text-white mb-2">No Groups Yet</h3>
+                              <p className="text-sm text-dark-secondary max-w-md mx-auto mb-3">
+                                Click "AI Auto-Group" to automatically categorize rules, or "New Group" to create groups manually.
+                              </p>
+                              <p className="text-xs text-dark-muted">You can skip this step — rules will appear ungrouped in the report.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {groups.map((group, gIdx) => (
+                                <div key={gIdx} onDragOver={handleDragOver} onDrop={() => handleDrop(gIdx)}
+                                  className={`rounded-xl border bg-dark-card transition-all ${dragState ? 'border-ey-yellow/30 bg-ey-yellow/5' : 'border-dark-border'}`}>
+                                  {/* Group header */}
+                                  <div className="flex items-center gap-3 px-4 py-3 border-b border-dark-border">
+                                    <button onClick={() => toggleCollapse(gIdx)} className="text-dark-secondary hover:text-white">
+                                      {collapsedGroups.has(gIdx) ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                    </button>
+                                    {editingGroupIdx === gIdx ? (
+                                      <input autoFocus className="flex-1 rounded border border-ey-yellow/40 bg-dark-elevated px-2 py-1 text-sm text-white focus:outline-none"
+                                        value={editingGroupName} onChange={e => setEditingGroupName(e.target.value)}
+                                        onBlur={finishRenameGroup} onKeyDown={e => e.key === 'Enter' && finishRenameGroup()} />
+                                    ) : (
+                                      <h3 className="flex-1 text-sm font-semibold text-white">{group.name}</h3>
+                                    )}
+                                    <span className="rounded-full bg-dark-elevated px-2 py-0.5 text-xs text-dark-secondary">{group.rule_ids.length} rule{group.rule_ids.length !== 1 ? 's' : ''}</span>
+                                    <div className="flex items-center gap-1">
+                                      <button onClick={() => moveGroupUp(gIdx)} disabled={gIdx === 0} className="p-1 text-dark-muted hover:text-white disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button>
+                                      <button onClick={() => moveGroupDown(gIdx)} disabled={gIdx === groups.length - 1} className="p-1 text-dark-muted hover:text-white disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button>
+                                      <button onClick={() => startRenameGroup(gIdx)} className="p-1 text-dark-muted hover:text-ey-yellow"><Pencil className="h-3.5 w-3.5" /></button>
+                                      <button onClick={() => deleteGroup(gIdx)} className="p-1 text-dark-muted hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
+                                    </div>
+                                  </div>
+                                  {/* Group rules */}
+                                  {!collapsedGroups.has(gIdx) && (
+                                    <div className="p-3 space-y-1.5 min-h-[40px]">
+                                      {group.rule_ids.length === 0 ? (
+                                        <p className="text-xs text-dark-muted text-center py-3">Drag rules here or use auto-group</p>
+                                      ) : group.rule_ids.map(rid => <RulePill key={rid} ruleId={rid} groupIdx={gIdx} />)}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+
+                              {/* Ungrouped rules */}
+                              {ungroupedRuleIds.length > 0 && (
+                                <div onDragOver={handleDragOver} onDrop={handleDropToUngrouped}
+                                  className="rounded-xl border border-dashed border-dark-border bg-dark-card">
+                                  <div className="flex items-center gap-2 px-4 py-3 border-b border-dark-border">
+                                    <h3 className="text-sm font-semibold text-dark-secondary">Ungrouped Rules</h3>
+                                    <span className="rounded-full bg-dark-elevated px-2 py-0.5 text-xs text-dark-muted">{ungroupedRuleIds.length}</span>
+                                  </div>
+                                  <div className="p-3 space-y-1.5 max-h-[300px] overflow-y-auto">
+                                    {ungroupedRuleIds.map(rid => <RulePill key={rid} ruleId={rid} groupIdx={-1} />)}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* ══════════════════════════════════════════════ */}
+                      {/*  TAB: Customize                               */}
+                      {/* ══════════════════════════════════════════════ */}
+                      {activeTab === 'customize' && (
+                        <div className="grid grid-cols-1 gap-6">
+                          <div className="space-y-5">
+                            {/* Audience Presets */}
+                            <div>
+                              <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-3">
+                                <Users className="h-4 w-4 text-ey-yellow" /> Target Audience
+                              </h3>
+                              <div className="space-y-2">
+                                {AUDIENCES.map(preset => (
+                                  <button key={preset.value} onClick={() => applyAudience(preset)}
+                                    className={`w-full flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-all ${audience === preset.value
+                                      ? 'border-ey-yellow bg-ey-yellow/10'
+                                      : 'border-dark-border hover:border-dark-secondary'}`}>
+                                    <span className="text-xl flex-shrink-0">{preset.icon}</span>
+                                    <div>
+                                      <span className={`block text-sm font-medium ${audience === preset.value ? 'text-ey-yellow' : 'text-white'}`}>{preset.label}</span>
+                                      <span className="block text-xs text-dark-muted mt-0.5">{preset.desc}</span>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Section Toggles */}
+                            <div>
+                              <h3 className="text-sm font-semibold text-white mb-3">Report Sections</h3>
+                              <div className="space-y-1.5">
+                                {Object.entries(SEC_LABELS).map(([key, label]) => (
+                                  <button key={key} onClick={() => toggleSection(key)}
+                                    className="w-full flex items-center justify-between rounded-lg border border-dark-border bg-dark-elevated px-3 py-2.5 transition-colors hover:border-dark-secondary">
+                                    <span className="text-sm text-white">{label}</span>
+                                    {sections[key] ? <ToggleRight className="h-5 w-5 text-ey-yellow" /> : <ToggleLeft className="h-5 w-5 text-dark-muted" />}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* AI Executive Summary */}
+                            <div className="rounded-lg border border-dark-border bg-dark-elevated p-4">
+                              <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-2">
+                                <Sparkles className="h-4 w-4 text-purple-400" /> AI Executive Summary
+                              </h3>
+                              <p className="text-xs text-dark-secondary mb-3">Auto-generate a high-level summary of audit findings.</p>
+                              <label className="flex items-center gap-2 cursor-pointer mb-3">
+                                <input type="checkbox" className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow accent-ey-yellow"
+                                  checked={includeAiSummary} onChange={e => setIncludeAiSummary(e.target.checked)} />
+                                <span className="text-sm text-gray-300">Include in exported report</span>
+                              </label>
+                              <button onClick={handlePreviewAiSummary} disabled={previewingSummary || selectedScanIds.length === 0}
+                                className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                {previewingSummary ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                                {previewingSummary ? 'Generating…' : 'Preview Summary'}
+                              </button>
+                              {aiSummaryPreview && (
+                                <div className="mt-3 rounded-lg border border-purple-500/20 bg-purple-500/5 p-3 text-xs text-gray-300 whitespace-pre-wrap leading-relaxed max-h-[200px] overflow-y-auto">
+                                  {aiSummaryPreview}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* AI Group Summaries */}
+                          <div>
+                            <div className="flex items-center justify-between mb-3 border-t border-dark-border pt-5">
+                              <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                                <Sparkles className="h-4 w-4 text-purple-400" /> AI Section Summaries
+                              </h3>
+                              {groups.length > 0 && (
+                                <button onClick={generateAllSummaries} disabled={loadingSummaryFor !== null}
+                                  className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-500/20 disabled:opacity-50">
+                                  {loadingSummaryFor !== null ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                                  Generate All
+                                </button>
+                              )}
+                            </div>
+
+                            {groups.length === 0 ? (
+                              <div className="flex flex-col items-center justify-center py-12 text-dark-muted rounded-xl border-2 border-dashed border-dark-border">
+                                <FolderPlus className="h-10 w-10 mb-3 opacity-20" />
+                                <p className="text-sm">Create groups in the Organize tab to generate per-section AI summaries</p>
+                                <p className="text-xs text-dark-muted mt-1">Summaries are optional</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {groups.map(group => (
+                                  <div key={group.name} className="rounded-lg border border-dark-border bg-dark-elevated p-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                      <div className="flex items-center gap-2">
+                                        <h4 className="text-sm font-semibold text-white">{group.name}</h4>
+                                        <span className="text-xs text-dark-muted">{group.rule_ids.length} rules</span>
+                                      </div>
+                                      <button onClick={() => generateGroupSummary(group.name, group.rule_ids)}
+                                        disabled={loadingSummaryFor !== null || group.rule_ids.length === 0}
+                                        className="flex items-center gap-1 rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-1 text-xs text-purple-400 hover:bg-purple-500/20 disabled:opacity-50">
+                                        {loadingSummaryFor === group.name ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                                        {groupSummaries[group.name] ? 'Regenerate' : 'Generate'}
+                                      </button>
+                                    </div>
+                                    {groupSummaries[group.name] ? (
+                                      <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
+                                        <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">{groupSummaries[group.name]}</p>
+                                        <button onClick={() => setGroupSummaries(prev => { const n = { ...prev }; delete n[group.name]; return n; })}
+                                          className="mt-2 text-xs text-dark-muted hover:text-red-400 transition-colors">Remove summary</button>
+                                      </div>
+                                    ) : (
+                                      <p className="text-xs text-dark-muted italic">No summary yet. Click "Generate" to create an AI summary.</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="mt-4 rounded-lg border border-dark-border bg-dark-card/50 p-3 text-xs text-dark-secondary">
+                              <span className="font-medium text-white">Audience:</span>{' '}
+                              {AUDIENCES.find(p => p.value === audience)?.label || audience} — AI summaries will be tailored accordingly.
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+
+                  {/* ═══════════════════════════════════════════════════ */}
+                  {/*  EXPORT BAR (Bottom of left pane)                  */}
+                  {/* ═══════════════════════════════════════════════════ */}
+                  <div className="rounded-xl border border-dark-border bg-dark-card p-5 space-y-4">
+                    {/* Row 1: Title, Audience, Checkboxes */}
+                    <div className="flex flex-wrap items-end gap-4">
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-xs font-medium text-dark-secondary mb-1.5">Report Title</label>
+                        <input
+                          type="text"
+                          className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none"
+                          placeholder={smartTitle}
+                          value={customTitle}
+                          onChange={e => setCustomTitle(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-dark-secondary mb-1.5">Audience</label>
+                        <div className="flex rounded-lg border border-dark-border overflow-hidden">
+                          {AUDIENCES.map(a => (
+                            <button key={a.value} onClick={() => applyAudience(a)}
+                              className={`px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${audience === a.value ? 'bg-ey-yellow/15 text-ey-yellow' : 'bg-dark-elevated text-dark-secondary hover:text-white'
+                                }`}>
+                              {a.icon} {a.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 pb-0.5">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow accent-ey-yellow"
+                            checked={includePassedRules} onChange={e => setIncludePassedRules(e.target.checked)} />
+                          <span className="text-xs text-gray-300 whitespace-nowrap">Include passed</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="checkbox" className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow accent-ey-yellow"
+                            checked={includeAiSummary} onChange={e => setIncludeAiSummary(e.target.checked)} />
+                          <span className="text-xs text-gray-300 whitespace-nowrap">AI Summary</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Format + Preview + Export */}
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex flex-wrap gap-2">
+                        {FORMATS.map(f => {
+                          const FIcon = f.icon;
+                          return (
+                            <button key={f.value} onClick={() => setExportFormat(f.value)} title={f.desc}
+                              className={`flex items-center gap-1.5 rounded-lg border-2 px-2.5 py-1.5 text-sm font-medium transition-all ${exportFormat === f.value
+                                ? 'border-ey-yellow bg-ey-yellow/10 text-ey-yellow shadow-sm shadow-ey-yellow/10'
+                                : 'border-dark-border text-dark-secondary hover:border-dark-secondary hover:text-white'
+                                }`}>
+                              <FIcon className="h-4 w-4" />
+                              <span className="hidden sm:inline">{f.label}</span>
                             </button>
                           );
                         })}
                       </div>
-
-                      {/* Search + Filters + Bulk Ops */}
-                      <div className="flex flex-wrap items-center gap-3 mb-3">
-                        <div className="relative flex-1 min-w-0">
-                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-muted" />
-                          <input
-                            type="text"
-                            placeholder="Search by title, section, or description…"
-                            className="w-full rounded-lg border border-dark-border bg-dark-elevated pl-9 pr-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none"
-                            value={searchQuery}
-                            onChange={e => { setSearchQuery(e.target.value); setQuickFilter(''); }}
-                          />
-                        </div>
-                        <select className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/50 focus:outline-none" value={severityFilter} onChange={e => { setSeverityFilter(e.target.value); setQuickFilter(''); }}>
-                          <option value="all">All Severity</option>
-                          {availableSeverities.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                        </select>
-                        <select className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/50 focus:outline-none" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setQuickFilter(''); }}>
-                          <option value="all">All Status</option>
-                          {availableStatuses.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                        <div className="flex gap-1">
-                          <button onClick={selectAll} className="rounded-md bg-dark-elevated px-2 py-1.5 text-xs text-dark-secondary hover:text-white transition-colors" title="Select all"><ListChecks className="h-3.5 w-3.5" /></button>
-                          <button onClick={deselectAll} className="rounded-md bg-dark-elevated px-2 py-1.5 text-xs text-dark-secondary hover:text-white transition-colors" title="Deselect all"><ListX className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => { setExcludedRuleIds(new Set()); setSearchQuery(''); setSeverityFilter('all'); setStatusFilter('all'); setQuickFilter('all'); }} className="rounded-md bg-dark-elevated px-2 py-1.5 text-xs text-dark-secondary hover:text-white transition-colors" title="Reset"><RotateCcw className="h-3.5 w-3.5" /></button>
-                        </div>
-                      </div>
-
-                      {/* Filtered bulk ops */}
-                      {(searchQuery || severityFilter !== 'all' || statusFilter !== 'all') && (
-                        <div className="flex gap-2 mb-3">
-                          <button onClick={selectFiltered} className="rounded-md bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 text-xs text-emerald-400 hover:bg-emerald-500/20 transition-colors">
-                            Select filtered ({filteredRules.length})
-                          </button>
-                          <button onClick={deselectFiltered} className="rounded-md bg-red-500/10 border border-red-500/30 px-2.5 py-1 text-xs text-red-400 hover:bg-red-500/20 transition-colors">
-                            Deselect filtered
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Rules list */}
-                      {filteredRules.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 text-dark-muted">
-                          <Search className="h-8 w-8 mb-2 opacity-40" />
-                          <p className="text-sm">No rules match your filters</p>
-                        </div>
-                      ) : (
-                        <div className="max-h-[440px] overflow-y-auto rounded-lg border border-dark-border divide-y divide-dark-border">
-                          {filteredRules.map(rule => {
-                            const isIncluded = !excludedRuleIds.has(rule.rule_id);
-                            const StIcon = STATUS_ICONS[rule.status] || ShieldAlert;
-                            const stColor = STATUS_COLORS[rule.status] || 'text-dark-muted';
-                            const sevClass = SEV_COLORS[rule.severity] || SEV_COLORS.medium;
-                            return (
-                              <label key={rule.rule_id} className={`flex items-start gap-3 px-3 py-2.5 cursor-pointer transition-colors ${isIncluded ? 'hover:bg-dark-elevated' : 'bg-dark-elevated/40 opacity-50'}`}>
-                                <input type="checkbox" className="mt-1 h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow focus:ring-ey-yellow/50 accent-ey-yellow" checked={isIncluded} onChange={() => toggleRule(rule.rule_id)} />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-xs font-mono text-dark-muted">{rule.section_number}</span>
-                                    <span className="text-sm font-medium text-white truncate">{rule.rule_title}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${sevClass}`}>{rule.severity}</span>
-                                    <span className={`inline-flex items-center gap-1 text-xs ${stColor}`}><StIcon className="h-3.5 w-3.5" />{rule.status}</span>
-                                    {rule.target_hostname && <span className="text-xs text-dark-muted">· {rule.target_hostname}</span>}
-                                  </div>
-                                </div>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Footer stats */}
-                      {totalCount > 0 && (
-                        <div className="mt-3 flex items-center justify-between text-xs text-dark-secondary">
-                          <span>Showing {filteredRules.length} of {totalCount} rules{(searchQuery || severityFilter !== 'all' || statusFilter !== 'all') ? ' (filtered)' : ''}</span>
-                          <span>
-                            <span className="text-emerald-400 font-medium">{selectedCount}</span> included ·{' '}
-                            <span className="text-red-400 font-medium">{excludedRuleIds.size}</span> excluded
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ══════════════════════════════════════════════ */}
-                  {/*  TAB: Organize                                */}
-                  {/* ══════════════════════════════════════════════ */}
-                  {activeTab === 'organize' && (
-                    <div>
-                      {/* Toolbar */}
-                      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-                        <div>
-                          <p className="text-sm text-dark-secondary">
-                            Group your <span className="text-white font-medium">{selectedCount}</span> rules into report sections. Drag rules between groups or use AI.
-                          </p>
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={handleAutoGroup} disabled={loadingAutoGroup || selectedCount === 0}
-                            className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-sm font-medium text-purple-400 transition-colors hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-50">
-                            {loadingAutoGroup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                            {loadingAutoGroup ? 'Grouping…' : 'AI Auto-Group'}
-                          </button>
-                          <button onClick={addNewGroup} className="flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm font-medium text-dark-secondary hover:text-white transition-colors">
-                            <Plus className="h-4 w-4" /> New Group
-                          </button>
-                          {groups.length > 0 && (
-                            <button onClick={() => { setGroups([]); setGroupSummaries({}); }} className="flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm font-medium text-dark-secondary hover:text-red-400 transition-colors">
-                              <RotateCcw className="h-4 w-4" /> Clear
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Groups content */}
-                      {groups.length === 0 ? (
-                        <div className="rounded-xl border-2 border-dashed border-dark-border p-10 text-center">
-                          <FolderPlus className="h-12 w-12 mx-auto text-dark-muted opacity-20 mb-4" />
-                          <h3 className="text-base font-semibold text-white mb-2">No Groups Yet</h3>
-                          <p className="text-sm text-dark-secondary max-w-md mx-auto mb-3">
-                            Click "AI Auto-Group" to automatically categorize rules, or "New Group" to create groups manually.
-                          </p>
-                          <p className="text-xs text-dark-muted">You can skip this step — rules will appear ungrouped in the report.</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {groups.map((group, gIdx) => (
-                            <div key={gIdx} onDragOver={handleDragOver} onDrop={() => handleDrop(gIdx)}
-                              className={`rounded-xl border bg-dark-card transition-all ${dragState ? 'border-ey-yellow/30 bg-ey-yellow/5' : 'border-dark-border'}`}>
-                              {/* Group header */}
-                              <div className="flex items-center gap-3 px-4 py-3 border-b border-dark-border">
-                                <button onClick={() => toggleCollapse(gIdx)} className="text-dark-secondary hover:text-white">
-                                  {collapsedGroups.has(gIdx) ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                </button>
-                                {editingGroupIdx === gIdx ? (
-                                  <input autoFocus className="flex-1 rounded border border-ey-yellow/40 bg-dark-elevated px-2 py-1 text-sm text-white focus:outline-none"
-                                    value={editingGroupName} onChange={e => setEditingGroupName(e.target.value)}
-                                    onBlur={finishRenameGroup} onKeyDown={e => e.key === 'Enter' && finishRenameGroup()} />
-                                ) : (
-                                  <h3 className="flex-1 text-sm font-semibold text-white">{group.name}</h3>
-                                )}
-                                <span className="rounded-full bg-dark-elevated px-2 py-0.5 text-xs text-dark-secondary">{group.rule_ids.length} rule{group.rule_ids.length !== 1 ? 's' : ''}</span>
-                                <div className="flex items-center gap-1">
-                                  <button onClick={() => moveGroupUp(gIdx)} disabled={gIdx === 0} className="p-1 text-dark-muted hover:text-white disabled:opacity-30"><ChevronUp className="h-3.5 w-3.5" /></button>
-                                  <button onClick={() => moveGroupDown(gIdx)} disabled={gIdx === groups.length - 1} className="p-1 text-dark-muted hover:text-white disabled:opacity-30"><ChevronDown className="h-3.5 w-3.5" /></button>
-                                  <button onClick={() => startRenameGroup(gIdx)} className="p-1 text-dark-muted hover:text-ey-yellow"><Pencil className="h-3.5 w-3.5" /></button>
-                                  <button onClick={() => deleteGroup(gIdx)} className="p-1 text-dark-muted hover:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
-                                </div>
-                              </div>
-                              {/* Group rules */}
-                              {!collapsedGroups.has(gIdx) && (
-                                <div className="p-3 space-y-1.5 min-h-[40px]">
-                                  {group.rule_ids.length === 0 ? (
-                                    <p className="text-xs text-dark-muted text-center py-3">Drag rules here or use auto-group</p>
-                                  ) : group.rule_ids.map(rid => <RulePill key={rid} ruleId={rid} groupIdx={gIdx} />)}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-
-                          {/* Ungrouped rules */}
-                          {ungroupedRuleIds.length > 0 && (
-                            <div onDragOver={handleDragOver} onDrop={handleDropToUngrouped}
-                              className="rounded-xl border border-dashed border-dark-border bg-dark-card">
-                              <div className="flex items-center gap-2 px-4 py-3 border-b border-dark-border">
-                                <h3 className="text-sm font-semibold text-dark-secondary">Ungrouped Rules</h3>
-                                <span className="rounded-full bg-dark-elevated px-2 py-0.5 text-xs text-dark-muted">{ungroupedRuleIds.length}</span>
-                              </div>
-                              <div className="p-3 space-y-1.5 max-h-[300px] overflow-y-auto">
-                                {ungroupedRuleIds.map(rid => <RulePill key={rid} ruleId={rid} groupIdx={-1} />)}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ══════════════════════════════════════════════ */}
-                  {/*  TAB: Customize                               */}
-                  {/* ══════════════════════════════════════════════ */}
-                  {activeTab === 'customize' && (
-                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                      {/* Left column */}
-                      <div className="xl:col-span-1 space-y-5">
-                        {/* Audience Presets */}
-                        <div>
-                          <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-3">
-                            <Users className="h-4 w-4 text-ey-yellow" /> Target Audience
-                          </h3>
-                          <div className="space-y-2">
-                            {AUDIENCES.map(preset => (
-                              <button key={preset.value} onClick={() => applyAudience(preset)}
-                                className={`w-full flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-all ${
-                                  audience === preset.value
-                                    ? 'border-ey-yellow bg-ey-yellow/10'
-                                    : 'border-dark-border hover:border-dark-secondary'}`}>
-                                <span className="text-xl flex-shrink-0">{preset.icon}</span>
-                                <div>
-                                  <span className={`block text-sm font-medium ${audience === preset.value ? 'text-ey-yellow' : 'text-white'}`}>{preset.label}</span>
-                                  <span className="block text-xs text-dark-muted mt-0.5">{preset.desc}</span>
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Section Toggles */}
-                        <div>
-                          <h3 className="text-sm font-semibold text-white mb-3">Report Sections</h3>
-                          <div className="space-y-1.5">
-                            {Object.entries(SEC_LABELS).map(([key, label]) => (
-                              <button key={key} onClick={() => toggleSection(key)}
-                                className="w-full flex items-center justify-between rounded-lg border border-dark-border bg-dark-elevated px-3 py-2.5 transition-colors hover:border-dark-secondary">
-                                <span className="text-sm text-white">{label}</span>
-                                {sections[key] ? <ToggleRight className="h-5 w-5 text-ey-yellow" /> : <ToggleLeft className="h-5 w-5 text-dark-muted" />}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* AI Executive Summary */}
-                        <div className="rounded-lg border border-dark-border bg-dark-elevated p-4">
-                          <h3 className="flex items-center gap-2 text-sm font-semibold text-white mb-2">
-                            <Sparkles className="h-4 w-4 text-purple-400" /> AI Executive Summary
-                          </h3>
-                          <p className="text-xs text-dark-secondary mb-3">Auto-generate a high-level summary of audit findings.</p>
-                          <label className="flex items-center gap-2 cursor-pointer mb-3">
-                            <input type="checkbox" className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow accent-ey-yellow"
-                              checked={includeAiSummary} onChange={e => setIncludeAiSummary(e.target.checked)} />
-                            <span className="text-sm text-gray-300">Include in exported report</span>
-                          </label>
-                          <button onClick={handlePreviewAiSummary} disabled={previewingSummary || selectedScanIds.length === 0}
-                            className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs text-purple-400 hover:bg-purple-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                            {previewingSummary ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                            {previewingSummary ? 'Generating…' : 'Preview Summary'}
-                          </button>
-                          {aiSummaryPreview && (
-                            <div className="mt-3 rounded-lg border border-purple-500/20 bg-purple-500/5 p-3 text-xs text-gray-300 whitespace-pre-wrap leading-relaxed max-h-[200px] overflow-y-auto">
-                              {aiSummaryPreview}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Right column: Group Summaries */}
-                      <div className="xl:col-span-2">
-                        <div className="flex items-center justify-between mb-3">
-                          <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
-                            <Sparkles className="h-4 w-4 text-purple-400" /> AI Section Summaries
-                          </h3>
-                          {groups.length > 0 && (
-                            <button onClick={generateAllSummaries} disabled={loadingSummaryFor !== null}
-                              className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-500/20 disabled:opacity-50">
-                              {loadingSummaryFor !== null ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                              Generate All
-                            </button>
-                          )}
-                        </div>
-
-                        {groups.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center py-12 text-dark-muted rounded-xl border-2 border-dashed border-dark-border">
-                            <FolderPlus className="h-10 w-10 mb-3 opacity-20" />
-                            <p className="text-sm">Create groups in the Organize tab to generate per-section AI summaries</p>
-                            <p className="text-xs text-dark-muted mt-1">Summaries are optional</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-3">
-                            {groups.map(group => (
-                              <div key={group.name} className="rounded-lg border border-dark-border bg-dark-elevated p-4">
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="text-sm font-semibold text-white">{group.name}</h4>
-                                    <span className="text-xs text-dark-muted">{group.rule_ids.length} rules</span>
-                                  </div>
-                                  <button onClick={() => generateGroupSummary(group.name, group.rule_ids)}
-                                    disabled={loadingSummaryFor !== null || group.rule_ids.length === 0}
-                                    className="flex items-center gap-1 rounded-md border border-purple-500/30 bg-purple-500/10 px-2 py-1 text-xs text-purple-400 hover:bg-purple-500/20 disabled:opacity-50">
-                                    {loadingSummaryFor === group.name ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                                    {groupSummaries[group.name] ? 'Regenerate' : 'Generate'}
-                                  </button>
-                                </div>
-                                {groupSummaries[group.name] ? (
-                                  <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
-                                    <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">{groupSummaries[group.name]}</p>
-                                    <button onClick={() => setGroupSummaries(prev => { const n = { ...prev }; delete n[group.name]; return n; })}
-                                      className="mt-2 text-xs text-dark-muted hover:text-red-400 transition-colors">Remove summary</button>
-                                  </div>
-                                ) : (
-                                  <p className="text-xs text-dark-muted italic">No summary yet. Click "Generate" to create an AI summary.</p>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="mt-4 rounded-lg border border-dark-border bg-dark-card/50 p-3 text-xs text-dark-secondary">
-                          <span className="font-medium text-white">Audience:</span>{' '}
-                          {AUDIENCES.find(p => p.value === audience)?.label || audience} — AI summaries will be tailored accordingly.
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ══════════════════════════════════════════════ */}
-                  {/*  TAB: Preview                                 */}
-                  {/* ══════════════════════════════════════════════ */}
-                  {activeTab === 'preview' && (
-                    <div>
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <h3 className="text-sm font-semibold text-white">Report Preview</h3>
-                          <p className="text-xs text-dark-secondary mt-0.5">HTML dashboard preview — final export may differ</p>
-                        </div>
-                        <button onClick={handlePreview} disabled={loadingPreview || selectedCount === 0}
-                          className="flex items-center gap-2 rounded-lg border-2 border-ey-yellow/40 bg-ey-yellow/10 px-4 py-2 text-sm font-medium text-ey-yellow hover:bg-ey-yellow/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                          {loadingPreview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-                          {loadingPreview ? 'Generating…' : previewHtml ? 'Refresh Preview' : 'Generate Preview'}
+                      <div className="flex gap-2">
+                        <button onClick={handleExport} disabled={exporting || selectedCount === 0}
+                          className="flex items-center gap-2 rounded-lg bg-ey-yellow px-5 py-2 text-sm font-bold text-black hover:bg-ey-yellow-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          {exporting ? 'Exporting…' : `Export ${exportFormat.toUpperCase()}`}
                         </button>
                       </div>
+
+                      {/* Config summary line */}
+                      <p className="text-[11px] text-dark-muted pt-1 border-t border-dark-border mt-3">
+                        {selectedScanIds.length} scan(s) · {selectedCount} rules · {groups.length || 'No'} groups · {audience} audience
+                        {Object.keys(groupSummaries).length > 0 && ` · ${Object.keys(groupSummaries).length} AI summaries`}
+                      </p>
+                    </div>
+                    {/* End Left Pane container */}
+                  </div>
+
+                  {/* Right Pane: Live Preview */}
+                  <div className="flex-1 w-full xl:w-7/12 flex flex-col border border-dark-border bg-dark-card rounded-xl overflow-hidden sticky top-6 shadow-xl" style={{ height: 'calc(100vh - 150px)' }}>
+                    <div className="flex items-center justify-between p-4 border-b border-dark-border bg-dark-elevated shrink-0">
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                          <Eye className="h-4 w-4 text-ey-yellow" /> Live Preview
+                        </h3>
+                        {loadingPreview && (
+                          <span className="flex items-center gap-1.5 rounded-full bg-ey-yellow/10 px-2 py-0.5 text-[10px] font-medium text-ey-yellow font-mono">
+                            <Loader2 className="h-3 w-3 animate-spin" /> updating...
+                          </span>
+                        )}
+                      </div>
+                      <button onClick={handlePreview} disabled={loadingPreview} className="text-xs text-dark-secondary hover:text-white transition-colors flex items-center gap-1">
+                        <RefreshCw className={`h-3.5 w-3.5 ${loadingPreview ? 'animate-spin' : ''}`} /> Refresh
+                      </button>
+                    </div>
+                    <div className="flex-1 w-full relative bg-[#0B0F19]">
                       {!previewHtml ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-dark-muted rounded-xl border-2 border-dashed border-dark-border">
-                          <FileText className="h-14 w-14 mb-4 opacity-15" />
-                          <p className="text-sm">Click "Generate Preview" to see your report</p>
-                          <p className="text-xs text-dark-muted mt-1">The preview renders the HTML dashboard template</p>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-dark-muted p-10 text-center">
+                          <FileText className="h-10 w-10 mb-4 opacity-15" />
+                          <p className="text-sm">Configuring report...</p>
+                          <p className="text-xs text-dark-muted mt-1">Live preview will appear momentarily</p>
                         </div>
                       ) : (
                         <iframe
                           srcDoc={previewHtml}
-                          title="Report Preview"
-                          className="w-full border border-dark-border rounded-lg bg-white"
-                          style={{ height: '70vh', minHeight: '500px' }}
+                          title="Live Report Preview"
+                          className={`w-full h-full border-0 transition-opacity duration-300 ${loadingPreview ? 'opacity-50' : 'opacity-100'}`}
+                          style={{ backgroundColor: 'white' }}
                           sandbox="allow-scripts allow-same-origin"
                         />
                       )}
                     </div>
-                  )}
+                  </div>
 
                 </div>
               </div>
-
-              {/* ═══════════════════════════════════════════════════ */}
-              {/*  EXPORT BAR                                        */}
-              {/* ═══════════════════════════════════════════════════ */}
-              <div className="rounded-xl border border-dark-border bg-dark-card p-5 space-y-4">
-                {/* Row 1: Title, Audience, Checkboxes */}
-                <div className="flex flex-wrap items-end gap-4">
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs font-medium text-dark-secondary mb-1.5">Report Title</label>
-                    <input
-                      type="text"
-                      className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none"
-                      placeholder={smartTitle}
-                      value={customTitle}
-                      onChange={e => setCustomTitle(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-dark-secondary mb-1.5">Audience</label>
-                    <div className="flex rounded-lg border border-dark-border overflow-hidden">
-                      {AUDIENCES.map(a => (
-                        <button key={a.value} onClick={() => applyAudience(a)}
-                          className={`px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${
-                            audience === a.value ? 'bg-ey-yellow/15 text-ey-yellow' : 'bg-dark-elevated text-dark-secondary hover:text-white'
-                          }`}>
-                          {a.icon} {a.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 pb-0.5">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow accent-ey-yellow"
-                        checked={includePassedRules} onChange={e => setIncludePassedRules(e.target.checked)} />
-                      <span className="text-xs text-gray-300 whitespace-nowrap">Include passed</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow accent-ey-yellow"
-                        checked={includeAiSummary} onChange={e => setIncludeAiSummary(e.target.checked)} />
-                      <span className="text-xs text-gray-300 whitespace-nowrap">AI Summary</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* Row 2: Format + Preview + Export */}
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div className="flex flex-wrap gap-2">
-                    {FORMATS.map(f => {
-                      const FIcon = f.icon;
-                      return (
-                        <button key={f.value} onClick={() => setExportFormat(f.value)} title={f.desc}
-                          className={`flex items-center gap-1.5 rounded-lg border-2 px-2.5 py-1.5 text-sm font-medium transition-all ${
-                            exportFormat === f.value
-                              ? 'border-ey-yellow bg-ey-yellow/10 text-ey-yellow shadow-sm shadow-ey-yellow/10'
-                              : 'border-dark-border text-dark-secondary hover:border-dark-secondary hover:text-white'
-                          }`}>
-                          <FIcon className="h-4 w-4" />
-                          <span className="hidden sm:inline">{f.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={handlePreview} disabled={loadingPreview || selectedCount === 0}
-                      className="flex items-center gap-2 rounded-lg border-2 border-ey-yellow/30 bg-ey-yellow/5 px-4 py-2 text-sm font-medium text-ey-yellow hover:bg-ey-yellow/15 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                      {loadingPreview ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-                      Preview
-                    </button>
-                    <button onClick={handleExport} disabled={exporting || selectedCount === 0}
-                      className="flex items-center gap-2 rounded-lg bg-ey-yellow px-5 py-2 text-sm font-bold text-black hover:bg-ey-yellow-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                      {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                      {exporting ? 'Exporting…' : `Export ${exportFormat.toUpperCase()}`}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Config summary line */}
-                <p className="text-[11px] text-dark-muted pt-1 border-t border-dark-border">
-                  {selectedScanIds.length} scan(s) · {selectedCount} rules · {groups.length || 'No'} groups · {audience} audience
-                  {Object.keys(groupSummaries).length > 0 && ` · ${Object.keys(groupSummaries).length} AI summaries`}
-                </p>
-              </div>
+              {/* End Split Pane Layout */}
             </>
           )}
         </>
