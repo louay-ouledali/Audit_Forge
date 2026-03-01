@@ -12,6 +12,9 @@ import DiscoveryBar from './DiscoveryBar';
 import TargetActionBar from './TargetActionBar';
 import TargetCardGrid from './TargetCardGrid';
 import TargetConfigDrawer from './TargetConfigDrawer';
+import { useScanManager } from './scan/useScanManager';
+import ScanAllDialog from './scan/ScanAllDialog';
+import ActiveScansPanel from './scan/ActiveScansPanel';
 
 interface Props {
   missionId: number;
@@ -31,9 +34,8 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ success: number; failed: number } | null>(null);
 
-  // Scanning state (will be enhanced in Phase 7)
-  const [scanningTargetIds] = useState<Set<number>>(new Set());
-  const [scanProgressMap] = useState<Map<number, number>>(new Map());
+  // Scan manager (Phase 7)
+  const scan = useScanManager(missionId, missionTargets, onRefresh);
 
   // Config drawer state
   const [drawerTarget, setDrawerTarget] = useState<Target | null>(null);
@@ -82,8 +84,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   };
 
   const handleScan = (target: Target) => {
-    // Phase 7 will implement per-target scan launch
-    console.log('Scan target:', target.id);
+    scan.launchSingleScan(target);
   };
 
   const handleUsbExport = (target: Target) => {
@@ -97,8 +98,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   };
 
   const handleScanAll = () => {
-    // Phase 7 will open the ScanAllDialog
-    console.log('Scan All targets');
+    scan.setShowScanAllDialog(true);
   };
 
   const handleUsbAll = () => {
@@ -159,10 +159,10 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   return (
     <div className="space-y-6">
       {/* Error banner */}
-      {error && (
+      {(error || scan.error) && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
-          {error}
-          <button onClick={() => setError('')} className="ml-2 text-red-300 hover:text-white transition-colors">×</button>
+          {error || scan.error}
+          <button onClick={() => { setError(''); scan.setError(''); }} className="ml-2 text-red-300 hover:text-white transition-colors">×</button>
         </div>
       )}
 
@@ -249,7 +249,15 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         </div>
       )}
 
-      {/* ── 3. Target Cards Grid ─────────────────────────────── */}
+      {/* ── 3. Active Scans Panel ───────────────────────────── */}
+      <ActiveScansPanel
+        scans={scan.activeScans}
+        onCancelScan={scan.cancelSingleScan}
+        onCancelAll={scan.cancelAllScans}
+        onDismiss={scan.dismissCompleted}
+      />
+
+      {/* ── 4. Target Cards Grid ───────────────────────────── */}
       <TargetCardGrid
         targets={missionTargets}
         onConfigure={handleConfigure}
@@ -257,11 +265,19 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         onScan={handleScan}
         onUsbExport={handleUsbExport}
         onViewFindings={handleViewFindings}
-        scanningTargetIds={scanningTargetIds}
-        scanProgressMap={scanProgressMap}
+        scanningTargetIds={scan.scanningTargetIds}
+        scanProgressMap={scan.scanProgressMap}
       />
 
-      {/* ── 4. Config Drawer ─────────────────────────────────── */}
+      {/* ── 5. Scan All Dialog ────────────────────────────── */}
+      <ScanAllDialog
+        targets={missionTargets}
+        open={scan.showScanAllDialog}
+        onClose={() => scan.setShowScanAllDialog(false)}
+        onLaunch={scan.launchBatchScan}
+      />
+
+      {/* ── 6. Config Drawer ──────────────────────────────── */}
       <TargetConfigDrawer
         target={drawerTarget}
         open={drawerOpen}

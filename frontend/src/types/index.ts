@@ -108,43 +108,42 @@ export interface BenchmarkMatchResult {
 
 export interface ScanBatchRequest {
   mission_id: number;
-  target_ids: number[];
-  benchmark_id?: number | null;
+  target_ids?: number[] | null;
+  benchmark_overrides?: Record<string, number> | null;
+  skip_untestable?: boolean;
+  concurrency?: number;
+}
+
+export interface ScanBatchItemResponse {
+  id: number;
+  target_id: number;
+  target_hostname: string | null;
+  target_ip: string | null;
+  benchmark_id: number | null;
+  benchmark_name: string | null;
+  scan_id: number | null;
+  status: string;
+  skip_reason: string | null;
+  error_message: string | null;
 }
 
 export interface ScanBatchResponse {
   batch_id: number;
   status: string;
-  total_items: number;
+  total_targets: number;
+  scannable: number;
+  skipped: number;
   items: ScanBatchItemResponse[];
-}
-
-export interface ScanBatchItemResponse {
-  item_id: number;
-  target_id: number;
-  benchmark_id: number;
-  status: string;
-  scan_id: number | null;
 }
 
 export interface ScanBatchStatus {
   batch_id: number;
   status: string;
-  total_items: number;
-  completed_items: number;
-  failed_items: number;
-  items: ScanBatchItemDetail[];
-}
-
-export interface ScanBatchItemDetail {
-  item_id: number;
-  target_id: number;
-  target_name: string;
-  benchmark_id: number;
-  benchmark_name: string;
-  status: string;
-  scan_id: number | null;
-  error_message: string | null;
+  total_targets: number;
+  completed_targets: number;
+  failed_targets: number;
+  skipped_targets: number;
+  items: ScanBatchItemResponse[];
 }
 
 export interface DiscoveredHostEnriched extends DiscoveredHost {
