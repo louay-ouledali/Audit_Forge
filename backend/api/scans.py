@@ -540,6 +540,207 @@ async def import_with_new_scan(
     return {**stats, "scan_id": scan.id}
 
 
+@router.post("/smart-import")
+async def smart_import(
+    mission_id: int | None = Form(None),
+    client_id: int | None = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Auto-detect target and benchmark from uploaded results, creating if needed.
+
+    Accepts a ZIP (with system_info.json + audit_results.json) or a standalone
+    audit_results.json.  The endpoint extracts system metadata, matches/creates
+    the target and benchmark, then imports findings.
+    """
+    import io
+    import json
+    import zipfile
+
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail="File too large")
+
+    filename = file.filename or ""
+    system_info: dict | None = None
+    result_content: str | None = None
+
+    # ── Extract from ZIP ─────────────────────────────────────
+    if filename.endswith(".zip") or raw[:4] == b"PK\x03\x04":
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                names = zf.namelist()
+
+                # Try to find system_info.json
+                si_name = next((n for n in names if n.endswith("system_info.json")), None)
+                if si_name:
+                    si_data = zf.read(si_name).decode("utf-8", errors="replace")
+                    try:
+                        system_info = json.loads(si_data)
+                    except json.JSONDecodeError:
+                        pass
+
+                # Find audit_results
+                ar_name = next((n for n in names if n.endswith("audit_results.json")), None)
+                if not ar_name:
+                    ar_name = next((n for n in names if n.endswith(".json") and "system_info" not in n and "rules_reference" not in n), None)
+                if not ar_name:
+                    ar_name = next((n for n in names if n.endswith(".txt")), None)
+                if not ar_name and names:
+                    ar_name = names[0]
+                if not ar_name:
+                    raise HTTPException(status_code=400, detail="ZIP file is empty")
+
+                data = zf.read(ar_name)
+                if len(data) > MAX_DECOMPRESSED_SIZE:
+                    raise HTTPException(status_code=400, detail="Decompressed file too large")
+                result_content = data.decode("utf-8", errors="replace")
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid ZIP file")
+    else:
+        result_content = raw.decode("utf-8", errors="replace")
+        # Try to parse as JSON and look for embedded system info
+        try:
+            parsed = json.loads(result_content.strip().lstrip("\ufeff"))
+            if isinstance(parsed, dict) and "system_info" in parsed:
+                system_info = parsed["system_info"]
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if not result_content:
+        raise HTTPException(status_code=400, detail="No result content found in upload")
+
+    # ── Resolve benchmark ────────────────────────────────────
+    benchmark: Benchmark | None = None
+    if system_info:
+        bm_name = system_info.get("benchmark", "")
+        bm_version = (system_info.get("benchmark_version") or "").lstrip("v")
+        if bm_name:
+            q = db.query(Benchmark).filter(Benchmark.name.ilike(f"%{bm_name}%"))
+            if bm_version:
+                q = q.filter(Benchmark.version == bm_version)
+            benchmark = q.first()
+            if not benchmark and bm_version:
+                benchmark = db.query(Benchmark).filter(Benchmark.name.ilike(f"%{bm_name}%")).first()
+
+    if not benchmark:
+        # Fallback: pick the first benchmark (common single-benchmark setups)
+        benchmark = db.query(Benchmark).first()
+
+    if not benchmark:
+        raise HTTPException(status_code=400, detail="No benchmark found. Please upload a benchmark first.")
+
+    # ── Resolve or create target ─────────────────────────────
+    target: Target | None = None
+
+    # Derive client_id from mission if not provided
+    if not client_id and mission_id:
+        from backend.models.mission import Mission
+        m = db.query(Mission).filter(Mission.id == mission_id).first()
+        if m:
+            client_id = m.client_id
+
+    if not client_id:
+        raise HTTPException(
+            status_code=400,
+            detail="client_id or mission_id is required so the target can be assigned to a client.",
+        )
+
+    if system_info:
+        hostname = system_info.get("hostname", "")
+        ips = [ip.strip() for ip in (system_info.get("ip_addresses") or "").split(",") if ip.strip()]
+        os_info = system_info.get("os", "")
+
+        # Try matching by hostname within the client
+        if hostname:
+            target = (
+                db.query(Target)
+                .filter(Target.client_id == client_id, Target.hostname.ilike(hostname))
+                .first()
+            )
+
+        # Try matching by IP
+        if not target and ips:
+            for ip in ips:
+                target = (
+                    db.query(Target)
+                    .filter(Target.client_id == client_id, Target.ip_address == ip)
+                    .first()
+                )
+                if target:
+                    break
+
+        # Create new target
+        if not target:
+            target_type = "windows"
+            os_lower = os_info.lower()
+            if "linux" in os_lower or "ubuntu" in os_lower or "centos" in os_lower or "debian" in os_lower:
+                target_type = "linux"
+            elif "cisco" in os_lower or "juniper" in os_lower or "fortinet" in os_lower:
+                target_type = "network"
+
+            target = Target(
+                client_id=client_id,
+                hostname=hostname or "imported-target",
+                ip_address=ips[0] if ips else None,
+                target_type=target_type,
+                os_details=os_info or None,
+                default_benchmark_id=benchmark.id,
+            )
+            db.add(target)
+            db.commit()
+            db.refresh(target)
+
+    if not target:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not detect target info from results. Upload a ZIP with system_info.json or use the standard import.",
+        )
+
+    # Ensure target is assigned to the mission
+    if mission_id:
+        existing = (
+            db.query(MissionTarget)
+            .filter(MissionTarget.mission_id == mission_id, MissionTarget.target_id == target.id)
+            .first()
+        )
+        if not existing:
+            db.add(MissionTarget(mission_id=mission_id, target_id=target.id))
+            db.commit()
+
+    # ── Create scan & import ─────────────────────────────────
+    scan = Scan(
+        target_id=target.id,
+        benchmark_id=benchmark.id,
+        mission_id=mission_id,
+        scan_mode="import",
+        status="pending",
+    )
+    db.add(scan)
+    db.commit()
+    db.refresh(scan)
+
+    try:
+        from backend.core.result_importer import detect_format_and_import, finalize_scan_stats
+        stats = detect_format_and_import(result_content, scan.id, benchmark.id, db)
+        finalize_scan_stats(scan, stats, db)
+    except ValueError as exc:
+        db.delete(scan)
+        db.commit()
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {
+        **stats,
+        "scan_id": scan.id,
+        "target_id": target.id,
+        "target_hostname": target.hostname,
+        "target_ip": target.ip_address,
+        "benchmark_id": benchmark.id,
+        "benchmark_name": benchmark.name,
+        "target_created": not bool(system_info and target.id),  # approximate
+    }
+
+
 @router.get("/{scan_id}")
 def get_scan_detail(scan_id: int, db: Session = Depends(get_db)):
     """Get a single scan with aggregate stats."""

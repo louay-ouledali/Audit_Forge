@@ -470,6 +470,26 @@ export async function importWithNewScan(targetId: number, benchmarkId: number, f
   return data;
 }
 
+export interface SmartImportResponse extends ImportResultsResponse {
+  target_id: number;
+  target_hostname: string | null;
+  target_ip: string | null;
+  benchmark_id: number;
+  benchmark_name: string;
+  target_created: boolean;
+}
+
+export async function smartImport(file: File, missionId?: number | null, clientId?: number | null): Promise<SmartImportResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (missionId) formData.append('mission_id', missionId.toString());
+  if (clientId) formData.append('client_id', clientId.toString());
+  const { data } = await api.post('/scans/smart-import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
 // ── Module 11: Report Generation ─────────────────────────────
 
 export async function generateReport(payload: ReportGenerateRequest): Promise<Blob> {

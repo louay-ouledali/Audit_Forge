@@ -1,4 +1,4 @@
-import { Plus, Upload, Crosshair, Package } from 'lucide-react';
+import { Plus, Upload, Crosshair, Package, FileSearch } from 'lucide-react';
 import { inputClass } from '../mission/badgeHelpers';
 import type { Target } from '@/types';
 
@@ -11,6 +11,7 @@ interface Props {
   showImport: boolean;
   onScanAll: () => void;
   onUsbAll: () => void;
+  onSmartImport?: () => void;
   targetCount: number;
   hasScannable: boolean;
 }
@@ -24,6 +25,7 @@ export default function TargetActionBar({
   showImport,
   onScanAll,
   onUsbAll,
+  onSmartImport,
   targetCount,
   hasScannable,
 }: Props) {
@@ -66,6 +68,16 @@ export default function TargetActionBar({
         >
           <Upload className="h-3.5 w-3.5" /> Bulk Import
         </button>
+
+        {onSmartImport && (
+          <button
+            onClick={onSmartImport}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 hover:text-emerald-300"
+            title="Import results from a ZIP/JSON and auto-detect the target"
+          >
+            <FileSearch className="h-3.5 w-3.5" /> Smart Import
+          </button>
+        )}
       </div>
 
       {/* Right side: scan all + usb all */}

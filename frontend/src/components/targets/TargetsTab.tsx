@@ -180,6 +180,49 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
     setShowUsbBulk(true);
   };
 
+  const handleSmartImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,.zip';
+    input.multiple = true;
+    input.onchange = async () => {
+      const files = input.files;
+      if (!files || files.length === 0) return;
+      setError('');
+
+      let totalFindings = 0;
+      let totalCompliance = 0;
+      let fileCount = 0;
+      const errors: string[] = [];
+
+      for (const file of Array.from(files)) {
+        try {
+          const res = await api.smartImport(file, missionId, clientId);
+          totalFindings += res.findings_created;
+          totalCompliance += res.compliance_percentage;
+          fileCount++;
+        } catch (err: unknown) {
+          const msg = err && typeof err === 'object' && 'response' in err
+            ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail || 'Import failed'
+            : err instanceof Error ? err.message : 'Import failed';
+          errors.push(`${file.name}: ${msg}`);
+        }
+      }
+
+      if (fileCount > 0) {
+        const avgCompliance = (totalCompliance / fileCount).toFixed(1);
+        scan.setError(''); // clear any scan errors
+        setError('');
+        // Show brief success via error state (green would be better but reuse existing UI)
+        await handleRefreshAll();
+        alert(`Smart Import complete!\n\n${fileCount} file(s) imported\n${totalFindings} findings created\nAvg compliance: ${avgCompliance}%${errors.length ? '\n\nErrors:\n' + errors.join('\n') : ''}`);
+      } else {
+        setError(errors.join('; '));
+      }
+    };
+    input.click();
+  };
+
   const handleBulkImport = async () => {
     if (!importText.trim()) return;
     setImporting(true);
@@ -257,6 +300,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         showImport={showImport}
         onScanAll={handleScanAll}
         onUsbAll={handleUsbAll}
+        onSmartImport={handleSmartImport}
         targetCount={missionTargets.length}
         hasScannable={hasScannable}
       />

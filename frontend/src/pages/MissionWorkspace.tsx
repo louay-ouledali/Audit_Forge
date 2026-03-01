@@ -5,7 +5,6 @@ import {
   Crosshair,
   Lock,
   Unlock,
-  Play,
   AlertTriangle,
   BarChart3,
   Calendar,
@@ -13,7 +12,7 @@ import {
   Activity,
   Server,
 } from 'lucide-react';
-import type { Mission, Target, Client, ScanDetail, Benchmark } from '@/types';
+import type { Mission, Target, Client, ScanDetail } from '@/types';
 import * as api from '@/services/api';
 import { STATUS_STYLES, STATUS_LABELS, inputClass } from '@/components/mission/badgeHelpers';
 
@@ -22,10 +21,9 @@ import MissionOverview from '@/components/mission/MissionOverview';
 import MissionFindings from '@/components/mission/MissionFindings';
 import MissionReports from '@/components/mission/MissionReports';
 import TargetsTab from '@/components/targets/TargetsTab';
-import ScansTab from '@/components/mission/ScansTab';
 
 /* ── Tab types ───────────────────────────────────────────────── */
-type MissionTab = 'overview' | 'targets' | 'scans' | 'findings' | 'reports';
+type MissionTab = 'overview' | 'targets' | 'findings' | 'reports';
 
 export default function MissionWorkspace() {
   const { id } = useParams<{ id: string }>();
@@ -38,7 +36,6 @@ export default function MissionWorkspace() {
   const [missionTargets, setMissionTargets] = useState<Target[]>([]);
   const [clientTargets, setClientTargets] = useState<Target[]>([]);
   const [scans, setScans] = useState<ScanDetail[]>([]);
-  const [benchmarks, setBenchmarks] = useState<Benchmark[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -54,14 +51,12 @@ export default function MissionWorkspace() {
   /* ── Fetch data ──────────────────────────────────────────── */
   const fetchData = useCallback(async () => {
     try {
-      const [m, scanRes, bms] = await Promise.all([
+      const [m, scanRes] = await Promise.all([
         api.getMission(missionId),
         api.getScans({ mission_id: missionId }),
-        api.getBenchmarks(),
       ]);
       setMission(m);
       setScans(scanRes.data);
-      setBenchmarks(bms.filter(b => b.is_ready));
 
       const targets = await api.getTargets(missionId);
       setMissionTargets(targets);
@@ -259,7 +254,6 @@ export default function MissionWorkspace() {
         {([
           { key: 'overview' as const, label: 'Overview', icon: Activity },
           { key: 'targets' as const, label: 'Targets', icon: Server, count: missionTargets.length },
-          { key: 'scans' as const, label: 'Scans', icon: Play, count: scans.length },
           { key: 'findings' as const, label: 'Findings', icon: AlertTriangle },
           { key: 'reports' as const, label: 'Reports', icon: BarChart3 },
         ]).map(tab => (
@@ -290,19 +284,6 @@ export default function MissionWorkspace() {
           missionTargets={missionTargets}
           clientTargets={clientTargets}
           onRefresh={fetchData}
-        />
-      )}
-
-      {activeTab === 'scans' && (
-        <ScansTab
-          missionId={missionId}
-          missionTargets={missionTargets}
-          scans={scans}
-          benchmarks={benchmarks}
-          client={client}
-          mission={mission}
-          onRefresh={fetchData}
-          onError={setError}
         />
       )}
 
