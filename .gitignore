@@ -14,5 +14,6 @@ benchmarks/*.pdf
 benchmarks/*.json
 .pytest_cache/
 tmp/
+scripts/test_output/
 
 frontend/src/pages/_originals/
