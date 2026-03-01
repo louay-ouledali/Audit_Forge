@@ -20,6 +20,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  Upload,
 } from 'lucide-react';
 import type { Target, ConnectionTestResult } from '@/types';
 import * as api from '@/services/api';
@@ -106,6 +107,7 @@ interface Props {
   onDelete: (targetId: number) => void;
   onScan: (target: Target) => void;
   onUsbExport: (target: Target) => void;
+  onImportResults: (target: Target) => void;
   onViewFindings: (target: Target) => void;
   isScanning?: boolean;
   scanProgress?: number;
@@ -117,6 +119,7 @@ export default function TargetCard({
   onDelete,
   onScan,
   onUsbExport,
+  onImportResults,
   onViewFindings,
   isScanning = false,
   scanProgress,
@@ -368,7 +371,18 @@ export default function TargetCard({
         </div>
       ) : (
         <div className="mt-4 border-t border-dark-border/50 pt-3">
-          <p className="text-xs text-dark-muted">Never scanned</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-dark-muted">Never scanned</p>
+            {hasBenchmark && (
+              <button
+                onClick={() => onImportResults(target)}
+                className="flex items-center gap-1 text-[11px] text-dark-secondary hover:text-ey-yellow transition-colors"
+                title="Import results from USB audit"
+              >
+                <Upload className="h-3 w-3" /> Import Results
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>

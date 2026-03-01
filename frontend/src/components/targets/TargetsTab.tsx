@@ -15,6 +15,7 @@ import TargetConfigDrawer from './TargetConfigDrawer';
 import { useScanManager } from './scan/useScanManager';
 import ScanAllDialog from './scan/ScanAllDialog';
 import ActiveScansPanel from './scan/ActiveScansPanel';
+import UsbBulkExportDialog from './scan/UsbBulkExportDialog';
 
 interface Props {
   missionId: number;
@@ -40,6 +41,9 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   // Config drawer state
   const [drawerTarget, setDrawerTarget] = useState<Target | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // USB bulk export dialog
+  const [showUsbBulk, setShowUsbBulk] = useState(false);
 
   const unassignedTargets = clientTargets.filter(
     ct => !missionTargets.some(mt => mt.id === ct.id),
@@ -87,9 +91,32 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
     scan.launchSingleScan(target);
   };
 
-  const handleUsbExport = (target: Target) => {
-    // Phase 8 will implement per-target USB export
-    console.log('USB export target:', target.id);
+  const handleUsbExport = async (target: Target) => {
+    if (!target.default_benchmark_id) {
+      setError('Set a benchmark before exporting.');
+      return;
+    }
+    try {
+      const blob = await api.generateScript({
+        benchmark_id: target.default_benchmark_id,
+        target_id: target.id,
+      });
+      const host = target.hostname || target.ip_address || `target_${target.id}`;
+      const bench = (target.default_benchmark_name || 'audit').replace(/\s+/g, '_');
+      const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const filename = `auditforge_audit_${bench}_${host}_${date}.zip`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'USB export failed';
+      setError(msg);
+    }
   };
 
   const handleViewFindings = (target: Target) => {
@@ -97,13 +124,35 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
     console.log('View findings for target:', target.id);
   };
 
+  const handleImportResults = (target: Target) => {
+    if (!target.default_benchmark_id) {
+      setError('Set a benchmark before importing results.');
+      return;
+    }
+    // Open file picker
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,.zip';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        await api.importWithNewScan(target.id, target.default_benchmark_id!, file, missionId);
+        await onRefresh();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Import failed';
+        setError(msg);
+      }
+    };
+    input.click();
+  };
+
   const handleScanAll = () => {
     scan.setShowScanAllDialog(true);
   };
 
   const handleUsbAll = () => {
-    // Phase 8 will open UsbBulkExportDialog
-    console.log('USB Export All');
+    setShowUsbBulk(true);
   };
 
   const handleBulkImport = async () => {
@@ -264,6 +313,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         onDelete={handleUnassignTarget}
         onScan={handleScan}
         onUsbExport={handleUsbExport}
+        onImportResults={handleImportResults}
         onViewFindings={handleViewFindings}
         scanningTargetIds={scan.scanningTargetIds}
         scanProgressMap={scan.scanProgressMap}
@@ -277,7 +327,15 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         onLaunch={scan.launchBatchScan}
       />
 
-      {/* ── 6. Config Drawer ──────────────────────────────── */}
+      {/* ── 6. USB Bulk Export Dialog ─────────────────────── */}
+      <UsbBulkExportDialog
+        targets={missionTargets}
+        open={showUsbBulk}
+        onClose={() => setShowUsbBulk(false)}
+        missionId={missionId}
+      />
+
+      {/* ── 7. Config Drawer ──────────────────────────────── */}
       <TargetConfigDrawer
         target={drawerTarget}
         open={drawerOpen}
