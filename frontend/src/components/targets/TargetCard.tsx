@@ -277,12 +277,16 @@ export default function TargetCard({
           </div>
         </div>
 
-        {/* Setup Help link (shown when connection failed) */}
-        {connStatus === 'failed' && onSetupHelp && (
+        {/* Setup Help link — always visible, highlighted when connection failed */}
+        {onSetupHelp && (
           <div className="flex items-center justify-end">
             <button
               onClick={() => onSetupHelp(target)}
-              className="flex items-center gap-1 text-[11px] text-amber-400 hover:text-ey-yellow transition-colors"
+              className={`flex items-center gap-1 text-[11px] transition-colors ${
+                connStatus === 'failed'
+                  ? 'text-amber-400 hover:text-ey-yellow font-medium'
+                  : 'text-dark-muted hover:text-dark-secondary'
+              }`}
             >
               <BookOpen className="h-3 w-3" /> Setup Help
             </button>
