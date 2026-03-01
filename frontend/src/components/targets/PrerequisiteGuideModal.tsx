@@ -16,6 +16,8 @@ import {
   Loader2,
   Package,
   BookOpen,
+  Download,
+  ArrowRightLeft,
 } from 'lucide-react';
 import type { Target, PrerequisiteGuide as PrereqGuideType } from '@/types';
 import * as api from '@/services/api';
@@ -154,13 +156,25 @@ export default function PrerequisiteGuideModal({ target, open, onClose }: Props)
 
           {guide && !loading && (
             <>
-              {/* Connection method badge */}
-              <div className="rounded-lg bg-dark-elevated border border-dark-border/50 px-4 py-3 flex items-center gap-3">
-                <Info className="h-4 w-4 text-ey-yellow shrink-0" />
-                <p className="text-sm text-dark-secondary">
-                  Connection method: <strong className="text-white">{guide.connection_method}</strong>
-                  {' — '}Follow the steps below to prepare the target for auditing.
-                </p>
+              {/* Connection method badge + download button */}
+              <div className="rounded-lg bg-dark-elevated border border-dark-border/50 px-4 py-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Info className="h-4 w-4 text-ey-yellow shrink-0" />
+                  <p className="text-sm text-dark-secondary truncate">
+                    Connection method: <strong className="text-white">{guide.connection_method}</strong>
+                    {' — '}Follow the steps below to prepare the target.
+                  </p>
+                </div>
+                {guide.download_script && (
+                  <a
+                    href={api.getScriptDownloadUrl(guide.download_script)}
+                    download
+                    className="flex items-center gap-1.5 shrink-0 rounded-lg bg-ey-yellow/10 border border-ey-yellow/20 px-3 py-1.5 text-xs font-semibold text-ey-yellow hover:bg-ey-yellow/20 transition-colors"
+                    title={`Download ${guide.download_script}`}
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download Script
+                  </a>
+                )}
               </div>
 
               {/* Steps */}
@@ -179,6 +193,30 @@ export default function PrerequisiteGuideModal({ target, open, onClose }: Props)
                       onToggle={() => toggleStep(idx)}
                     />
                   ))}
+                </div>
+              )}
+
+              {/* Fallback (e.g. Windows: WinRM ↔ SSH) */}
+              {guide.fallback && (
+                <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <ArrowRightLeft className="h-4 w-4 text-sky-400 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <h5 className="text-sm font-semibold text-white">
+                        Fallback: {guide.fallback.method.toUpperCase()}
+                      </h5>
+                      <p className="text-xs text-dark-secondary mt-1">{guide.fallback.description}</p>
+                      {guide.fallback.download_script && (
+                        <a
+                          href={api.getScriptDownloadUrl(guide.fallback.download_script)}
+                          download
+                          className="inline-flex items-center gap-1.5 mt-2 rounded-lg bg-sky-500/10 border border-sky-500/20 px-3 py-1.5 text-xs font-semibold text-sky-400 hover:bg-sky-500/20 transition-colors"
+                        >
+                          <Download className="h-3.5 w-3.5" /> Download {guide.fallback.method.toUpperCase()} Script
+                        </a>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 

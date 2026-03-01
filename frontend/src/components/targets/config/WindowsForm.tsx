@@ -127,7 +127,7 @@ export default function WindowsForm({ form, setField, setConnectionMethod, bench
           </div>
 
           <HintBox>
-            Our Hardening Script enables WinRM automatically. See <strong>Enable_WinRM_After_Hardening.ps1</strong> in the project root.
+            <strong>Need a script?</strong> Open the <em>Setup Guide</em> (via the Setup Help link on the target card) to download ready-to-run scripts for WinRM or OpenSSH.
           </HintBox>
         </div>
       </FormSection>

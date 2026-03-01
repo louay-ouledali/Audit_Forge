@@ -575,6 +575,10 @@ export async function getTargetPrerequisites(targetId: number): Promise<Prerequi
   return data;
 }
 
+export function getScriptDownloadUrl(filename: string): string {
+  return `${api.defaults.baseURL}/scripts/${encodeURIComponent(filename)}`;
+}
+
 export async function matchTargetBenchmark(targetId: number): Promise<BenchmarkMatchResult[]> {
   const { data } = await api.post(`/targets/${targetId}/benchmark-match`);
   return data.matches;

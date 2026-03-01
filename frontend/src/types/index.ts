@@ -95,11 +95,19 @@ export interface PrerequisiteAlternative {
   description: string;
 }
 
+export interface PrerequisiteFallback {
+  method: string;
+  description: string;
+  download_script: string | null;
+}
+
 export interface PrerequisiteGuide {
   platform: string;
   connection_method: string;
+  download_script: string | null;
   steps: PrerequisiteStep[];
   alternative: PrerequisiteAlternative | null;
+  fallback: PrerequisiteFallback | null;
 }
 
 export interface BenchmarkMatchResult {

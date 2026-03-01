@@ -1,0 +1,155 @@
+! ──────────────────────────────────────────────────────────────
+!  AuditForge — Network Device SSH Setup Reference
+!
+!  This file contains SSH enable commands for common vendors.
+!  Select the section for your device type and paste into the CLI.
+!
+!  Supported: Cisco IOS, Cisco NX-OS, Juniper JunOS,
+!             Palo Alto PAN-OS, FortiGate FortiOS,
+!             Arista EOS, HP ProCurve, MikroTik RouterOS
+! ──────────────────────────────────────────────────────────────
+
+! ═══════════════════════════════════════════════════════════════
+! CISCO IOS / IOS-XE
+! ═══════════════════════════════════════════════════════════════
+
+conf t
+  hostname SWITCH01
+  ip domain-name auditforge.local
+  crypto key generate rsa modulus 2048
+  ip ssh version 2
+  ip ssh time-out 120
+  ip ssh authentication-retries 3
+
+  ! Create audit user (privilege 15 = full read)
+  username auditforge privilege 15 secret 0 <CHANGE_PASSWORD>
+
+  ! Apply to VTY lines
+  line vty 0 15
+    login local
+    transport input ssh
+    exec-timeout 30 0
+  exit
+end
+write memory
+
+! Verify: show ip ssh
+!         show ssh
+!         show users
+
+
+! ═══════════════════════════════════════════════════════════════
+! CISCO NX-OS (Nexus)
+! ═══════════════════════════════════════════════════════════════
+
+conf t
+  feature ssh
+  ssh key rsa 2048
+  username auditforge role network-admin password <CHANGE_PASSWORD>
+end
+copy running-config startup-config
+
+! Verify: show ssh server
+
+
+! ═══════════════════════════════════════════════════════════════
+! JUNIPER JUNOS
+! ═══════════════════════════════════════════════════════════════
+
+! SSH is enabled by default. Create an audit user:
+
+configure
+set system login user auditforge class super-user authentication plain-text-password
+! (enter password when prompted)
+
+set system services ssh protocol-version v2
+set system services ssh rate-limit 10
+commit and-quit
+
+! Verify: show system services
+!         show configuration system login
+
+
+! ═══════════════════════════════════════════════════════════════
+! PALO ALTO PAN-OS
+! ═══════════════════════════════════════════════════════════════
+
+! SSH is enabled by default on the management interface.
+! Create an audit admin:
+
+configure
+set mgt-config users auditforge permissions role-based superreader yes
+set mgt-config users auditforge password
+! (enter password when prompted)
+commit
+
+! If SSH needs enabling on a different interface:
+set deviceconfig system service disable-ssh no
+commit
+
+! Verify: show system services
+
+
+! ═══════════════════════════════════════════════════════════════
+! FORTINET FORTIOS
+! ═══════════════════════════════════════════════════════════════
+
+config system admin
+  edit "auditforge"
+    set accprofile "super_admin_readonly"
+    set password <CHANGE_PASSWORD>
+  next
+end
+
+config system interface
+  edit "port1"
+    set allowaccess ping https ssh
+  next
+end
+
+! Verify: get system status
+!         diagnose sys session list
+
+
+! ═══════════════════════════════════════════════════════════════
+! ARISTA EOS
+! ═══════════════════════════════════════════════════════════════
+
+configure terminal
+  username auditforge privilege 15 role network-admin secret <CHANGE_PASSWORD>
+  management ssh
+    idle-timeout 30
+    no shutdown
+  exit
+end
+write memory
+
+! Verify: show management ssh
+
+
+! ═══════════════════════════════════════════════════════════════
+! HPE / ARUBA PROCURVE
+! ═══════════════════════════════════════════════════════════════
+
+configure terminal
+  crypto key generate ssh rsa
+  ip ssh
+  password manager user-name auditforge
+  aaa authentication ssh login local
+end
+write memory
+
+! Verify: show ip ssh
+!         show crypto host-public-key
+
+
+! ═══════════════════════════════════════════════════════════════
+! MIKROTIK ROUTEROS
+! ═══════════════════════════════════════════════════════════════
+
+/user add name=auditforge group=full password=<CHANGE_PASSWORD>
+/ip service set ssh disabled=no port=22
+/ip firewall filter add chain=input protocol=tcp dst-port=22 action=accept place-before=0 comment="AuditForge SSH"
+
+! Verify: /ip service print
+!         /user print

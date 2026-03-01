@@ -422,11 +422,13 @@ def scan_readiness(target_id: int, db: Session = Depends(get_db)) -> dict:
         # Platform-specific suggestion
         ttype = (target.target_type or "").lower()
         if ttype == "windows":
-            suggestions.append("Ensure WinRM is enabled on the target, or use the USB workflow")
+            suggestions.append("Ensure WinRM is enabled — click 'Setup Help' on the target card to download the setup script, or use the USB workflow")
         elif ttype == "linux":
-            suggestions.append("Verify SSH access and credentials on the target")
+            suggestions.append("Verify SSH access — click 'Setup Help' for the enable_ssh script and instructions")
+        elif ttype in ("cisco_ios", "juniper", "fortinet", "palo_alto", "arista", "hp_procurve"):
+            suggestions.append("Check SSH is enabled on the device — click 'Setup Help' for vendor-specific commands")
         else:
-            suggestions.append("Test connectivity and check firewall rules")
+            suggestions.append("Test connectivity and check firewall rules — click 'Setup Help' for preparation scripts")
     else:
         checks.append({"name": "connection", "status": "warning", "detail": "Not tested yet"})
         suggestions.append("Run 'Test Connection' to verify connectivity before scanning")
@@ -484,129 +486,23 @@ def last_scan(target_id: int, db: Session = Depends(get_db)) -> dict:
     }
 
 
-# Platform-specific prerequisite guides
-_PREREQUISITES: dict[str, dict] = {
-    "windows": {
-        "platform": "windows",
-        "connection_method": "winrm",
-        "steps": [
-            {
-                "title": "Enable WinRM",
-                "description": "Run this on the target machine (elevated PowerShell):",
-                "command": "Enable-PSRemoting -Force; winrm quickconfig -q",
-                "notes": "For domain environments, WinRM can be enabled via GPO.",
-            },
-            {
-                "title": "Configure HTTPS Listener",
-                "description": "Create a self-signed cert and HTTPS listener:",
-                "command": (
-                    "$cert = New-SelfSignedCertificate -DnsName $env:COMPUTERNAME -CertStoreLocation Cert:\\LocalMachine\\My; "
-                    "winrm create winrm/config/Listener?Address=*+Transport=HTTPS '@{Hostname=\"'$env:COMPUTERNAME'\"; CertificateThumbprint=\"'$cert.Thumbprint'\"}'"
-                ),
-                "notes": "For production, use a CA-signed certificate.",
-            },
-            {
-                "title": "Open Firewall Port",
-                "description": "Ensure WinRM HTTPS port (5986) is open:",
-                "command": "New-NetFirewallRule -Name 'WinRM-HTTPS' -DisplayName 'WinRM HTTPS' -Protocol TCP -LocalPort 5986 -Action Allow",
-                "notes": None,
-            },
-            {
-                "title": "Verify WinRM Listener",
-                "description": "Confirm a listener is active:",
-                "command": "winrm enumerate winrm/config/listener",
-                "notes": "You should see at least one HTTPS listener.",
-            },
-        ],
-        "alternative": {
-            "method": "usb",
-            "description": "If WinRM cannot be enabled, use the USB air-gap workflow to export scripts and run them locally on the target.",
-        },
-    },
-    "linux": {
-        "platform": "linux",
-        "connection_method": "ssh",
-        "steps": [
-            {
-                "title": "Ensure SSH Server is Running",
-                "description": "Verify sshd is active:",
-                "command": "sudo systemctl status sshd",
-                "notes": "Install with: sudo apt install openssh-server (Debian/Ubuntu) or sudo yum install openssh-server (RHEL/CentOS).",
-            },
-            {
-                "title": "Configure Sudo Access",
-                "description": "The audit user needs passwordless sudo for accurate results:",
-                "command": "echo 'audituser ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/auditforge",
-                "notes": "Replace 'audituser' with the actual SSH username.",
-            },
-            {
-                "title": "Open Firewall Port",
-                "description": "Ensure SSH port (22) is open:",
-                "command": "sudo ufw allow 22/tcp  # Ubuntu/Debian\nsudo firewall-cmd --add-service=ssh --permanent && sudo firewall-cmd --reload  # RHEL/CentOS",
-                "notes": None,
-            },
-        ],
-        "alternative": {
-            "method": "usb",
-            "description": "If SSH cannot be used, export a Bash audit script via the USB workflow and run it locally.",
-        },
-    },
-    "network": {
-        "platform": "network",
-        "connection_method": "netmiko",
-        "steps": [
-            {
-                "title": "Enable SSH on the Device",
-                "description": "Most network devices support SSH. Ensure it is enabled in the device configuration.",
-                "command": "show ip ssh  (Cisco IOS example)",
-                "notes": "Consult your device vendor documentation for SSH setup.",
-            },
-            {
-                "title": "Create Audit User",
-                "description": "Create a local user with privilege level 15 for full read access:",
-                "command": "username audituser privilege 15 secret <password>\nline vty 0 4\n login local\n transport input ssh",
-                "notes": "Adjust for your device vendor.",
-            },
-            {
-                "title": "Configure Enable Password (if needed)",
-                "description": "Some benchmarks require enable mode. Set the enable password in AuditForge target settings.",
-                "command": None,
-                "notes": "The enable password is encrypted and stored separately from SSH credentials.",
-            },
-        ],
-        "alternative": {
-            "method": "none",
-            "description": "Network devices generally cannot be audited via USB scripts. Network connectivity is required.",
-        },
-    },
-    "database": {
-        "platform": "database",
-        "connection_method": "direct",
-        "steps": [
-            {
-                "title": "Create Audit Database User",
-                "description": "Create a read-only user for audit purposes:",
-                "command": "-- PostgreSQL example:\nCREATE USER auditforge WITH PASSWORD 'secure_password';\nGRANT CONNECT ON DATABASE mydb TO auditforge;\nGRANT SELECT ON ALL TABLES IN SCHEMA public TO auditforge;",
-                "notes": "Adjust for your DBMS (PostgreSQL, Oracle, MSSQL).",
-            },
-            {
-                "title": "Configure Connection String",
-                "description": "Set the database connection string in target settings.",
-                "command": None,
-                "notes": "Format: postgresql://user:pass@host:port/dbname",
-            },
-            {
-                "title": "Open Network Access",
-                "description": "Ensure the database port is accessible from the AuditForge server.",
-                "command": None,
-                "notes": "Default ports: PostgreSQL=5432, Oracle=1521, MSSQL=1433.",
-            },
-        ],
-        "alternative": {
-            "method": "none",
-            "description": "Database audits require a direct network connection. USB scripts are not supported for database targets.",
-        },
-    },
+from pathlib import Path
+
+from backend.core.prerequisites import get_prerequisite_guide
+from fastapi.responses import FileResponse
+
+
+# Platform-specific prerequisite guides — now in backend/core/prerequisites.py
+
+# Directory containing downloadable preparation scripts
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+
+# Allowed script filenames (prevent directory traversal)
+_ALLOWED_SCRIPTS = {
+    "Enable_WinRM.ps1",
+    "Enable_OpenSSH_Windows.ps1",
+    "enable_ssh_linux.sh",
+    "network_device_ssh_setup.txt",
 }
 
 
@@ -618,19 +514,31 @@ def prerequisites(target_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="Target not found")
 
     ttype = (target.target_type or "").lower().strip()
-    # Map specific types to guide categories
-    guide_key = ttype
-    if ttype in ("cisco_ios", "juniper", "fortinet", "palo_alto", "arista", "hp_procurve"):
-        guide_key = "network"
-    elif ttype in ("postgresql", "oracle", "mssql"):
-        guide_key = "database"
+    return get_prerequisite_guide(ttype, target.connection_method)
 
-    guide = _PREREQUISITES.get(guide_key)
-    if not guide:
-        return {
-            "platform": ttype,
-            "connection_method": target.connection_method,
-            "steps": [],
-            "alternative": None,
-        }
-    return guide
+
+@router.get("/scripts/{filename}")
+def download_script(filename: str):
+    """Download a preparation script by filename."""
+    if filename not in _ALLOWED_SCRIPTS:
+        raise HTTPException(status_code=404, detail="Script not found")
+
+    filepath = _SCRIPTS_DIR / filename
+    if not filepath.is_file():
+        raise HTTPException(status_code=404, detail="Script file missing")
+
+    # Determine MIME type
+    suffix = filepath.suffix.lower()
+    media_types = {
+        ".ps1": "application/octet-stream",
+        ".sh": "application/x-shellscript",
+        ".txt": "text/plain",
+    }
+    media_type = media_types.get(suffix, "application/octet-stream")
+
+    return FileResponse(
+        path=str(filepath),
+        filename=filename,
+        media_type=media_type,
+    )
+
