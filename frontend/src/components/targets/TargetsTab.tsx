@@ -16,6 +16,7 @@ import { useScanManager } from './scan/useScanManager';
 import ScanAllDialog from './scan/ScanAllDialog';
 import ActiveScansPanel from './scan/ActiveScansPanel';
 import UsbBulkExportDialog from './scan/UsbBulkExportDialog';
+import PrerequisiteGuideModal from './PrerequisiteGuideModal';
 
 interface Props {
   missionId: number;
@@ -44,6 +45,10 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
 
   // USB bulk export dialog
   const [showUsbBulk, setShowUsbBulk] = useState(false);
+
+  // Prerequisites guide modal
+  const [prereqTarget, setPrereqTarget] = useState<Target | null>(null);
+  const [showPrereqs, setShowPrereqs] = useState(false);
 
   const unassignedTargets = clientTargets.filter(
     ct => !missionTargets.some(mt => mt.id === ct.id),
@@ -145,6 +150,11 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       }
     };
     input.click();
+  };
+
+  const handleSetupHelp = (target: Target) => {
+    setPrereqTarget(target);
+    setShowPrereqs(true);
   };
 
   const handleScanAll = () => {
@@ -314,6 +324,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         onScan={handleScan}
         onUsbExport={handleUsbExport}
         onImportResults={handleImportResults}
+        onSetupHelp={handleSetupHelp}
         onViewFindings={handleViewFindings}
         scanningTargetIds={scan.scanningTargetIds}
         scanProgressMap={scan.scanProgressMap}
@@ -341,6 +352,13 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         open={drawerOpen}
         onClose={handleDrawerClose}
         onSaved={async () => { await onRefresh(); }}
+      />
+
+      {/* ── 8. Prerequisite Guide Modal ───────────────────── */}
+      <PrerequisiteGuideModal
+        target={prereqTarget}
+        open={showPrereqs}
+        onClose={() => { setShowPrereqs(false); setTimeout(() => setPrereqTarget(null), 300); }}
       />
     </div>
   );

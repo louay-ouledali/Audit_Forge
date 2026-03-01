@@ -84,17 +84,22 @@ export interface ScanReadiness {
 }
 
 export interface PrerequisiteStep {
-  step: number;
   title: string;
-  command: string;
+  description: string;
+  command: string | null;
+  notes: string | null;
+}
+
+export interface PrerequisiteAlternative {
+  method: string;
   description: string;
 }
 
 export interface PrerequisiteGuide {
-  target_id: number;
   platform: string;
   connection_method: string;
   steps: PrerequisiteStep[];
+  alternative: PrerequisiteAlternative | null;
 }
 
 export interface BenchmarkMatchResult {

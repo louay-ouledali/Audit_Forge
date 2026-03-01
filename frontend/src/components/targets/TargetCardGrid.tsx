@@ -9,6 +9,7 @@ interface Props {
   onScan: (target: Target) => void;
   onUsbExport: (target: Target) => void;
   onImportResults: (target: Target) => void;
+  onSetupHelp: (target: Target) => void;
   onViewFindings: (target: Target) => void;
   scanningTargetIds?: Set<number>;
   scanProgressMap?: Map<number, number>;
@@ -21,6 +22,7 @@ export default function TargetCardGrid({
   onScan,
   onUsbExport,
   onImportResults,
+  onSetupHelp,
   onViewFindings,
   scanningTargetIds = new Set(),
   scanProgressMap = new Map(),
@@ -49,6 +51,7 @@ export default function TargetCardGrid({
           onScan={onScan}
           onUsbExport={onUsbExport}
           onImportResults={onImportResults}
+          onSetupHelp={onSetupHelp}
           onViewFindings={onViewFindings}
           isScanning={scanningTargetIds.has(target.id)}
           scanProgress={scanProgressMap.get(target.id)}

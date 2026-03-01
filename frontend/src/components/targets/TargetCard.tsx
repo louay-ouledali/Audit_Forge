@@ -21,6 +21,7 @@ import {
   XCircle,
   AlertTriangle,
   Upload,
+  BookOpen,
 } from 'lucide-react';
 import type { Target, ConnectionTestResult } from '@/types';
 import * as api from '@/services/api';
@@ -108,6 +109,7 @@ interface Props {
   onScan: (target: Target) => void;
   onUsbExport: (target: Target) => void;
   onImportResults: (target: Target) => void;
+  onSetupHelp: (target: Target) => void;
   onViewFindings: (target: Target) => void;
   isScanning?: boolean;
   scanProgress?: number;
@@ -120,6 +122,7 @@ export default function TargetCard({
   onScan,
   onUsbExport,
   onImportResults,
+  onSetupHelp,
   onViewFindings,
   isScanning = false,
   scanProgress,
@@ -273,6 +276,18 @@ export default function TargetCard({
             )}
           </div>
         </div>
+
+        {/* Setup Help link (shown when connection failed) */}
+        {connStatus === 'failed' && (
+          <div className="flex items-center justify-end">
+            <button
+              onClick={() => onSetupHelp(target)}
+              className="flex items-center gap-1 text-[11px] text-amber-400 hover:text-ey-yellow transition-colors"
+            >
+              <BookOpen className="h-3 w-3" /> Setup Help
+            </button>
+          </div>
+        )}
 
         {/* Benchmark */}
         <div className="flex items-center justify-between text-xs">
