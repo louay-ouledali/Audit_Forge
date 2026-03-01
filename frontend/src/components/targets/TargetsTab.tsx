@@ -11,6 +11,7 @@ import { inputClass } from '../mission/badgeHelpers';
 import DiscoveryBar from './DiscoveryBar';
 import TargetActionBar from './TargetActionBar';
 import TargetCardGrid from './TargetCardGrid';
+import TargetConfigDrawer from './TargetConfigDrawer';
 
 interface Props {
   missionId: number;
@@ -33,6 +34,10 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   // Scanning state (will be enhanced in Phase 7)
   const [scanningTargetIds] = useState<Set<number>>(new Set());
   const [scanProgressMap] = useState<Map<number, number>>(new Map());
+
+  // Config drawer state
+  const [drawerTarget, setDrawerTarget] = useState<Target | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const unassignedTargets = clientTargets.filter(
     ct => !missionTargets.some(mt => mt.id === ct.id),
@@ -66,9 +71,14 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   };
 
   const handleConfigure = (target: Target) => {
-    // Phase 6 will open the TargetConfigDrawer
-    // For now, we could navigate to client workspace or show a placeholder
-    console.log('Configure target:', target.id);
+    setDrawerTarget(target);
+    setDrawerOpen(true);
+  };
+
+  const handleDrawerClose = () => {
+    setDrawerOpen(false);
+    // Delay clearing target so close animation plays
+    setTimeout(() => setDrawerTarget(null), 300);
   };
 
   const handleScan = (target: Target) => {
@@ -249,6 +259,14 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         onViewFindings={handleViewFindings}
         scanningTargetIds={scanningTargetIds}
         scanProgressMap={scanProgressMap}
+      />
+
+      {/* ── 4. Config Drawer ─────────────────────────────────── */}
+      <TargetConfigDrawer
+        target={drawerTarget}
+        open={drawerOpen}
+        onClose={handleDrawerClose}
+        onSaved={async () => { await onRefresh(); }}
       />
     </div>
   );
