@@ -307,7 +307,7 @@ export default function TargetCard({
       </div>
 
       {/* ── Action buttons (only in mission context) ─────────── */}
-      {(onScan || onUsbExport) && (
+      {(onScan || onUsbExport || onImportResults) && (
       <div className="mt-4 flex gap-2">
         {/* Scan Now */}
         {onScan && (
@@ -350,6 +350,18 @@ export default function TargetCard({
             </div>
           )}
         </div>
+        )}
+
+        {/* Import Results */}
+        {onImportResults && (
+        <button
+          onClick={() => onImportResults(target)}
+          disabled={!hasBenchmark}
+          className="flex items-center justify-center gap-1.5 rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-xs font-medium text-dark-secondary transition-colors hover:bg-dark-overlay hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+          title={!hasBenchmark ? 'Set a benchmark first' : 'Import scan results (JSON/ZIP)'}
+        >
+          <Upload className="h-3.5 w-3.5" /> Import
+        </button>
         )}
       </div>
       )}
@@ -394,18 +406,7 @@ export default function TargetCard({
         </div>
       ) : (
         <div className="mt-4 border-t border-dark-border/50 pt-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-dark-muted">Never scanned</p>
-            {hasBenchmark && onImportResults && (
-              <button
-                onClick={() => onImportResults(target)}
-                className="flex items-center gap-1 text-[11px] text-dark-secondary hover:text-ey-yellow transition-colors"
-                title="Import results from USB audit"
-              >
-                <Upload className="h-3 w-3" /> Import Results
-              </button>
-            )}
-          </div>
+          <p className="text-xs text-dark-muted">Never scanned</p>
         </div>
       )}
     </div>
