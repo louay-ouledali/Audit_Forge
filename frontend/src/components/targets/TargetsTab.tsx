@@ -1,8 +1,35 @@
 import { useState } from 'react';
-import { Server, X, Upload, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  Server,
+  X,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  Monitor,
+  Terminal,
+  Network,
+  Database,
+  HelpCircle,
+  Plus,
+  Wifi,
+} from 'lucide-react';
 import type { Target } from '@/types';
 import * as api from '@/services/api';
 import { inputClass } from '../mission/badgeHelpers';
+import DiscoveryBar from './DiscoveryBar';
+
+/* ── Platform icon + accent mapping ─────────────────────────── */
+const PLATFORM_CONFIG: Record<string, { icon: typeof Monitor; accent: string }> = {
+  windows:  { icon: Monitor,   accent: 'sky' },
+  linux:    { icon: Terminal,   accent: 'emerald' },
+  network:  { icon: Network,    accent: 'purple' },
+  database: { icon: Database,   accent: 'orange' },
+};
+
+function getPlatform(t: Target) {
+  const key = (t.target_type || '').toLowerCase();
+  return PLATFORM_CONFIG[key] || { icon: HelpCircle, accent: 'gray' };
+}
 
 interface Props {
   missionId: number;
@@ -57,7 +84,6 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
     let failCount = 0;
 
     for (const line of lines) {
-      // Expected format: hostnameOrIp, type, connectionMethod(optional), username(optional), password(optional)
       const parts = line.split(',').map(p => p.trim());
       const ipOrHost = parts[0];
       const targetType = parts[1]?.toLowerCase() || 'linux';
@@ -66,7 +92,6 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       const password = parts[4] || null;
 
       try {
-        // 1. Create target for client
         const newTarget = await api.createTarget({
           client_id: clientId,
           hostname: ipOrHost.includes('.') && !ipOrHost.match(/^\d{1,3}\./) ? ipOrHost : null,
@@ -77,8 +102,6 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
           ssh_password: password,
           port: connectionMethod === 'ssh' ? 22 : connectionMethod === 'winrm' ? 5985 : null
         });
-
-        // 2. Assign to mission
         await api.assignTargetToMission(missionId, newTarget.id);
         successCount++;
       } catch (err) {
@@ -109,7 +132,14 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         </div>
       )}
 
-      {/* Top Actions Row */}
+      {/* ── 1. Discovery Bar (collapsible) ───────────────────── */}
+      <DiscoveryBar
+        clientId={clientId}
+        missionId={missionId}
+        onTargetsAdded={onRefresh}
+      />
+
+      {/* ── 2. Action Bar ────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row gap-4 items-end sm:items-center justify-between">
         {/* Assign existing target */}
         {unassignedTargets.length > 0 ? (
@@ -119,7 +149,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
               onChange={e => setAssignTargetId(e.target.value ? Number(e.target.value) : '')}
               className={`${inputClass} max-w-[200px]`}
             >
-              <option value="">Select existing client target…</option>
+              <option value="">Assign existing target…</option>
               {unassignedTargets.map(t => (
                 <option key={t.id} value={t.id}>{t.hostname || t.ip_address || `Target #${t.id}`} ({t.target_type})</option>
               ))}
@@ -138,7 +168,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
           onClick={() => { setShowImport(!showImport); setImportResult(null); }}
           className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${showImport ? 'border-ey-yellow text-ey-yellow bg-ey-yellow/10' : 'border-dark-border bg-dark-card text-dark-secondary hover:text-white hover:bg-dark-elevated'}`}
         >
-          <Upload className="h-4 w-4" /> Bulk Import New Targets
+          <Upload className="h-4 w-4" /> Bulk Import
         </button>
       </div>
 
@@ -194,64 +224,101 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         </div>
       )}
 
-      {/* Assigned targets list */}
+      {/* ── 3. Target Cards Grid ─────────────────────────────── */}
       {missionTargets.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-dark-border bg-dark-card p-12 text-center">
           <Server className="mx-auto h-10 w-10 text-dark-muted" />
-          <p className="mt-3 text-dark-secondary">No targets assigned to this mission.</p>
+          <p className="mt-3 text-dark-secondary font-medium">No targets assigned to this mission.</p>
           <p className="mt-1 text-xs text-dark-muted">
-            {unassignedTargets.length > 0
-              ? 'Use the dropdown above to assign existing client targets, or bulk import new ones.'
-              : 'Add targets to the client first, or use the bulk import feature.'}
+            Discover your network above, assign an existing client target, or bulk import new ones.
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-dark-border bg-dark-card shadow-sm">
-          <table className="min-w-full divide-y divide-dark-border">
-            <thead className="bg-dark-elevated/80 backdrop-blur-sm">
-              <tr>
-                <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-dark-secondary">Target</th>
-                <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-dark-secondary">Details</th>
-                <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-dark-secondary">Connection</th>
-                <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-dark-secondary">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-dark-border border-t border-dark-border/50">
-              {missionTargets.map(t => (
-                <tr key={t.id} className="hover:bg-dark-elevated/30 transition-colors group">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/10 border border-sky-500/20 group-hover:border-sky-500/40 transition-colors">
-                        <Server className="h-4 w-4 text-sky-400" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-white mb-0.5">{t.hostname || `Target #${t.id}`}</div>
-                        <div className="text-xs text-dark-muted font-mono">{t.ip_address || 'No IP'}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4">
-                    <span className="inline-flex rounded-full bg-dark-overlay px-2.5 py-0.5 text-xs font-medium uppercase tracking-wider text-dark-secondary border border-dark-border/50">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {missionTargets.map(t => {
+            const platform = getPlatform(t);
+            const Icon = platform.icon;
+            const a = platform.accent;
+
+            return (
+              <div
+                key={t.id}
+                className={`group relative rounded-xl border bg-dark-card p-5 transition-all duration-200 hover:shadow-lg hover:shadow-black/20
+                  ${t.connection_status === 'ok'
+                    ? 'border-l-2 border-l-emerald-500 border-t-dark-border border-r-dark-border border-b-dark-border'
+                    : t.connection_status === 'failed'
+                      ? 'border-l-2 border-l-red-500 border-t-dark-border border-r-dark-border border-b-dark-border'
+                      : 'border-dark-border'
+                  }`}
+              >
+                {/* Top row: Icon + Name + Actions */}
+                <div className="flex items-start gap-3">
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-${a}-500/10 border border-${a}-500/20`}>
+                    <Icon className={`h-5 w-5 text-${a}-400`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-white">{t.hostname || `Target #${t.id}`}</p>
+                    <p className="text-xs text-dark-muted font-mono">{t.ip_address || 'No IP'}</p>
+                  </div>
+                  <button
+                    onClick={() => handleUnassignTarget(t.id)}
+                    className="rounded-md bg-dark-elevated p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Unassign from mission"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Status row */}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                      t.connection_status === 'ok' ? 'bg-emerald-400' : t.connection_status === 'failed' ? 'bg-red-400' : 'bg-dark-muted'
+                    }`} />
+                    <span className="text-dark-secondary capitalize">
+                      {t.connection_status === 'ok' ? 'Reachable' : t.connection_status === 'failed' ? 'Unreachable' : 'Untested'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span className={`inline-flex items-center rounded-full bg-${a}-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-${a}-400`}>
                       {t.target_type}
                     </span>
-                  </td>
-                  <td className="px-5 py-4">
-                    <div className="text-sm font-medium text-dark-secondary uppercase tracking-wider">{t.connection_method || '—'}</div>
-                    {t.port && <div className="text-xs text-dark-muted mt-0.5">Port {t.port}</div>}
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    <button
-                      onClick={() => handleUnassignTarget(t.id)}
-                      className="rounded-md bg-dark-elevated p-2 text-dark-muted hover:bg-red-500/10 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"
-                      title="Unassign from mission"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+
+                {/* Connection + port info */}
+                <div className="mt-2 flex items-center gap-3 text-xs text-dark-muted">
+                  {t.connection_method && (
+                    <span className="flex items-center gap-1">
+                      <Wifi className="h-3 w-3" /> {t.connection_method.toUpperCase()}
+                    </span>
+                  )}
+                  {t.port && <span>Port {t.port}</span>}
+                </div>
+
+                {/* Benchmark */}
+                {t.default_benchmark_name && (
+                  <div className="mt-2 truncate text-xs text-dark-muted">
+                    📋 {t.default_benchmark_name}
+                  </div>
+                )}
+
+                {/* Scan stats (if any) */}
+                {t.last_scan_date && (
+                  <div className="mt-3 flex items-center justify-between border-t border-dark-border/50 pt-2.5 text-xs">
+                    <span className="text-dark-muted">
+                      Last: {new Date(t.last_scan_date).toLocaleDateString()}
+                    </span>
+                    {t.last_scan_compliance != null && (
+                      <span className={`font-semibold ${t.last_scan_compliance >= 80 ? 'text-emerald-400' : t.last_scan_compliance >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
+                        {t.last_scan_compliance.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

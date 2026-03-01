@@ -155,6 +155,14 @@ export interface DiscoveredHostEnriched extends DiscoveredHost {
   suggested_benchmark_id?: number | null;
 }
 
+// ── Target Enriched (client-side enrichment) ─────────────────
+
+export interface TargetEnriched extends Target {
+  isScanning: boolean;
+  scanProgress?: ScanStatus;
+  readiness?: ScanReadiness;
+}
+
 export interface Settings {
   [key: string]: string;
 }
