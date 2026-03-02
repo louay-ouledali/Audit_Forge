@@ -370,6 +370,12 @@ export interface DiscoveredHost {
   os_version: string;
   vendor: string;
   banners: Record<number, string>;
+  device_model: string;
+  firmware: string;
+  mac_address: string;
+  domain: string;
+  detection_method: string;
+  confidence: number;
 }
 
 export interface DiscoveryProgress {
