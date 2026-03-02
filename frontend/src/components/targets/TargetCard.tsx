@@ -279,19 +279,17 @@ export default function TargetCard({
           </div>
         </div>
 
-        {/* Setup Help link — always visible, highlighted when connection failed */}
-        <div className="flex items-center justify-end">
-          <button
-            onClick={() => onSetupHelp ? onSetupHelp(target) : setShowLocalPrereqs(true)}
-            className={`flex items-center gap-1 text-[11px] transition-colors ${
-              connStatus === 'failed'
-                ? 'text-amber-400 hover:text-ey-yellow font-medium'
-                : 'text-dark-muted hover:text-dark-secondary'
-            }`}
-          >
-            <BookOpen className="h-3 w-3" /> Setup Help
-          </button>
-        </div>
+      {/* ── Setup Help button ─────────────────────────────────── */}
+      <button
+        onClick={() => onSetupHelp ? onSetupHelp(target) : setShowLocalPrereqs(true)}
+        className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+          connStatus === 'failed'
+            ? 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/50'
+            : 'border-dark-border bg-dark-elevated text-dark-secondary hover:bg-dark-overlay hover:text-white'
+        }`}
+      >
+        <BookOpen className="h-3.5 w-3.5" /> Setup Help &amp; Scripts
+      </button>
 
         {/* Benchmark */}
         <div className="flex items-center justify-between text-xs">
