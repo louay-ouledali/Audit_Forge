@@ -6,7 +6,7 @@
 <style>
   @page {
     size: A4;
-    margin: 18mm 20mm 22mm 20mm;
+    margin: 15mm 16mm 18mm 16mm;
     @top-right {
       content: "CONFIDENTIAL";
       font-size: 7px;
@@ -15,45 +15,50 @@
       text-transform: uppercase;
     }
     @bottom-center {
-      content: "AuditForge - Page " counter(page) " of " counter(pages);
-      font-size: 8px;
-      color: #999;
+      content: "AuditForge — Page " counter(page) " of " counter(pages);
+      font-size: 7.5px;
+      color: #94a3b8;
+    }
+    @bottom-right {
+      content: "{{ generated_at }}";
+      font-size: 6.5px;
+      color: #94a3b8;
     }
   }
-  @page :first { @top-right { content: none; } @bottom-center { content: none; } }
+  @page :first { @top-right { content: none; } @bottom-center { content: none; } @bottom-right { content: none; } }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 10.5px; color: #1e293b; line-height: 1.6; orphans: 3; widows: 3; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 9.5px; color: #1e293b; line-height: 1.55; orphans: 3; widows: 3; }
 
   /* ── Cover page ── */
-  .cover { text-align: center; padding: 100px 50px 60px; page-break-after: always; position: relative; }
-  .cover::before { content: ''; display: block; width: 80px; height: 4px; background: linear-gradient(90deg, #1e40af, #3b82f6, #93c5fd); border-radius: 2px; margin: 0 auto 40px; }
-  .cover .brand { font-size: 14px; letter-spacing: 3px; text-transform: uppercase; color: #64748b; margin-bottom: 12px; }
-  .cover h1 { font-size: 26px; color: #0f172a; margin-bottom: 8px; font-weight: 700; }
-  .cover .subtitle { font-size: 15px; color: #475569; margin-bottom: 40px; }
-  .cover .meta-block { display: inline-block; text-align: left; border-top: 1px solid #e2e8f0; padding-top: 20px; }
-  .cover .meta-line { font-size: 11px; color: #334155; margin: 5px 0; }
-  .cover .meta-line strong { color: #0f172a; min-width: 90px; display: inline-block; }
-  .cover::after { content: ''; display: block; width: 60px; height: 3px; background: #3b82f6; border-radius: 2px; margin: 50px auto 0; }
+  .cover { text-align: center; padding: 80px 40px 50px; page-break-after: always; position: relative; }
+  .cover::before { content: ''; display: block; width: 80px; height: 4px; background: linear-gradient(90deg, #1e40af, #3b82f6, #93c5fd); border-radius: 2px; margin: 0 auto 30px; }
+  .cover .brand { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
+  .cover h1 { font-size: 24px; color: #0f172a; margin-bottom: 6px; font-weight: 700; }
+  .cover .subtitle { font-size: 13px; color: #475569; margin-bottom: 30px; }
+  .cover .meta-block { display: inline-block; text-align: left; border-top: 1px solid #e2e8f0; padding-top: 16px; }
+  .cover .meta-line { font-size: 10px; color: #334155; margin: 4px 0; }
+  .cover .meta-line strong { color: #0f172a; min-width: 80px; display: inline-block; }
+  .cover::after { content: ''; display: block; width: 60px; height: 3px; background: #3b82f6; border-radius: 2px; margin: 40px auto 0; }
 
   /* ── Headings with WeasyPrint PDF bookmarks ── */
   h2 {
-    font-size: 15px; color: #1e40af; margin: 24px 0 10px;
-    border-bottom: 2px solid #dbeafe; padding-bottom: 5px; letter-spacing: 0.3px;
+    font-size: 13px; color: #1e40af; margin: 16px 0 8px;
+    border-bottom: 2px solid #dbeafe; padding-bottom: 4px; letter-spacing: 0.3px;
     bookmark-level: 1;
     bookmark-state: open;
   }
   h3 {
-    font-size: 12px; color: #334155; margin: 14px 0 6px; font-weight: 600;
+    font-size: 10.5px; color: #334155; margin: 10px 0 5px; font-weight: 600;
     bookmark-level: 2;
   }
 
-  .section { margin-bottom: 22px; }
+  .section { margin-bottom: 14px; }
 
   /* Statistics cards */
-  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
-  .stat-card { background: linear-gradient(135deg, #eff6ff, #dbeafe); padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 100px; flex: 1; border: 1px solid #bfdbfe; }
-  .stat-card .val { font-size: 24px; font-weight: 700; color: #1e40af; }
-  .stat-card .lbl { font-size: 8px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stat-card { background: linear-gradient(135deg, #eff6ff, #dbeafe); padding: 8px 12px; border-radius: 6px; text-align: center; min-width: 80px; flex: 1; border: 1px solid #bfdbfe; }
+  .stat-card .val { font-size: 20px; font-weight: 700; color: #1e40af; }
+  .stat-card .lbl { font-size: 7px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 1px; }
 
   /* Compliance bar */
   .compliance-bar { height: 8px; background: #fee2e2; border-radius: 4px; overflow: hidden; margin: 6px 0; }
@@ -62,9 +67,9 @@
   .compliance-bar .fill-warn { background: linear-gradient(90deg, #f59e0b, #d97706); }
   .compliance-bar .fill-bad { background: linear-gradient(90deg, #ef4444, #dc2626); }
 
-  table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 9.5px; }
-  th, td { padding: 6px 8px; border: 1px solid #e2e8f0; text-align: left; }
-  th { background: #f1f5f9; font-weight: 600; color: #334155; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 8.5px; }
+  th, td { padding: 4px 6px; border: 1px solid #e2e8f0; text-align: left; }
+  th { background: #f1f5f9; font-weight: 600; color: #334155; font-size: 8px; text-transform: uppercase; letter-spacing: 0.3px; }
   tbody tr:nth-child(even) { background: #f8fafc; }
 
   .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 8.5px; font-weight: 700; color: #fff; letter-spacing: 0.3px; }
@@ -78,33 +83,36 @@
   .st-error { background: #7c3aed; }
 
   /* ── Enhanced finding cards ── */
-  .finding-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; page-break-inside: avoid; background: #fff; }
+  .finding-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-bottom: 8px; page-break-inside: avoid; background: #fff; }
   .finding-card.sev-border-critical { border-left: 4px solid #dc2626; }
   .finding-card.sev-border-high { border-left: 4px solid #ea580c; }
   .finding-card.sev-border-medium { border-left: 4px solid #d97706; }
   .finding-card.sev-border-low { border-left: 4px solid #2563eb; }
   .finding-card.sev-border-informational { border-left: 4px solid #6b7280; }
-  .finding-card .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; }
-  .finding-card .header .rule-id { font-weight: 700; font-size: 11px; color: #0f172a; }
-  .finding-card p { margin: 4px 0; font-size: 10px; }
-  .finding-card code { background: #f1f5f9; padding: 2px 5px; border-radius: 3px; font-size: 9.5px; font-family: 'Consolas', 'Courier New', monospace; color: #334155; word-break: break-all; }
-  .finding-card .field-label { font-weight: 600; color: #475569; display: inline-block; min-width: 80px; }
+  .finding-card .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding-bottom: 4px; border-bottom: 1px solid #f1f5f9; }
+  .finding-card .header .rule-id { font-weight: 700; font-size: 9.5px; color: #0f172a; }
+  .finding-card p { margin: 2px 0; font-size: 8.5px; }
+  .finding-card code { background: #f1f5f9; padding: 1px 4px; border-radius: 3px; font-size: 8px; font-family: 'Consolas', 'Courier New', monospace; color: #334155; word-break: break-all; }
+  .finding-card .field-label { font-weight: 600; color: #475569; display: inline-block; min-width: 70px; }
+  /* Truncate long output values to keep cards compact */
+  .finding-card .output-val { display: block; max-height: 60px; overflow: hidden; text-overflow: ellipsis; }
+  .finding-card .output-val-full { display: block; max-height: none; }
 
-  .ai-advice-box { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 6px 10px; margin: 6px 0; border-radius: 0 4px 4px 0; font-size: 9.5px; }
-  .eval-box { background: #f0fdf4; border-left: 3px solid #22c55e; padding: 6px 10px; margin: 6px 0; border-radius: 0 4px 4px 0; font-size: 9.5px; }
-  .rationale-box { background: #fefce8; border-left: 3px solid #eab308; padding: 6px 10px; margin: 6px 0; border-radius: 0 4px 4px 0; font-size: 9.5px; }
+  .ai-advice-box { background: #eff6ff; border-left: 3px solid #3b82f6; padding: 4px 8px; margin: 4px 0; border-radius: 0 4px 4px 0; font-size: 8.5px; }
+  .eval-box { background: #f0fdf4; border-left: 3px solid #22c55e; padding: 4px 8px; margin: 4px 0; border-radius: 0 4px 4px 0; font-size: 8.5px; }
+  .rationale-box { background: #fefce8; border-left: 3px solid #eab308; padding: 4px 8px; margin: 4px 0; border-radius: 0 4px 4px 0; font-size: 8.5px; }
 
-  .passed-summary { margin-top: 12px; }
-  .passed-summary li { margin-left: 18px; font-size: 10px; }
+  .passed-summary { margin-top: 8px; }
+  .passed-summary li { margin-left: 18px; font-size: 9px; }
 
-  .ai-summary { background: #eff6ff; border-left: 4px solid #1e40af; padding: 12px 16px; margin-bottom: 16px; white-space: pre-wrap; font-size: 10px; border-radius: 0 6px 6px 0; line-height: 1.7; }
+  .ai-summary { background: #eff6ff; border-left: 4px solid #1e40af; padding: 8px 12px; margin-bottom: 12px; white-space: pre-wrap; font-size: 9px; border-radius: 0 6px 6px 0; line-height: 1.6; }
 
   /* ── Table of Contents ── */
   .toc { page-break-after: always; }
   .toc h2 { border-bottom: none; bookmark-level: none; }
-  .toc-title { font-size: 18px; color: #1e40af; font-weight: 700; margin-bottom: 20px; border-bottom: 3px solid #1e40af; padding-bottom: 8px; }
+  .toc-title { font-size: 16px; color: #1e40af; font-weight: 700; margin-bottom: 14px; border-bottom: 3px solid #1e40af; padding-bottom: 6px; }
   .toc-list { list-style: none; margin: 0; padding: 0; }
-  .toc-list li { padding: 6px 0; font-size: 11px; border-bottom: 1px dotted #cbd5e1; }
+  .toc-list li { padding: 4px 0; font-size: 9.5px; border-bottom: 1px dotted #cbd5e1; }
   .toc-list li a { color: #1e293b; text-decoration: none; display: flex; justify-content: space-between; }
   .toc-list li a::after { content: target-counter(attr(href), page); color: #64748b; font-weight: 600; }
   .toc-list li.toc-sub { padding-left: 18px; font-size: 10px; border-bottom: 1px dotted #e2e8f0; }
@@ -112,8 +120,8 @@
 
   /* ── Severity group headers ── */
   .severity-group-header {
-    margin: 18px 0 10px; padding: 8px 14px; border-radius: 6px;
-    font-size: 12px; font-weight: 700; color: #fff; page-break-after: avoid;
+    margin: 12px 0 8px; padding: 6px 12px; border-radius: 5px;
+    font-size: 10px; font-weight: 700; color: #fff; page-break-after: avoid;
     display: flex; justify-content: space-between; align-items: center;
   }
   .severity-group-header.sev-bg-critical { background: linear-gradient(135deg, #dc2626, #b91c1c); }
@@ -121,10 +129,10 @@
   .severity-group-header.sev-bg-medium { background: linear-gradient(135deg, #d97706, #b45309); }
   .severity-group-header.sev-bg-low { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
   .severity-group-header.sev-bg-informational { background: linear-gradient(135deg, #6b7280, #4b5563); }
-  .severity-group-header .count-badge { background: rgba(255,255,255,0.25); padding: 2px 10px; border-radius: 10px; font-size: 10px; }
+  .severity-group-header .count-badge { background: rgba(255,255,255,0.25); padding: 2px 8px; border-radius: 10px; font-size: 8.5px; }
 
   /* ── Section count badge ── */
-  .section-count { display: inline-block; background: #dbeafe; color: #1e40af; padding: 1px 8px; border-radius: 10px; font-size: 9px; font-weight: 600; margin-left: 8px; vertical-align: middle; }
+  .section-count { display: inline-block; background: #dbeafe; color: #1e40af; padding: 1px 7px; border-radius: 10px; font-size: 8px; font-weight: 600; margin-left: 6px; vertical-align: middle; }
 
   /* ── Audience Badge ── */
   .audience-badge { display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 12px; }
@@ -164,7 +172,7 @@
   .fp-badge.fp-high { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
   .fp-badge.fp-medium { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
   .fp-badge.fp-low { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
-  .fp-analysis-box { background: #fefce8; border-left: 3px solid #eab308; padding: 6px 10px; margin: 6px 0; border-radius: 0 4px 4px 0; font-size: 9px; }
+  .fp-analysis-box { background: #fefce8; border-left: 3px solid #eab308; padding: 4px 8px; margin: 4px 0; border-radius: 0 4px 4px 0; font-size: 8px; }
   .fp-signals { margin: 4px 0 0 12px; font-size: 8.5px; color: #64748b; }
   .fp-signals li { margin-bottom: 2px; }
   .fp-section-card { border: 1px solid #fde68a; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; background: #fffbeb; page-break-inside: avoid; }
@@ -221,6 +229,21 @@
 
     <li><a href="#sec-audit-scope">{{ ns.n }}. Audit Scope</a></li>
     {% set ns.n = ns.n + 1 %}
+
+    {% if by_category %}
+    <li><a href="#sec-by-category">{{ ns.n }}. Compliance by Category</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
+
+    <li><a href="#sec-findings-register">{{ ns.n }}. Complete Findings Register ({{ findings|length }})</a></li>
+    {% set ns.n = ns.n + 1 %}
+
+    {% if not section_toggles or section_toggles.get('recommendations', true) %}
+    {% if recommendations is defined and recommendations %}
+    <li><a href="#sec-recommendations">{{ ns.n }}. Prioritized Recommendations</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
+    {% endif %}
 
     {% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
     <li><a href="#sec-fp-analysis">{{ ns.n }}. False Positive Analysis</a></li>
@@ -441,6 +464,70 @@
 </div>
 {% endif %}
 
+<!-- ═══ Complete Findings Register (master table of ALL rules) ═══ -->
+<div class="section" id="sec-findings-register" style="page-break-before: always;">
+  <h2>Complete Findings Register <span class="section-count">{{ findings|length }}</span></h2>
+  <p style="font-size: 8px; color: #64748b; margin-bottom: 6px;">Comprehensive list of every audited rule, sorted by section number. Use the detailed sections below for full findings.</p>
+  <table style="font-size: 7.5px;">
+    <thead>
+      <tr>
+        <th style="width:8%">Section</th>
+        <th style="width:42%">Rule Title</th>
+        <th style="width:10%">Severity</th>
+        <th style="width:8%">Status</th>
+        <th style="width:17%">Target</th>
+        <th style="width:15%">Benchmark</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in findings %}
+      <tr>
+        <td style="font-weight:600;white-space:nowrap">{{ f.section_number }}</td>
+        <td>{{ f.rule_title }}</td>
+        <td><span class="badge sev-{{ f.severity }}" style="font-size:7px;padding:1px 5px">{{ f.severity | upper }}</span></td>
+        <td><span class="badge st-{{ f.status | lower }}" style="font-size:7px;padding:1px 5px">{{ f.status }}</span></td>
+        <td style="font-size:7px">{{ f.target_hostname }}</td>
+        <td style="font-size:7px">{{ f.benchmark_name }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ═══ Prioritized Recommendations ═══ -->
+{% if not section_toggles or section_toggles.get('recommendations', true) %}
+{% if recommendations is defined and recommendations %}
+<div class="section" id="sec-recommendations" style="page-break-before: always;">
+  <h2>Prioritized Remediation Recommendations</h2>
+  <p style="font-size: 8.5px; color: #475569; margin-bottom: 8px;">
+    The following remediation actions are prioritized by severity (critical first). Each recommendation addresses one or more failed audit rules.
+  </p>
+
+  {% set rec_sev_shown = namespace(current="") %}
+  {% set rec_count = namespace(n=0) %}
+  {% for f in recommendations %}
+    {% if f.remediation %}
+    {% if f.severity != rec_sev_shown.current %}
+      {% set rec_sev_shown.current = f.severity %}
+      <div class="severity-group-header sev-bg-{{ f.severity }}" style="margin-top:10px;">
+        <span>{{ f.severity | upper }} SEVERITY RECOMMENDATIONS</span>
+      </div>
+    {% endif %}
+    {% set rec_count.n = rec_count.n + 1 %}
+    <div style="border-left: 3px solid {% if f.severity == 'critical' %}#dc2626{% elif f.severity == 'high' %}#ea580c{% elif f.severity == 'medium' %}#d97706{% elif f.severity == 'low' %}#2563eb{% else %}#6b7280{% endif %}; padding: 4px 8px; margin: 4px 0; page-break-inside: avoid; background: #fafbfc; border-radius: 0 4px 4px 0;">
+      <p style="font-size: 8.5px; margin: 1px 0;"><strong style="color: #0f172a;">{{ rec_count.n }}. [{{ f.section_number }}] {{ f.rule_title }}</strong></p>
+      <p style="font-size: 8px; color: #475569; margin: 1px 0;">{{ f.remediation[:500] }}</p>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  {% if rec_count.n == 0 %}
+  <p style="font-size: 9px; color: #16a34a; font-weight: 600;">No failed rules with remediation actions found.</p>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
 <!-- ═══ False Positive Analysis ═══ -->
 {% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
 <div class="section" id="sec-fp-analysis">
@@ -609,8 +696,10 @@
 
 {% else %}
 <!-- ═══ Default Mode — Failed Rules Grouped by Severity ═══ -->
+{% if not section_toggles or section_toggles.get('findings_detail', true) %}
 <div class="section" id="sec-failed-rules" style="page-break-before: always;">
-  <h2>Failed Rules <span class="section-count">{{ fail_count.val }}</span></h2>
+  <h2>Failed Rules — Detailed Analysis <span class="section-count">{{ fail_count.val }}</span></h2>
+  <p style="font-size: 8px; color: #64748b; margin-bottom: 6px;">Each finding includes the rule description, expected vs. actual configuration values, evaluation results, and remediation guidance.</p>
 
   {% for sev in ["critical", "high", "medium", "low", "informational"] %}
     {% set sev_findings = [] %}
@@ -619,7 +708,7 @@
     {% endfor %}
 
     {% if sev_findings | length > 0 %}
-    <div id="sec-fail-{{ sev }}">
+    <div id="sec-fail-{{ sev }}" {% if not loop.first %}style="page-break-before: always;"{% endif %}>
       <div class="severity-group-header sev-bg-{{ sev }}">
         <span>{{ sev | upper }} SEVERITY</span>
         <span class="count-badge">{{ sev_findings | length }} rule{{ 's' if sev_findings | length != 1 else '' }}</span>
@@ -671,6 +760,29 @@
     {% endif %}
   {% endfor %}
 </div>
+{% else %}
+{# findings_detail is disabled — show compact failed rules table instead #}
+<div class="section" id="sec-failed-rules" style="page-break-before: always;">
+  <h2>Failed Rules Summary <span class="section-count">{{ fail_count.val }}</span></h2>
+  <table style="font-size: 8px;">
+    <thead>
+      <tr><th>Section</th><th>Rule Title</th><th>Severity</th><th>Target</th><th>Expected</th><th>Actual</th></tr>
+    </thead>
+    <tbody>
+      {% for f in findings if f.status == "FAIL" %}
+      <tr>
+        <td style="font-weight:600;white-space:nowrap">{{ f.section_number }}</td>
+        <td>{{ f.rule_title }}</td>
+        <td><span class="badge sev-{{ f.severity }}" style="font-size:7px;padding:1px 4px">{{ f.severity | upper }}</span></td>
+        <td style="font-size:7px">{{ f.target_hostname }}</td>
+        <td style="font-size:7px;max-width:100px;overflow:hidden;text-overflow:ellipsis"><code>{{ f.expected_output[:80] }}</code></td>
+        <td style="font-size:7px;max-width:100px;overflow:hidden;text-overflow:ellipsis"><code>{{ f.actual_output[:80] }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 
 <!-- ═══ Errors Section ═══ -->
 {% set error_findings = [] %}
@@ -678,10 +790,11 @@
   {% if error_findings.append(f) %}{% endif %}
 {% endfor %}
 {% if error_findings | length > 0 %}
-<div class="section" id="sec-error-rules">
+<div class="section" id="sec-error-rules" style="page-break-before: always;">
   <h2>Errors <span class="section-count">{{ error_findings | length }}</span></h2>
+  <p style="font-size: 8px; color: #64748b; margin-bottom: 6px;">Rules that encountered execution errors during the audit. These require investigation — the rule may need command correction or the target may have access issues.</p>
   <table>
-    <thead><tr><th>Section</th><th>Rule</th><th>Severity</th><th>Target</th><th>Output</th></tr></thead>
+    <thead><tr><th>Section</th><th>Rule</th><th>Severity</th><th>Target</th><th>Error Output</th></tr></thead>
     <tbody>
       {% for f in error_findings %}
       <tr>
@@ -697,36 +810,48 @@
 </div>
 {% endif %}
 
-<!-- ═══ Passed Rules Summary ═══ -->
+<!-- ═══ Passed Rules — Full Detail ═══ -->
 {% if include_passed %}
 {% set passed_findings = [] %}
 {% for f in findings if f.status == "PASS" %}
   {% if passed_findings.append(f) %}{% endif %}
 {% endfor %}
 {% if passed_findings | length > 0 %}
-<div class="section" id="sec-passed-rules">
+<div class="section" id="sec-passed-rules" style="page-break-before: always;">
   <h2>Passed Rules <span class="section-count">{{ passed_findings | length }}</span></h2>
+  <p style="font-size: 8px; color: #64748b; margin-bottom: 8px;">Rules that met the expected CIS benchmark configuration. Grouped by severity for reference.</p>
 
-  {# Group passed rules by severity too #}
   {% for sev in ["critical", "high", "medium", "low", "informational"] %}
     {% set sev_passed = [] %}
     {% for f in passed_findings if f.severity == sev %}
       {% if sev_passed.append(f) %}{% endif %}
     {% endfor %}
     {% if sev_passed | length > 0 %}
-    <h3>{{ sev | capitalize }} ({{ sev_passed | length }})</h3>
-    <table>
-      <thead><tr><th>Section</th><th>Rule</th><th>Target</th></tr></thead>
-      <tbody>
-        {% for f in sev_passed %}
-        <tr>
-          <td>{{ f.section_number }}</td>
-          <td>{{ f.rule_title }}</td>
-          <td>{{ f.target_hostname }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="severity-group-header sev-bg-{{ sev }}" style="opacity: 0.85;">
+      <span>{{ sev | upper }} — PASSED</span>
+      <span class="count-badge">{{ sev_passed | length }} rule{{ 's' if sev_passed | length != 1 else '' }}</span>
+    </div>
+
+    {% for f in sev_passed %}
+    <div class="finding-card sev-border-{{ f.severity }}" style="border-left-color: #22c55e;">
+      <div class="header">
+        <span class="rule-id">{{ f.section_number }} — {{ f.rule_title }}</span>
+        <span>
+          <span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span>
+          <span class="badge st-pass">PASS</span>
+        </span>
+      </div>
+      {% if f.description %}<p><span class="field-label">Description:</span> {{ f.description }}</p>{% endif %}
+      <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
+      <p><span class="field-label">Actual:</span> <code>{{ f.actual_output }}</code></p>
+      {% if f.evaluation_explanation %}
+      <div class="eval-box"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</div>
+      {% endif %}
+      {% if f.default_value %}<p><span class="field-label">Default Value:</span> <code>{{ f.default_value }}</code></p>{% endif %}
+      {% if f.auditor_notes %}<p><span class="field-label">Notes:</span> {{ f.auditor_notes }}</p>{% endif %}
+      {% if f.auditor_override %}<p><span class="field-label">Override:</span> {{ f.auditor_override }}</p>{% endif %}
+    </div>
+    {% endfor %}
     {% endif %}
   {% endfor %}
 </div>

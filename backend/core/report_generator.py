@@ -283,6 +283,19 @@ def aggregate_report_data(
         elif f["status"] == "FAIL":
             by_category[cat]["failed"] += 1
 
+    # ── Sort findings by section number for consistent ordering ──
+    def _section_sort_key(f):
+        """Sort by numeric section parts (e.g., 1.1.1 → (1, 1, 1))."""
+        parts = []
+        for p in (f.get("section_number") or "").split("."):
+            try:
+                parts.append(int(p))
+            except ValueError:
+                parts.append(999)
+        return parts
+
+    findings_rows.sort(key=_section_sort_key)
+
     # ── False-positive detection ──
     findings_rows, fp_summary = enrich_findings_with_fp(findings_rows)
 
@@ -529,6 +542,13 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
     charts = _generate_all_charts(data, grouped_findings)
     data.update(charts)
     data["fp_summary"] = data.get("fp_summary", {})
+
+    # Build top-N remediation items for the Recommendations section
+    _sev_prio = {"critical": 0, "high": 1, "medium": 2, "low": 3, "informational": 4}
+    failed_for_recs = [f for f in data["findings"] if f.get("status") == "FAIL"]
+    failed_for_recs.sort(key=lambda f: (_sev_prio.get(f.get("severity", "medium"), 5),
+                                         f.get("section_number", "")))
+    data["recommendations"] = failed_for_recs  # template will use this for a dedicated section
 
     html_string = template.render(**data, include_passed=include_passed)
 
