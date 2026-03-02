@@ -318,6 +318,52 @@ def upgrade_pack(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  Duplicate cleanup — remove preloaded copies when a user-imported version exists
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _cleanup_preloaded_duplicates(db: Session) -> int:
+    """Delete preloaded benchmarks that duplicate a user-imported benchmark.
+
+    This can happen when the preloaded sync ran before it checked for
+    user-imported benchmarks by the same name.  The user-imported (enriched)
+    version always takes precedence.
+
+    Returns the number of duplicates removed.
+    """
+    from sqlalchemy import func
+
+    # Sub-query: names that exist as both 'preloaded' and 'user_imported'
+    user_names = (
+        db.query(Benchmark.name)
+        .filter(Benchmark.source != "preloaded")
+        .subquery()
+    )
+    dupes = (
+        db.query(Benchmark)
+        .filter(
+            Benchmark.source == "preloaded",
+            Benchmark.name.in_(db.query(user_names.c.name)),
+        )
+        .all()
+    )
+
+    if not dupes:
+        return 0
+
+    for b in dupes:
+        logger.info(
+            "Removing duplicate preloaded benchmark id=%d '%s' (user-imported copy exists)",
+            b.id, b.name,
+        )
+        db.delete(b)  # cascades to rules → commands → tags
+
+    db.commit()
+    logger.info("Cleaned up %d duplicate preloaded benchmarks", len(dupes))
+    return len(dupes)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  Sync engine — called at startup
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -346,21 +392,33 @@ def sync_preloaded(db: Session) -> dict[str, int]:
         logger.info("No preloaded packs to sync")
         return stats
 
+    # ── Phase 0: remove preloaded duplicates of user-imported benchmarks ─
+    _cleanup_preloaded_duplicates(db)
+
     for pack_info in packs:
         try:
             disk_hash = compute_file_hash(pack_info.full_path)
 
-            # Find existing preloaded benchmark with matching name + source
+            # Find ANY existing benchmark with the same name (regardless of source).
+            # A user-imported benchmark with the same name means the pack is
+            # already covered — we must not create a second copy.
             existing = (
                 db.query(Benchmark)
-                .filter(
-                    Benchmark.source == "preloaded",
-                    Benchmark.name == pack_info.benchmark_name,
-                )
+                .filter(Benchmark.name == pack_info.benchmark_name)
                 .first()
             )
 
             if existing is not None:
+                # If a user-imported benchmark has the same name, skip entirely
+                # — the user's enriched version takes precedence.
+                if existing.source != "preloaded":
+                    logger.debug(
+                        "  Pack '%s' already covered by %s benchmark id=%d — skipping",
+                        pack_info.filename, existing.source, existing.id,
+                    )
+                    stats["skipped"] += 1
+                    continue
+
                 if existing.pack_hash == disk_hash:
                     logger.debug(
                         "  Pack '%s' unchanged (hash match) — skipping",
