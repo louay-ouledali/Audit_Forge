@@ -1,4 +1,4 @@
-import { Monitor, Terminal, Network, Database, HelpCircle, Plus, Check, Shield, Wifi, Fingerprint } from 'lucide-react';
+import { Monitor, Terminal, Network, Database, HelpCircle, Plus, Check, Shield, Wifi } from 'lucide-react';
 import type { DiscoveredHostEnriched } from '@/types';
 
 /* ── OS → icon / accent mapping ────────────────────────────── */
@@ -15,14 +15,6 @@ function getOsConfig(os: string) {
     if (key.includes(k)) return v;
   }
   return { icon: HelpCircle, accent: 'gray-400', label: os || 'Unknown' };
-}
-
-/* ── Confidence → color / label ────────────────────────────── */
-function getConfidenceBadge(confidence: number) {
-  if (confidence >= 90) return { label: 'High', color: 'emerald-400', bg: 'emerald-400' };
-  if (confidence >= 65) return { label: 'Medium', color: 'amber-400', bg: 'amber-400' };
-  if (confidence >= 30) return { label: 'Low', color: 'orange-400', bg: 'orange-400' };
-  return { label: 'Guess', color: 'gray-400', bg: 'gray-400' };
 }
 
 /* ── Detection method → friendly label ─────────────────────── */
@@ -69,8 +61,6 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
   const Icon = cfg.icon;
   const alreadyAssigned = host.already_assigned;
   const alreadyAdded = host.already_added && !alreadyAssigned;
-  const conf = host.confidence || 0;
-  const confBadge = getConfidenceBadge(conf);
   const detectionLabel = formatDetectionMethod(host.detection_method || '');
 
   return (
@@ -85,20 +75,12 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
             : 'border-dark-border hover:border-dark-border/80 hover:shadow-lg hover:shadow-black/20'}
       `}
     >
-      {/* Confidence indicator (top-right corner) */}
-      {conf > 0 && (
-        <div className={`absolute top-2.5 right-3 flex items-center gap-1`} title={`Detection confidence: ${conf}%`}>
-          <Fingerprint className={`h-3 w-3 text-${confBadge.color}`} />
-          <span className={`text-[9px] font-bold text-${confBadge.color}`}>{conf}%</span>
-        </div>
-      )}
-
       {/* Top row: Icon + IP + Hostname + Domain */}
       <div className="flex items-start gap-3">
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-${cfg.accent}/10 border border-${cfg.accent}/20`}>
           <Icon className={`h-4 w-4 text-${cfg.accent}`} />
         </div>
-        <div className="min-w-0 flex-1 pr-12">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold text-white">{host.ip}</p>
           <p className="truncate text-xs text-dark-muted">
             {host.hostname || 'No hostname'}

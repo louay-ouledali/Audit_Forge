@@ -34,6 +34,7 @@ import re
 import socket
 import struct
 import subprocess
+import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -684,7 +685,6 @@ async def _smb_ntlm_fingerprint(
         # Wrap in SPNEGO
         # OID: 1.2.840.113554.1.2.2 (MS KRB5 mech) + 1.2.840.48018.1.2.2
         # We'll use a minimal GSS-API wrapper for NTLMSSP
-        import struct
 
         def _build_spnego_init(ntlm_token: bytes) -> bytes:
             """Build minimal SPNEGO/GSS-API init token wrapping NTLMSSP."""
@@ -1205,13 +1205,12 @@ async def _mdns_probe(ip: str, timeout: float = 2.0) -> dict[str, Any]:
     result: dict[str, Any] = {}
 
     # Build a minimal mDNS query for _services._dns-sd._udp.local
-    import struct as _struct
     # DNS query for _http._tcp.local (PTR)
     query_name = b"\x05_http\x04_tcp\x05local\x00"
     # DNS header: ID=0, flags=0, QD=1, AN=0, NS=0, AR=0
-    dns_header = _struct.pack(">HHHHHH", 0, 0, 1, 0, 0, 0)
+    dns_header = struct.pack(">HHHHHH", 0, 0, 1, 0, 0, 0)
     # Question: name + type PTR (12) + class IN (1) with unicast bit
-    question = query_name + _struct.pack(">HH", 12, 0x8001)
+    question = query_name + struct.pack(">HH", 12, 0x8001)
     mdns_query = dns_header + question
 
     loop = asyncio.get_event_loop()
