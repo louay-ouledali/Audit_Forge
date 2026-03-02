@@ -61,6 +61,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.warning("Failed to reset stale statuses: %s", exc)
     init_db()
 
+    # ── Auto-run Alembic migrations so new columns are always present ────
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+        import os
+
+        alembic_ini = os.path.join(os.path.dirname(__file__), "alembic.ini")
+        alembic_cfg = AlembicConfig(alembic_ini)
+        alembic_command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied successfully")
+    except Exception as exc:
+        logger.warning("Alembic auto-migration failed (non-fatal): %s", exc)
+
     # ── Sync pre-loaded benchmark packs from backend/preloaded/ ──────────
     try:
         from backend.core.preloaded_loader import sync_preloaded
