@@ -78,6 +78,7 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
       const targetType = osGuess.includes('windows') ? 'windows'
         : osGuess.includes('network') || osGuess.includes('cisco') || osGuess.includes('juniper') ? 'network'
         : osGuess.includes('database') || osGuess.includes('postgres') || osGuess.includes('mssql') ? 'database'
+        : osGuess.includes('mobile') ? 'mobile'
         : 'linux';
 
       const connMethod = guessConnection(host);
@@ -94,6 +95,7 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
         client_id: clientId,
         hostname: host.hostname || null,
         ip_address: host.ip,
+        mac_address: host.mac_address || null,
         target_type: targetType,
         connection_method: connMethod,
         port,

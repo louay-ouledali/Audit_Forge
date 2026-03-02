@@ -16,6 +16,7 @@ class Target(Base):
     client_id = Column(Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True)
     hostname = Column(String)
     ip_address = Column(String)
+    mac_address = Column(String, nullable=True, index=True)  # persistent hardware ID
     target_type = Column(String, nullable=False)
     os_details = Column(String)
     connection_method = Column(String)

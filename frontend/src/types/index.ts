@@ -32,6 +32,7 @@ export interface Target {
   client_id: number;
   hostname: string | null;
   ip_address: string | null;
+  mac_address: string | null;
   target_type: string;
   os_details: string | null;
   connection_method: string | null;
@@ -165,6 +166,7 @@ export interface DiscoveredHostEnriched extends DiscoveredHost {
   already_assigned?: boolean;
   suggested_benchmark?: string | null;
   suggested_benchmark_id?: number | null;
+  match_method?: 'mac' | 'ip' | '';
 }
 
 // ── Target Enriched (client-side enrichment) ─────────────────

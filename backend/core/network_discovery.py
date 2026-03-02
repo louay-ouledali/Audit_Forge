@@ -134,6 +134,33 @@ async def _probe_port(ip: str, port: int, timeout: float = TCP_CONNECT_TIMEOUT) 
         return False
 
 
+async def _ping_host(ip: str, timeout: float = 1.5) -> bool:
+    """Send a single ICMP ping (via OS ping command). Returns True if alive.
+
+    Works inside Docker (Linux) and on Windows hosts.
+    ConnectionRefused on TCP is also evidence of life, but this catches
+    hosts with zero open ports (phones, IoT devices, etc.).
+    """
+    loop = asyncio.get_event_loop()
+    try:
+        if sys.platform == "win32":
+            cmd = ["ping", "-n", "1", "-w", str(int(timeout * 1000)), ip]
+        else:
+            cmd = ["ping", "-c", "1", "-W", str(int(timeout)), ip]
+        proc = await asyncio.wait_for(
+            asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            ),
+            timeout=timeout + 1,
+        )
+        rc = await asyncio.wait_for(proc.wait(), timeout=timeout + 1)
+        return rc == 0
+    except (asyncio.TimeoutError, OSError, FileNotFoundError):
+        return False
+
+
 async def _reverse_dns(ip: str) -> str:
     """Attempt a reverse DNS lookup. Returns hostname or empty string."""
     loop = asyncio.get_event_loop()
@@ -305,8 +332,35 @@ _OUI_VENDOR: dict[str, str] = {
     "3C:22:FB": "Apple", "A4:83:E7": "Apple", "F0:18:98": "Apple",
     "BC:52:B7": "Apple", "AC:BC:32": "Apple", "00:03:93": "Apple",
     "DC:A9:04": "Apple", "14:7D:DA": "Apple", "F8:FF:C2": "Apple",
-    # ── Samsung ──
+    # ── Samsung (phones, tablets, smart TVs) ──
     "00:16:6C": "Samsung", "A0:82:1F": "Samsung", "C4:73:1E": "Samsung",
+    "8C:F5:A3": "Samsung", "10:D5:42": "Samsung", "E4:7C:F9": "Samsung",
+    "BC:44:86": "Samsung", "5C:49:7D": "Samsung", "CC:07:AB": "Samsung",
+    "F0:25:B7": "Samsung", "94:35:0A": "Samsung", "40:4E:36": "Samsung",
+    "34:14:5F": "Samsung", "A8:7C:01": "Samsung", "50:01:BB": "Samsung",
+    # ── Xiaomi / Redmi ──
+    "64:CC:2E": "Xiaomi", "28:6C:07": "Xiaomi", "78:11:DC": "Xiaomi",
+    "F8:A4:5F": "Xiaomi", "9C:99:A0": "Xiaomi", "50:64:2B": "Xiaomi",
+    "AC:C1:EE": "Xiaomi", "7C:1D:D9": "Xiaomi", "34:CE:00": "Xiaomi",
+    # ── OnePlus ──
+    "C0:EE:40": "OnePlus", "94:65:2D": "OnePlus",
+    # ── OPPO / Realme ──
+    "A0:A3:B3": "OPPO", "2C:5B:E1": "OPPO", "98:F6:21": "OPPO",
+    # ── Motorola ──
+    "EC:C4:0D": "Motorola", "9C:D9:17": "Motorola", "48:FC:B8": "Motorola",
+    # ── Nokia ──
+    "D4:63:FE": "Nokia",
+    # ── Honor ──
+    "38:F7:3D": "Honor",
+    # ── Sony (phones / TVs / PlayStation) ──
+    "FC:0F:E6": "Sony", "AC:9B:0A": "Sony", "00:04:1F": "Sony",
+    # ── LG ──
+    "88:C9:D0": "LG", "10:68:3F": "LG", "CC:FA:00": "LG",
+    # ── Intel (laptops/desktops) ──
+    "DC:71:96": "Intel", "F8:63:3F": "Intel", "34:02:86": "Intel",
+    "8C:8D:28": "Intel", "A4:C3:F0": "Intel",
+    # ── Realtek (on-board Ethernet) ──
+    "00:E0:4C": "Realtek", "52:54:00": "Realtek/QEMU",
     # ── Google ──
     "54:60:09": "Google", "F4:F5:D8": "Google", "A4:77:33": "Google",
     # ── Amazon ──
@@ -1711,51 +1765,79 @@ def _detect_connection_methods(os_guess: str, open_ports: list[dict[str, Any]]) 
 
 
 async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
-    """Scan a single host: port probe → banner grab → multi-layer fingerprint."""
+    """Scan a single host: ping/port probe → banner grab → multi-layer fingerprint.
+
+    Returns a DiscoveredHost even if no ports are open (e.g. phones, IoT)
+    as long as the host responds to ICMP ping or has an ARP entry.
+    """
     async with sem:
-        # First, do a quick check on the most common ports to see if host is alive
+        # Phase 1: Quick alive check — TCP on common ports + ICMP ping in parallel
         quick_ports = [22, 80, 135, 443, 445, 3389, 5985]
-        quick_tasks = [_probe_port(ip, p, timeout=1.0) for p in quick_ports]
-        quick_results = await asyncio.gather(*quick_tasks)
+        alive_tasks: list[Any] = [_probe_port(ip, p, timeout=1.0) for p in quick_ports]
+        alive_tasks.append(_ping_host(ip, timeout=1.5))
+        alive_results = await asyncio.gather(*alive_tasks)
 
-        if not any(quick_results):
-            return None  # Host appears down
+        tcp_alive = any(alive_results[:-1])
+        ping_alive = alive_results[-1]
 
-        # Host is alive — probe all ports
-        port_sem = asyncio.Semaphore(MAX_CONCURRENT_PORTS)
+        if not tcp_alive and not ping_alive:
+            return None  # Host appears completely down
 
-        async def _guarded_probe(port: int) -> bool:
-            async with port_sem:
-                return await _probe_port(ip, port)
+        # Phase 2: Full port scan (only bother if TCP showed signs of life)
+        open_ports: list[dict[str, Any]] = []
+        banners: dict[int, str] = {}
 
-        tasks = [_guarded_probe(p) for p, _, _ in PROBE_PORTS]
-        results = await asyncio.gather(*tasks)
+        if tcp_alive:
+            port_sem = asyncio.Semaphore(MAX_CONCURRENT_PORTS)
 
-        open_ports = []
-        for (port, service, hint), is_open in zip(PROBE_PORTS, results):
-            if is_open:
-                open_ports.append({
-                    "port": port,
-                    "service": service,
-                    "platform_hint": hint,
-                })
+            async def _guarded_probe(port: int) -> bool:
+                async with port_sem:
+                    return await _probe_port(ip, port)
 
-        if not open_ports:
-            return None
+            tasks = [_guarded_probe(p) for p, _, _ in PROBE_PORTS]
+            results = await asyncio.gather(*tasks)
+
+            for (port, service, hint), is_open in zip(PROBE_PORTS, results):
+                if is_open:
+                    open_ports.append({
+                        "port": port,
+                        "service": service,
+                        "platform_hint": hint,
+                    })
+
+            # Banner grabbing (only for open ports)
+            if open_ports:
+                banners = await _grab_banners(ip, open_ports)
 
         hostname = await _reverse_dns(ip)
-        os_guess = _guess_os(open_ports)
+        os_guess = _guess_os(open_ports) if open_ports else "unknown"
         conn_methods = _detect_connection_methods(os_guess, open_ports)
 
-        # Banner grabbing
-        banners = await _grab_banners(ip, open_ports)
-
-        # Multi-layer fingerprinting
+        # Multi-layer fingerprinting (runs even with 0 open ports — uses
+        # MAC OUI, UPnP, mDNS, hostname heuristics which don't need ports)
         fp = await _fingerprint_host(ip, hostname, open_ports, banners, os_guess)
 
         # Use SMB/NTLM hostname if rDNS failed
         if not hostname and fp.get("hostname_override"):
             hostname = fp["hostname_override"]
+
+        # If host responded only to ping (no ports), try to refine os_guess
+        # from fingerprint results
+        if os_guess == "unknown" and fp.get("vendor"):
+            vendor_lower = fp["vendor"].lower()
+            if vendor_lower in ("microsoft",):
+                os_guess = "windows"
+            elif any(kw in vendor_lower for kw in ("canonical", "red hat", "debian",
+                     "raspberry pi", "proxmox")):
+                os_guess = "linux"
+            elif any(kw in vendor_lower for kw in ("samsung", "google", "oneplus",
+                     "xiaomi", "huawei", "oppo", "realme", "motorola", "sony",
+                     "lg", "nokia", "honor", "amazon", "apple")):
+                os_guess = "mobile"
+            elif any(kw in vendor_lower for kw in ("tp-link", "netgear", "asus",
+                     "d-link", "linksys", "cisco", "juniper", "mikrotik",
+                     "ubiquiti", "fortinet", "arista", "meraki", "sonicwall")):
+                os_guess = "network"
 
         return DiscoveredHost(
             ip=ip,

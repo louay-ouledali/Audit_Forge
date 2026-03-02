@@ -1,12 +1,13 @@
-import { Monitor, Terminal, Network, Database, HelpCircle, Plus, Check, Shield, Wifi } from 'lucide-react';
+import { Monitor, Terminal, Network, Database, HelpCircle, Plus, Check, Shield, Wifi, Smartphone } from 'lucide-react';
 import type { DiscoveredHostEnriched } from '@/types';
 
 /* ── OS → icon / accent mapping ────────────────────────────── */
 const OS_CONFIG: Record<string, { icon: typeof Monitor; accent: string; label: string }> = {
-  windows: { icon: Monitor,   accent: 'sky-400',     label: 'Windows' },
-  linux:   { icon: Terminal,   accent: 'emerald-400', label: 'Linux' },
-  network: { icon: Network,    accent: 'purple-400',  label: 'Network' },
-  database:{ icon: Database,   accent: 'orange-400',  label: 'Database' },
+  windows: { icon: Monitor,      accent: 'sky-400',     label: 'Windows' },
+  linux:   { icon: Terminal,     accent: 'emerald-400', label: 'Linux' },
+  network: { icon: Network,      accent: 'purple-400',  label: 'Network' },
+  database:{ icon: Database,     accent: 'orange-400',  label: 'Database' },
+  mobile:  { icon: Smartphone,   accent: 'pink-400',    label: 'Mobile' },
 };
 
 function getOsConfig(os: string) {
@@ -166,11 +167,19 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
       <div className="mt-3">
         {alreadyAssigned ? (
           <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
-            <Check className="h-3.5 w-3.5" /> Assigned to mission
+            <Check className="h-3.5 w-3.5" />
+            <span>Assigned to mission</span>
+            {host.match_method === 'mac' && (
+              <span className="text-[9px] text-emerald-400/60 font-normal">(matched by MAC)</span>
+            )}
           </div>
         ) : alreadyAdded ? (
           <div className="flex items-center gap-1.5 text-xs font-medium text-sky-400">
-            <Check className="h-3.5 w-3.5" /> Already in client
+            <Check className="h-3.5 w-3.5" />
+            <span>Already in client</span>
+            {host.match_method === 'mac' && (
+              <span className="text-[9px] text-sky-400/60 font-normal">(matched by MAC)</span>
+            )}
           </div>
         ) : (
           <button

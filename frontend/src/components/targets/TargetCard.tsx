@@ -200,6 +200,11 @@ export default function TargetCard({
           <p className="mt-0.5 text-xs text-dark-muted font-mono">
             {target.ip_address || 'No IP'}{target.port ? ` : ${target.port}` : ''}
           </p>
+          {target.mac_address && (
+            <p className="text-[9px] text-dark-muted/50 font-mono" title="Hardware ID (MAC)">
+              {target.mac_address}
+            </p>
+          )}
         </div>
         {/* Top-right action icons */}
         <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">

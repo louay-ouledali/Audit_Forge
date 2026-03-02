@@ -9,6 +9,7 @@ class TargetCreate(BaseModel):
     client_id: int
     hostname: str | None = None
     ip_address: str | None = None
+    mac_address: str | None = None
     target_type: str
     os_details: str | None = None
     connection_method: str | None = None
@@ -30,6 +31,7 @@ class TargetCreate(BaseModel):
 class TargetUpdate(BaseModel):
     hostname: str | None = None
     ip_address: str | None = None
+    mac_address: str | None = None
     target_type: str | None = None
     os_details: str | None = None
     connection_method: str | None = None
@@ -55,6 +57,7 @@ class TargetResponse(BaseModel):
     client_id: int
     hostname: str | None = None
     ip_address: str | None = None
+    mac_address: str | None = None
     target_type: str
     os_details: str | None = None
     connection_method: str | None = None

@@ -132,11 +132,22 @@ def _enrich_discovered_hosts(
     mission_id: int | None,
     db: Session,
 ) -> list[dict]:
-    """Add already_added, existing_target_id, and suggested_benchmark to discovered hosts."""
-    # Build a lookup of existing targets keyed by IP
+    """Add already_added, existing_target_id, and suggested_benchmark to discovered hosts.
+
+    Matching priority:
+    1. MAC address (persistent hardware identity — survives IP changes)
+    2. IP address (fallback for targets without MAC)
+
+    When a MAC-matched target has a stale IP, its ip_address is auto-updated
+    so the auditor always works with the current address.
+    """
+    # Build lookups of existing targets keyed by MAC and IP
     all_targets = db.query(Target).all()
+    mac_to_target: dict[str, Target] = {}
     ip_to_target: dict[str, Target] = {}
     for t in all_targets:
+        if t.mac_address:
+            mac_to_target[t.mac_address.upper()] = t
         if t.ip_address:
             ip_to_target[t.ip_address] = t
 
@@ -150,14 +161,43 @@ def _enrich_discovered_hosts(
     benchmarks = db.query(Benchmark).filter(Benchmark.status == "active").all()
 
     enriched = []
+    ip_updated_targets: list[int] = []
+
     for host in hosts:
         ip = host.get("ip", "")
+        mac = (host.get("mac_address", "") or "").upper()
         os_guess = (host.get("os_guess", "") or "").lower()
 
-        existing = ip_to_target.get(ip)
+        # Match: prefer MAC (persistent) → fallback to IP
+        existing: Target | None = None
+        match_method = ""
+        if mac:
+            existing = mac_to_target.get(mac)
+            if existing:
+                match_method = "mac"
+        if not existing and ip:
+            existing = ip_to_target.get(ip)
+            if existing:
+                match_method = "ip"
+
         host["already_added"] = existing is not None
         host["existing_target_id"] = existing.id if existing else None
         host["already_assigned"] = existing.id in assigned_ids if existing else False
+        host["match_method"] = match_method
+
+        # Auto re-tie: if MAC-matched target has a different IP, update it
+        if existing and match_method == "mac" and ip and existing.ip_address != ip:
+            old_ip = existing.ip_address
+            existing.ip_address = ip
+            ip_updated_targets.append(existing.id)
+            logger.info(
+                "Auto re-tied target %d (%s): IP %s → %s (MAC %s)",
+                existing.id, existing.hostname or "", old_ip or "?", ip, mac,
+            )
+
+        # Also store/update MAC on existing target if it was missing
+        if existing and mac and not existing.mac_address:
+            existing.mac_address = mac
 
         # Suggest benchmark based on OS guess
         suggested_name = None
@@ -173,6 +213,10 @@ def _enrich_discovered_hosts(
         host["suggested_benchmark_id"] = suggested_id
 
         enriched.append(host)
+
+    # Commit any IP re-ties or MAC backfills
+    if ip_updated_targets:
+        db.commit()
 
     return enriched
 
