@@ -72,6 +72,7 @@
   .sev-high { background: #ea580c; }
   .sev-medium { background: #d97706; color: #fff; }
   .sev-low { background: #2563eb; }
+  .sev-informational { background: #6b7280; }
   .st-pass { background: #16a34a; }
   .st-fail { background: #dc2626; }
   .st-error { background: #7c3aed; }
@@ -82,6 +83,7 @@
   .finding-card.sev-border-high { border-left: 4px solid #ea580c; }
   .finding-card.sev-border-medium { border-left: 4px solid #d97706; }
   .finding-card.sev-border-low { border-left: 4px solid #2563eb; }
+  .finding-card.sev-border-informational { border-left: 4px solid #6b7280; }
   .finding-card .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f1f5f9; }
   .finding-card .header .rule-id { font-weight: 700; font-size: 11px; color: #0f172a; }
   .finding-card p { margin: 4px 0; font-size: 10px; }
@@ -118,6 +120,7 @@
   .severity-group-header.sev-bg-high { background: linear-gradient(135deg, #ea580c, #c2410c); }
   .severity-group-header.sev-bg-medium { background: linear-gradient(135deg, #d97706, #b45309); }
   .severity-group-header.sev-bg-low { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+  .severity-group-header.sev-bg-informational { background: linear-gradient(135deg, #6b7280, #4b5563); }
   .severity-group-header .count-badge { background: rgba(255,255,255,0.25); padding: 2px 10px; border-radius: 10px; font-size: 10px; }
 
   /* ── Section count badge ── */
@@ -154,6 +157,7 @@
   .sev-chip-high { background: #ffedd5; color: #9a3412; }
   .sev-chip-medium { background: #fef3c7; color: #92400e; }
   .sev-chip-low { background: #dbeafe; color: #1e40af; }
+  .sev-chip-informational { background: #f3f4f6; color: #374151; }
 
   /* ── False-Positive Suspect Styles ── */
   .fp-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 8px; font-weight: 700; letter-spacing: 0.3px; margin-left: 6px; }
@@ -235,7 +239,7 @@
     <li><a href="#sec-failed-rules">{{ ns.n }}. Failed Rules ({{ fail_count.val }})</a></li>
     {% set ns.n = ns.n + 1 %}
     {# Sub-entries for severity groups within failed #}
-    {% for sev in ["critical", "high", "medium", "low"] %}
+    {% for sev in ["critical", "high", "medium", "low", "informational"] %}
       {% set sev_fail = namespace(val=0) %}
       {% for f in findings if f.status == "FAIL" and f.severity == sev %}{% set sev_fail.val = sev_fail.val + 1 %}{% endfor %}
       {% if sev_fail.val > 0 %}
@@ -337,7 +341,7 @@
   <table>
     <thead><tr><th>Severity</th><th>Total</th><th>Passed</th><th>Failed</th><th>Compliance</th></tr></thead>
     <tbody>
-      {% for sev in ["critical", "high", "medium", "low"] %}
+      {% for sev in ["critical", "high", "medium", "low", "informational"] %}
       {% set info = summary.by_severity.get(sev, {"total": 0, "passed": 0, "failed": 0}) %}
       <tr>
         <td><span class="badge sev-{{ sev }}">{{ sev | upper }}</span></td>
@@ -409,6 +413,34 @@
   </table>
 </div>
 
+<!-- ═══ Compliance by Category ═══ -->
+{% if by_category %}
+<div class="section" id="sec-by-category">
+  <h2>Compliance by Category</h2>
+  <table>
+    <thead><tr><th>Category</th><th>Total</th><th>Passed</th><th>Failed</th><th>Compliance</th></tr></thead>
+    <tbody>
+      {% for cat_key in by_category.keys() | sort %}
+      {% set info = by_category[cat_key] %}
+      {% set comp = (info.passed / info.total * 100) | round(1) if info.total > 0 else 0.0 %}
+      <tr>
+        <td style="font-weight:600">{{ info.get('label', 'Section ' ~ cat_key) }}</td>
+        <td>{{ info.total }}</td>
+        <td style="color:#16a34a;font-weight:600">{{ info.passed }}</td>
+        <td style="color:#dc2626;font-weight:600">{{ info.failed }}</td>
+        <td>
+          {{ comp }}%
+          <div class="compliance-bar">
+            <div class="fill {% if comp >= 80 %}fill-good{% elif comp >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ comp }}%"></div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <!-- ═══ False Positive Analysis ═══ -->
 {% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
 <div class="section" id="sec-fp-analysis">
@@ -460,6 +492,7 @@
         <th>Group</th><th>Total</th><th>Passed</th><th>Failed</th><th>Errors</th>
         <th style="text-align:center">CRIT</th><th style="text-align:center">HIGH</th>
         <th style="text-align:center">MED</th><th style="text-align:center">LOW</th>
+        <th style="text-align:center">INFO</th>
         <th>Compliance</th>
       </tr>
     </thead>
@@ -471,7 +504,7 @@
         <td style="color:#16a34a;font-weight:700">{{ group.pass_count }}</td>
         <td style="color:#dc2626;font-weight:700">{{ group.fail_count }}</td>
         <td style="color:#7c3aed">{{ group.error_count }}</td>
-        {% for sev in ["critical", "high", "medium", "low"] %}
+        {% for sev in ["critical", "high", "medium", "low", "informational"] %}
         {% set sc = group.sev_counts.get(sev, 0) %}
         <td class="sev-cell {{ 'has-val' if sc > 0 else 'zero-val' }}">{{ sc }}</td>
         {% endfor %}
@@ -509,7 +542,7 @@
 
   {% if group.sev_detail %}
   <div style="padding:4px 10px;">
-    {% for sev in ["critical", "high", "medium", "low"] %}
+    {% for sev in ["critical", "high", "medium", "low", "informational"] %}
       {% if group.sev_detail.get(sev) %}
       {% set sd = group.sev_detail[sev] %}
       <span class="sev-chip sev-chip-{{ sev }}">{{ sev|upper }}: {{ sd.failed }}F / {{ sd.passed }}P</span>
@@ -579,7 +612,7 @@
 <div class="section" id="sec-failed-rules" style="page-break-before: always;">
   <h2>Failed Rules <span class="section-count">{{ fail_count.val }}</span></h2>
 
-  {% for sev in ["critical", "high", "medium", "low"] %}
+  {% for sev in ["critical", "high", "medium", "low", "informational"] %}
     {% set sev_findings = [] %}
     {% for f in findings if f.status == "FAIL" and f.severity == sev %}
       {% if sev_findings.append(f) %}{% endif %}
@@ -675,7 +708,7 @@
   <h2>Passed Rules <span class="section-count">{{ passed_findings | length }}</span></h2>
 
   {# Group passed rules by severity too #}
-  {% for sev in ["critical", "high", "medium", "low"] %}
+  {% for sev in ["critical", "high", "medium", "low", "informational"] %}
     {% set sev_passed = [] %}
     {% for f in passed_findings if f.severity == sev %}
       {% if sev_passed.append(f) %}{% endif %}

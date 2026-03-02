@@ -39,6 +39,7 @@ FILL_CRITICAL = PatternFill(start_color="FF0000", end_color="FF0000", fill_type=
 FILL_HIGH = PatternFill(start_color="FF8C00", end_color="FF8C00", fill_type="solid")
 FILL_MEDIUM = PatternFill(start_color="FFD700", end_color="FFD700", fill_type="solid")
 FILL_LOW = PatternFill(start_color="4169E1", end_color="4169E1", fill_type="solid")
+FILL_INFORMATIONAL = PatternFill(start_color="9CA3AF", end_color="9CA3AF", fill_type="solid")
 FILL_PASS = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")
 FILL_FAIL = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
 
@@ -47,6 +48,7 @@ SEVERITY_FILLS = {
     "high": FILL_HIGH,
     "medium": FILL_MEDIUM,
     "low": FILL_LOW,
+    "informational": FILL_INFORMATIONAL,
 }
 
 
@@ -342,7 +344,7 @@ def _enrich_group(name: str, finds: list[dict], summary_text: str) -> dict:
     # Severity breakdown (failed only — for risk heatmap)
     sev_counts: dict[str, int] = {}
     sev_detail: dict[str, dict[str, int]] = {}
-    for sev in ("critical", "high", "medium", "low"):
+    for sev in ("critical", "high", "medium", "low", "informational"):
         s_total = sum(1 for f in finds if f.get("severity") == sev)
         s_pass = sum(1 for f in finds if f.get("severity") == sev and f.get("status") == "PASS")
         s_fail = sum(1 for f in finds if f.get("severity") == sev and f.get("status") == "FAIL")
@@ -427,10 +429,10 @@ def _generate_all_charts(data: dict, grouped_findings: list[dict] | None) -> dic
 
     # 2. Severity compliance bars
     sev_items = []
-    for sev in ("critical", "high", "medium", "low"):
+    for sev in ("critical", "high", "medium", "low", "informational"):
         info = summary["by_severity"].get(sev, {"total": 0, "passed": 0})
         comp = round((info["passed"] / info["total"]) * 100, 1) if info["total"] > 0 else 0
-        colors = {"critical": "#dc2626", "high": "#ea580c", "medium": "#d97706", "low": "#2563eb"}
+        colors = {"critical": "#dc2626", "high": "#ea580c", "medium": "#d97706", "low": "#2563eb", "informational": "#6b7280"}
         sev_items.append({"label": sev.capitalize(), "value": comp, "color": colors[sev]})
     charts["chart_severity"] = generate_hbar_svg(sev_items, title="Compliance by Severity")
 
@@ -576,7 +578,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     ws1["B15"].font = label_font
     ws1["C15"].font = label_font
     ws1["D15"].font = label_font
-    for sev in ("critical", "high", "medium", "low"):
+    for sev in ("critical", "high", "medium", "low", "informational"):
         info = summary["by_severity"].get(sev, {"total": 0, "passed": 0, "failed": 0})
         row_idx = ws1.max_row + 1
         ws1.append([sev.capitalize(), info["total"], info["passed"], info["failed"]])

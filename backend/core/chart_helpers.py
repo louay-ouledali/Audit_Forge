@@ -238,13 +238,14 @@ def generate_risk_heatmap_svg(
     if not groups:
         return ""
 
-    severity_levels = ["critical", "high", "medium", "low"]
-    sev_labels = ["CRIT", "HIGH", "MED", "LOW"]
+    severity_levels = ["critical", "high", "medium", "low", "informational"]
+    sev_labels = ["CRIT", "HIGH", "MED", "LOW", "INFO"]
     sev_colors = {
-        "critical": (220, 38, 38),   # red
-        "high":     (234, 88, 12),   # orange
-        "medium":   (217, 119, 6),   # amber
-        "low":      (37, 99, 235),   # blue
+        "critical":      (220, 38, 38),   # red
+        "high":          (234, 88, 12),   # orange
+        "medium":        (217, 119, 6),   # amber
+        "low":           (37, 99, 235),   # blue
+        "informational": (107, 114, 128), # gray
     }
 
     cell_w = 60

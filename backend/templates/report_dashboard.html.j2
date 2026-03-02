@@ -265,6 +265,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 .sev-chip.high { background: #ffedd5; color: #9a3412; }
 .sev-chip.med  { background: #fef3c7; color: #92400e; }
 .sev-chip.low  { background: #dbeafe; color: #1e40af; }
+.sev-chip.info { background: #f3f4f6; color: #374151; }
 
 /* ── False-Positive Suspect Styles ── */
 .fp-badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.3px; margin-left: 4px; }
@@ -521,6 +522,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
         <th>Group</th><th>Total</th><th>Passed</th><th>Failed</th><th>Errors</th>
         <th style="text-align:center">CRIT</th><th style="text-align:center">HIGH</th>
         <th style="text-align:center">MED</th><th style="text-align:center">LOW</th>
+        <th style="text-align:center">INFO</th>
         <th>Compliance</th>
       </tr>
     </thead>
@@ -532,7 +534,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
         <td style="color:#16a34a;font-weight:600">{{ group.pass_count }}</td>
         <td style="color:#dc2626;font-weight:600">{{ group.fail_count }}</td>
         <td style="color:#7c3aed">{{ group.error_count }}</td>
-        {% for sev in ["critical", "high", "medium", "low"] %}
+        {% for sev in ["critical", "high", "medium", "low", "informational"] %}
         {% set sc = group.sev_counts.get(sev, 0) %}
         <td class="sev-cell {{ 'has-value' if sc > 0 else 'zero' }}">{{ sc }}</td>
         {% endfor %}
@@ -548,6 +550,17 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
       {% endfor %}
     </tbody>
   </table>
+
+  <!-- ═══ Search & Filter for Grouped Findings ═══ -->
+  <div class="filters-bar" id="builderFilters">
+    <input type="text" id="builderSearch" placeholder="Search rules, targets, descriptions...">
+    <select id="builderFilterSeverity"><option value="">All Severities</option></select>
+    <select id="builderFilterStatus"><option value="">All Statuses</option></select>
+    <button class="filter-btn" id="builderExpandAll">Expand All</button>
+    <button class="filter-btn" id="builderCollapseAll">Collapse All</button>
+    <button class="filter-btn" id="builderClearFilters">Clear Filters</button>
+    <span class="result-count" id="builderResultCount"></span>
+  </div>
 
   {% for group in grouped_findings %}
   <div class="group-section">
@@ -568,10 +581,10 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 
     {% if group.sev_detail %}
     <div class="sev-breakdown">
-      {% for sev in ["critical", "high", "medium", "low"] %}
+      {% for sev in ["critical", "high", "medium", "low", "informational"] %}
         {% if group.sev_detail.get(sev) %}
         {% set sd = group.sev_detail[sev] %}
-        <span class="sev-chip {{ 'crit' if sev == 'critical' else 'high' if sev == 'high' else 'med' if sev == 'medium' else 'low' }}">
+        <span class="sev-chip {{ 'crit' if sev == 'critical' else 'high' if sev == 'high' else 'med' if sev == 'medium' else 'low' if sev == 'low' else 'info' }}">
           {{ sev|upper }}: {{ sd.failed }}F / {{ sd.passed }}P ({{ sd.total }})
         </span>
         {% endif %}
@@ -703,13 +716,9 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 
 <script>
 /* ══════════════════════════════════════════════════════════════
-   Findings data (injected server-side, zero external deps)
+   AuditForge — Interactive Report Engine (handles both modes)
    ══════════════════════════════════════════════════════════════ */
 var allFindings = {{ findings_json|safe }};
-var sortCol = null, sortAsc = true;
-var currentFilters = { search: '', severity: '', status: '', target: '', benchmark: '' };
-var currentGroupBy = 'none';
-var expandedDetails = {};
 
 function esc(s) {
   if (!s) return '';
@@ -719,210 +728,295 @@ function sevOrder(s) {
   return {critical:0,high:1,medium:2,low:3,informational:4}[s] || 5;
 }
 
-/* Populate filter dropdowns from data */
-(function() {
-  var tSet={}, bSet={}, sSet={}, svSet={};
-  var targets=[], benchmarks=[], statuses=[], sevs=[];
-  allFindings.forEach(function(f) {
-    if (!tSet[f.target_hostname]) { tSet[f.target_hostname]=1; targets.push(f.target_hostname); }
-    if (!bSet[f.benchmark_name])  { bSet[f.benchmark_name]=1; benchmarks.push(f.benchmark_name); }
-    if (!sSet[f.status])          { sSet[f.status]=1; statuses.push(f.status); }
-    if (!svSet[f.severity])       { svSet[f.severity]=1; sevs.push(f.severity); }
-  });
-  targets.sort(); benchmarks.sort(); statuses.sort();
-  sevs.sort(function(a,b) { return sevOrder(a)-sevOrder(b); });
-  function addOpts(id, items) {
-    var sel=document.getElementById(id);
-    items.forEach(function(i) { var o=document.createElement('option'); o.value=i; o.textContent=i; sel.appendChild(o); });
-  }
-  addOpts('filterSeverity', sevs);
-  addOpts('filterStatus', statuses);
-  addOpts('filterTarget', targets);
-  addOpts('filterBenchmark', benchmarks);
-})();
+/* ── Helper: safe getElementById with null guard ── */
+function $(id) { return document.getElementById(id); }
+function listen(id, evt, fn) { var el = $(id); if (el) el.addEventListener(evt, fn); }
 
-function getFiltered() {
-  return allFindings.filter(function(f) {
-    if (currentFilters.severity && f.severity !== currentFilters.severity) return false;
-    if (currentFilters.status && f.status !== currentFilters.status) return false;
-    if (currentFilters.target && f.target_hostname !== currentFilters.target) return false;
-    if (currentFilters.benchmark && f.benchmark_name !== currentFilters.benchmark) return false;
-    if (currentFilters.search) {
-      var q = currentFilters.search.toLowerCase();
-      var hay = [f.target_hostname, f.section_number, f.rule_title, f.description,
-                 f.severity, f.status, f.benchmark_name, f.actual_output,
-                 f.expected_output, f.remediation].join(' ').toLowerCase();
-      if (hay.indexOf(q) === -1) return false;
-    }
-    return true;
-  });
-}
+/* ══════════════════════════════════════════════════════════════
+   MODE A: Flat Findings Table (non-builder)
+   ══════════════════════════════════════════════════════════════ */
+if ($('findingsBody')) {
+  var sortCol = null, sortAsc = true;
+  var currentFilters = { search: '', severity: '', status: '', target: '', benchmark: '' };
+  var currentGroupBy = 'none';
 
-function sortFindings(list) {
-  if (!sortCol) return list;
-  var copy = list.slice();
-  copy.sort(function(a, b) {
-    var va = a[sortCol] || '', vb = b[sortCol] || '';
-    if (sortCol === 'severity') return sortAsc ? sevOrder(va)-sevOrder(vb) : sevOrder(vb)-sevOrder(va);
-    return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
-  });
-  return copy;
-}
-
-function buildRow(f, idx, groupAttr) {
-  var ga = groupAttr ? ' data-group="' + groupAttr + '"' : '';
-  var fpBadge = '';
-  var fpDetail = '';
-  if (f.fp_analysis && f.fp_analysis.is_suspect) {
-    var cl = f.fp_analysis.confidence_label ? f.fp_analysis.confidence_label.toLowerCase() : 'low';
-    fpBadge = ' <span class="fp-badge fp-' + cl + '">⚠ FP ' + esc(f.fp_analysis.confidence_label) + '</span>';
-    fpDetail = '<div class="fp-analysis-box"><strong>⚠ Potential False Positive (' + f.fp_analysis.confidence + '%):</strong> ' + esc(f.fp_analysis.top_reason);
-    if (f.fp_analysis.signals && f.fp_analysis.signals.length > 1) {
-      fpDetail += '<ul class="fp-signals">';
-      f.fp_analysis.signals.forEach(function(sig) { fpDetail += '<li>' + esc(sig.reason) + ' (' + sig.confidence + '%)</li>'; });
-      fpDetail += '</ul>';
-    }
-    fpDetail += '</div>';
-  }
-  return '<tr class="finding-row"' + ga + '>' +
-    '<td>' + esc(f.target_hostname) + '</td>' +
-    '<td>' + esc(f.section_number) + '</td>' +
-    '<td>' + esc(f.rule_title) + '</td>' +
-    '<td><span class="badge sev-' + f.severity + '">' + f.severity.toUpperCase() + '</span></td>' +
-    '<td><span class="badge st-' + f.status.toLowerCase().replace(/ /g,'_') + '">' + f.status + '</span>' + fpBadge + '</td>' +
-    '<td>' + esc(f.benchmark_name) + '</td>' +
-    '<td><button class="toggle-btn" onclick="toggleDetail(this,\'det-' + idx + '\')">&#9660;</button></td>' +
-    '</tr>' +
-    '<tr id="det-' + idx + '" class="detail-row" style="display:none"' + ga + '>' +
-      '<td colspan="7"><div class="detail-content">' +
-        fpDetail +
-        (f.description ? '<p><span class="field-label">Description:</span> ' + esc(f.description) + '</p>' : '') +
-        (f.rationale ? '<p style="background:#fefce8;border-left:3px solid #eab308;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Rationale:</strong> ' + esc(f.rationale) + '</p>' : '') +
-        '<p><span class="field-label">Expected:</span> <code>' + esc(f.expected_output) + '</code></p>' +
-        '<p><span class="field-label">Actual:</span> <code>' + esc(f.actual_output) + '</code></p>' +
-        (f.evaluation_explanation ? '<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Evaluation:</strong> ' + esc(f.evaluation_explanation) + '</p>' : '') +
-        (f.remediation ? '<p><span class="field-label">Remediation:</span> ' + esc(f.remediation) + '</p>' : '') +
-        (f.ai_advice ? '<p style="background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> ' + esc(f.ai_advice) + '</p>' : '') +
-        (f.default_value ? '<p><span class="field-label">Default Value:</span> <code>' + esc(f.default_value) + '</code></p>' : '') +
-        (f.auditor_notes ? '<p><span class="field-label">Notes:</span> ' + esc(f.auditor_notes) + '</p>' : '') +
-        (f.auditor_override ? '<p><span class="field-label">Override:</span> ' + esc(f.auditor_override) + '</p>' : '') +
-      '</div></td>' +
-    '</tr>';
-}
-
-function renderFindings() {
-  var filtered = sortFindings(getFiltered());
-  var body = document.getElementById('findingsBody');
-  document.getElementById('findingCount').textContent = filtered.length;
-  document.getElementById('resultCount').textContent = filtered.length + ' of ' + allFindings.length + ' findings';
-
-  if (currentGroupBy === 'none') {
-    var html = '';
-    filtered.forEach(function(f, i) { html += buildRow(f, i, ''); });
-    body.innerHTML = html;
-  } else {
-    var groups = {};
-    var groupKey = currentGroupBy === 'target' ? 'target_hostname'
-                 : currentGroupBy === 'severity' ? 'severity'
-                 : currentGroupBy === 'benchmark' ? 'benchmark_name'
-                 : 'status';
-    filtered.forEach(function(f) {
-      var k = f[groupKey] || 'Unknown';
-      if (!groups[k]) groups[k] = [];
-      groups[k].push(f);
+  /* Populate filter dropdowns from data */
+  (function() {
+    var tSet={}, bSet={}, sSet={}, svSet={};
+    var targets=[], benchmarks=[], statuses=[], sevs=[];
+    allFindings.forEach(function(f) {
+      if (!tSet[f.target_hostname]) { tSet[f.target_hostname]=1; targets.push(f.target_hostname); }
+      if (!bSet[f.benchmark_name])  { bSet[f.benchmark_name]=1; benchmarks.push(f.benchmark_name); }
+      if (!sSet[f.status])          { sSet[f.status]=1; statuses.push(f.status); }
+      if (!svSet[f.severity])       { svSet[f.severity]=1; sevs.push(f.severity); }
     });
-    var keys = Object.keys(groups);
-    if (currentGroupBy === 'severity') keys.sort(function(a,b) { return sevOrder(a)-sevOrder(b); });
-    else keys.sort();
+    targets.sort(); benchmarks.sort(); statuses.sort();
+    sevs.sort(function(a,b) { return sevOrder(a)-sevOrder(b); });
+    function addOpts(id, items) {
+      var sel=$(id); if (!sel) return;
+      items.forEach(function(i) { var o=document.createElement('option'); o.value=i; o.textContent=i; sel.appendChild(o); });
+    }
+    addOpts('filterSeverity', sevs);
+    addOpts('filterStatus', statuses);
+    addOpts('filterTarget', targets);
+    addOpts('filterBenchmark', benchmarks);
+  })();
 
-    var html = '', idx = 0;
-    keys.forEach(function(key) {
-      var items = groups[key];
-      var safeKey = esc(key).replace(/'/g,'').replace(/"/g,'');
-      var label = currentGroupBy === 'severity' ? key.toUpperCase() : key;
-      html += '<tr class="group-header" onclick="toggleGroup(\'' + safeKey + '\')">' +
-        '<td colspan="7"><span class="toggle" id="gi-' + safeKey + '">&#9660;</span> ' +
-        esc(label) + ' <span class="group-count">(' + items.length + ' findings)</span></td></tr>';
-      items.forEach(function(f) { html += buildRow(f, idx++, safeKey); });
+  function getFiltered() {
+    return allFindings.filter(function(f) {
+      if (currentFilters.severity && f.severity !== currentFilters.severity) return false;
+      if (currentFilters.status && f.status !== currentFilters.status) return false;
+      if (currentFilters.target && f.target_hostname !== currentFilters.target) return false;
+      if (currentFilters.benchmark && f.benchmark_name !== currentFilters.benchmark) return false;
+      if (currentFilters.search) {
+        var q = currentFilters.search.toLowerCase();
+        var hay = [f.target_hostname, f.section_number, f.rule_title, f.description,
+                   f.severity, f.status, f.benchmark_name, f.actual_output,
+                   f.expected_output, f.remediation].join(' ').toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
     });
-    body.innerHTML = html;
   }
+
+  function sortFindings(list) {
+    if (!sortCol) return list;
+    var copy = list.slice();
+    copy.sort(function(a, b) {
+      var va = a[sortCol] || '', vb = b[sortCol] || '';
+      if (sortCol === 'severity') return sortAsc ? sevOrder(va)-sevOrder(vb) : sevOrder(vb)-sevOrder(va);
+      return sortAsc ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
+    });
+    return copy;
+  }
+
+  function buildRow(f, idx, groupAttr) {
+    var ga = groupAttr ? ' data-group="' + groupAttr + '"' : '';
+    var fpBadge = '';
+    var fpDetail = '';
+    if (f.fp_analysis && f.fp_analysis.is_suspect) {
+      var cl = f.fp_analysis.confidence_label ? f.fp_analysis.confidence_label.toLowerCase() : 'low';
+      fpBadge = ' <span class="fp-badge fp-' + cl + '">⚠ FP ' + esc(f.fp_analysis.confidence_label) + '</span>';
+      fpDetail = '<div class="fp-analysis-box"><strong>⚠ Potential False Positive (' + f.fp_analysis.confidence + '%):</strong> ' + esc(f.fp_analysis.top_reason);
+      if (f.fp_analysis.signals && f.fp_analysis.signals.length > 1) {
+        fpDetail += '<ul class="fp-signals">';
+        f.fp_analysis.signals.forEach(function(sig) { fpDetail += '<li>' + esc(sig.reason) + ' (' + sig.confidence + '%)</li>'; });
+        fpDetail += '</ul>';
+      }
+      fpDetail += '</div>';
+    }
+    return '<tr class="finding-row"' + ga + '>' +
+      '<td>' + esc(f.target_hostname) + '</td>' +
+      '<td>' + esc(f.section_number) + '</td>' +
+      '<td>' + esc(f.rule_title) + '</td>' +
+      '<td><span class="badge sev-' + f.severity + '">' + f.severity.toUpperCase() + '</span></td>' +
+      '<td><span class="badge st-' + f.status.toLowerCase().replace(/ /g,'_') + '">' + f.status + '</span>' + fpBadge + '</td>' +
+      '<td>' + esc(f.benchmark_name) + '</td>' +
+      '<td><button class="toggle-btn" onclick="toggleDetail(this,\'det-' + idx + '\')">&#9660;</button></td>' +
+      '</tr>' +
+      '<tr id="det-' + idx + '" class="detail-row" style="display:none"' + ga + '>' +
+        '<td colspan="7"><div class="detail-content">' +
+          fpDetail +
+          (f.description ? '<p><span class="field-label">Description:</span> ' + esc(f.description) + '</p>' : '') +
+          (f.rationale ? '<p style="background:#fefce8;border-left:3px solid #eab308;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Rationale:</strong> ' + esc(f.rationale) + '</p>' : '') +
+          '<p><span class="field-label">Expected:</span> <code>' + esc(f.expected_output) + '</code></p>' +
+          '<p><span class="field-label">Actual:</span> <code>' + esc(f.actual_output) + '</code></p>' +
+          (f.evaluation_explanation ? '<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Evaluation:</strong> ' + esc(f.evaluation_explanation) + '</p>' : '') +
+          (f.remediation ? '<p><span class="field-label">Remediation:</span> ' + esc(f.remediation) + '</p>' : '') +
+          (f.ai_advice ? '<p style="background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> ' + esc(f.ai_advice) + '</p>' : '') +
+          (f.default_value ? '<p><span class="field-label">Default Value:</span> <code>' + esc(f.default_value) + '</code></p>' : '') +
+          (f.auditor_notes ? '<p><span class="field-label">Notes:</span> ' + esc(f.auditor_notes) + '</p>' : '') +
+          (f.auditor_override ? '<p><span class="field-label">Override:</span> ' + esc(f.auditor_override) + '</p>' : '') +
+        '</div></td>' +
+      '</tr>';
+  }
+
+  function renderFindings() {
+    var filtered = sortFindings(getFiltered());
+    var body = $('findingsBody');
+    var countEl = $('findingCount');
+    var resultEl = $('resultCount');
+    if (countEl) countEl.textContent = filtered.length;
+    if (resultEl) resultEl.textContent = filtered.length + ' of ' + allFindings.length + ' findings';
+
+    if (currentGroupBy === 'none') {
+      var html = '';
+      filtered.forEach(function(f, i) { html += buildRow(f, i, ''); });
+      body.innerHTML = html;
+    } else {
+      var groups = {};
+      var groupKey = currentGroupBy === 'target' ? 'target_hostname'
+                   : currentGroupBy === 'severity' ? 'severity'
+                   : currentGroupBy === 'benchmark' ? 'benchmark_name'
+                   : 'status';
+      filtered.forEach(function(f) {
+        var k = f[groupKey] || 'Unknown';
+        if (!groups[k]) groups[k] = [];
+        groups[k].push(f);
+      });
+      var keys = Object.keys(groups);
+      if (currentGroupBy === 'severity') keys.sort(function(a,b) { return sevOrder(a)-sevOrder(b); });
+      else keys.sort();
+
+      var html = '', idx = 0;
+      keys.forEach(function(key) {
+        var items = groups[key];
+        var safeKey = esc(key).replace(/'/g,'').replace(/"/g,'');
+        var label = currentGroupBy === 'severity' ? key.toUpperCase() : key;
+        html += '<tr class="group-header" onclick="toggleGroup(\'' + safeKey + '\')">' +
+          '<td colspan="7"><span class="toggle" id="gi-' + safeKey + '">&#9660;</span> ' +
+          esc(label) + ' <span class="group-count">(' + items.length + ' findings)</span></td></tr>';
+        items.forEach(function(f) { html += buildRow(f, idx++, safeKey); });
+      });
+      body.innerHTML = html;
+    }
+  }
+
+  /* Event listeners (flat mode) */
+  var searchTimer = null;
+  listen('searchInput', 'input', function(e) {
+    clearTimeout(searchTimer);
+    var val = e.target.value;
+    searchTimer = setTimeout(function() { currentFilters.search = val; renderFindings(); }, 200);
+  });
+  listen('filterSeverity', 'change', function(e) { currentFilters.severity = e.target.value; renderFindings(); });
+  listen('filterStatus', 'change', function(e) { currentFilters.status = e.target.value; renderFindings(); });
+  listen('filterTarget', 'change', function(e) { currentFilters.target = e.target.value; renderFindings(); });
+  listen('filterBenchmark', 'change', function(e) { currentFilters.benchmark = e.target.value; renderFindings(); });
+  listen('groupBy', 'change', function(e) { currentGroupBy = e.target.value; renderFindings(); });
+  listen('expandAllBtn', 'click', function() {
+    document.querySelectorAll('.detail-row').forEach(function(r) { r.style.display = 'table-row'; });
+    document.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.add('open'); });
+  });
+  listen('collapseAllBtn', 'click', function() {
+    document.querySelectorAll('.detail-row').forEach(function(r) { r.style.display = 'none'; });
+    document.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('open'); });
+  });
+  listen('clearFiltersBtn', 'click', function() {
+    currentFilters = { search:'', severity:'', status:'', target:'', benchmark:'' };
+    var si=$('searchInput'); if(si) si.value='';
+    var fs=$('filterSeverity'); if(fs) fs.value='';
+    var fst=$('filterStatus'); if(fst) fst.value='';
+    var ft=$('filterTarget'); if(ft) ft.value='';
+    var fb=$('filterBenchmark'); if(fb) fb.value='';
+    var gb=$('groupBy'); if(gb) gb.value='none';
+    currentGroupBy = 'none'; sortCol = null;
+    renderFindings();
+  });
+
+  /* Sortable headers */
+  document.querySelectorAll('.findings-table th[data-col]').forEach(function(th) {
+    th.addEventListener('click', function() {
+      var col = th.getAttribute('data-col');
+      if (sortCol === col) sortAsc = !sortAsc;
+      else { sortCol = col; sortAsc = true; }
+      document.querySelectorAll('.findings-table th[data-col] .sort-icon').forEach(function(icon) {
+        icon.innerHTML = '\u21C5'; icon.style.opacity = '0.4';
+      });
+      var activeIcon = th.querySelector('.sort-icon');
+      if (activeIcon) { activeIcon.innerHTML = sortAsc ? '\u25B2' : '\u25BC'; activeIcon.style.opacity = '1'; }
+      renderFindings();
+    });
+  });
+
+  renderFindings();
 }
 
+/* ══════════════════════════════════════════════════════════════
+   MODE B: Grouped Findings (builder mode) — search & filter
+   ══════════════════════════════════════════════════════════════ */
+if ($('builderFilters')) {
+  var bSearchTimer = null;
+  var bFilters = { search: '', severity: '', status: '' };
+
+  /* Populate dropdowns */
+  (function() {
+    var sSet={}, svSet={};
+    var statuses=[], sevs=[];
+    allFindings.forEach(function(f) {
+      if (!sSet[f.status]) { sSet[f.status]=1; statuses.push(f.status); }
+      if (!svSet[f.severity]) { svSet[f.severity]=1; sevs.push(f.severity); }
+    });
+    statuses.sort();
+    sevs.sort(function(a,b) { return sevOrder(a)-sevOrder(b); });
+    function addOpts(id, items) {
+      var sel=$(id); if (!sel) return;
+      items.forEach(function(i) { var o=document.createElement('option'); o.value=i; o.textContent=i; sel.appendChild(o); });
+    }
+    addOpts('builderFilterSeverity', sevs);
+    addOpts('builderFilterStatus', statuses);
+  })();
+
+  function filterGroupedFindings() {
+    var cards = document.querySelectorAll('.group-finding-card');
+    var visCount = 0, totalCount = cards.length;
+    cards.forEach(function(card) {
+      var text = card.textContent.toLowerCase();
+      var show = true;
+      if (bFilters.search && text.indexOf(bFilters.search.toLowerCase()) === -1) show = false;
+      if (bFilters.severity) {
+        var sevBadge = card.querySelector('.badge[class*="sev-"]');
+        if (sevBadge && sevBadge.textContent.trim().toLowerCase() !== bFilters.severity) show = false;
+      }
+      if (bFilters.status) {
+        var stBadge = card.querySelector('.badge[class*="st-"]');
+        if (stBadge && stBadge.textContent.trim() !== bFilters.status) show = false;
+      }
+      card.style.display = show ? '' : 'none';
+      if (show) visCount++;
+    });
+    /* Update group section visibility & counts */
+    document.querySelectorAll('.group-section').forEach(function(sec) {
+      var visCards = sec.querySelectorAll('.group-finding-card:not([style*="display: none"])');
+      var allCards = sec.querySelectorAll('.group-finding-card');
+      sec.style.display = (bFilters.search || bFilters.severity || bFilters.status) && visCards.length === 0 ? 'none' : '';
+    });
+    var rcEl = $('builderResultCount');
+    if (rcEl) rcEl.textContent = visCount + ' of ' + totalCount + ' findings';
+  }
+
+  listen('builderSearch', 'input', function(e) {
+    clearTimeout(bSearchTimer);
+    var val = e.target.value;
+    bSearchTimer = setTimeout(function() { bFilters.search = val; filterGroupedFindings(); }, 200);
+  });
+  listen('builderFilterSeverity', 'change', function(e) { bFilters.severity = e.target.value; filterGroupedFindings(); });
+  listen('builderFilterStatus', 'change', function(e) { bFilters.status = e.target.value; filterGroupedFindings(); });
+  listen('builderExpandAll', 'click', function() {
+    document.querySelectorAll('.group-finding-detail').forEach(function(d) { d.style.display = ''; });
+  });
+  listen('builderCollapseAll', 'click', function() {
+    document.querySelectorAll('.group-finding-detail').forEach(function(d) { d.style.display = 'none'; });
+  });
+  listen('builderClearFilters', 'click', function() {
+    bFilters = { search:'', severity:'', status:'' };
+    var bs=$('builderSearch'); if(bs) bs.value='';
+    var bfs=$('builderFilterSeverity'); if(bfs) bfs.value='';
+    var bfst=$('builderFilterStatus'); if(bfst) bfst.value='';
+    filterGroupedFindings();
+  });
+}
+
+/* ── Shared: detail toggle & keyboard shortcut ── */
 function toggleDetail(btn, id) {
-  var el = document.getElementById(id);
+  var el = $(id);
+  if (!el) return;
   var show = el.style.display === 'none';
   el.style.display = show ? 'table-row' : 'none';
   btn.classList.toggle('open', show);
 }
-
 function toggleGroup(grpId) {
   var rows = document.querySelectorAll('[data-group="' + grpId + '"]');
-  var icon = document.getElementById('gi-' + grpId);
+  var icon = $('gi-' + grpId);
   if (!icon) return;
   var hide = icon.innerHTML === '\u25BC';
   rows.forEach(function(r) { r.style.display = hide ? 'none' : ''; });
   icon.innerHTML = hide ? '\u25B6' : '\u25BC';
 }
 
-/* Event listeners */
-var searchTimer = null;
-document.getElementById('searchInput').addEventListener('input', function(e) {
-  clearTimeout(searchTimer);
-  var val = e.target.value;
-  searchTimer = setTimeout(function() { currentFilters.search = val; renderFindings(); }, 200);
-});
-document.getElementById('filterSeverity').addEventListener('change', function(e) { currentFilters.severity = e.target.value; renderFindings(); });
-document.getElementById('filterStatus').addEventListener('change', function(e) { currentFilters.status = e.target.value; renderFindings(); });
-document.getElementById('filterTarget').addEventListener('change', function(e) { currentFilters.target = e.target.value; renderFindings(); });
-document.getElementById('filterBenchmark').addEventListener('change', function(e) { currentFilters.benchmark = e.target.value; renderFindings(); });
-document.getElementById('groupBy').addEventListener('change', function(e) { currentGroupBy = e.target.value; renderFindings(); });
-document.getElementById('expandAllBtn').addEventListener('click', function() {
-  document.querySelectorAll('.detail-row').forEach(function(r) { r.style.display = 'table-row'; });
-  document.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.add('open'); });
-});
-document.getElementById('collapseAllBtn').addEventListener('click', function() {
-  document.querySelectorAll('.detail-row').forEach(function(r) { r.style.display = 'none'; });
-  document.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('open'); });
-});
-document.getElementById('clearFiltersBtn').addEventListener('click', function() {
-  currentFilters = { search:'', severity:'', status:'', target:'', benchmark:'' };
-  document.getElementById('searchInput').value = '';
-  document.getElementById('filterSeverity').value = '';
-  document.getElementById('filterStatus').value = '';
-  document.getElementById('filterTarget').value = '';
-  document.getElementById('filterBenchmark').value = '';
-  document.getElementById('groupBy').value = 'none';
-  currentGroupBy = 'none'; sortCol = null;
-  renderFindings();
-});
-
-/* Sortable headers */
-document.querySelectorAll('.findings-table th[data-col]').forEach(function(th) {
-  th.addEventListener('click', function() {
-    var col = th.getAttribute('data-col');
-    if (sortCol === col) sortAsc = !sortAsc;
-    else { sortCol = col; sortAsc = true; }
-    /* Update sort indicators */
-    document.querySelectorAll('.findings-table th[data-col] .sort-icon').forEach(function(icon) {
-      icon.innerHTML = '\u21C5';
-      icon.style.opacity = '0.4';
-    });
-    var activeIcon = th.querySelector('.sort-icon');
-    if (activeIcon) {
-      activeIcon.innerHTML = sortAsc ? '\u25B2' : '\u25BC';
-      activeIcon.style.opacity = '1';
-    }
-    renderFindings();
-  });
-});
-
-renderFindings();
-
-/* Keyboard shortcut: Ctrl/Cmd+F focuses search */
 document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-    var searchInput = document.getElementById('searchInput');
+    var searchInput = $('searchInput') || $('builderSearch');
     if (searchInput) { e.preventDefault(); searchInput.focus(); searchInput.select(); }
   }
 });
