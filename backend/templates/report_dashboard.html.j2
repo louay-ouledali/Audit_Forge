@@ -422,7 +422,10 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
   {% endif %}{# end executive_summary toggle (stats) #}
 
   <!-- ═══ AI Summary ═══ -->
-  {% if ai_summary %}
+  {% if ai_summary_html is defined and ai_summary_html %}
+  <div class="section-title">AI Executive Summary</div>
+  <div class="ai-summary" style="line-height:1.6">{{ ai_summary_html | safe }}</div>
+  {% elif ai_summary %}
   <div class="section-title">AI Executive Summary</div>
   <div class="ai-summary">{{ ai_summary }}</div>
   {% endif %}

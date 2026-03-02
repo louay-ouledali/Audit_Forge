@@ -105,7 +105,12 @@
   .passed-summary { margin-top: 8px; }
   .passed-summary li { margin-left: 18px; font-size: 9px; }
 
-  .ai-summary { background: #eff6ff; border-left: 4px solid #1e40af; padding: 8px 12px; margin-bottom: 12px; white-space: pre-wrap; font-size: 9px; border-radius: 0 6px 6px 0; line-height: 1.6; }
+  .ai-summary { background: #eff6ff; border-left: 4px solid #1e40af; padding: 8px 12px; margin-bottom: 12px; font-size: 9px; border-radius: 0 6px 6px 0; line-height: 1.6; }
+  .ai-summary h2, .ai-summary h3 { font-size: 10px; color: #1e40af; margin: 8px 0 4px; border-bottom: none; bookmark-level: none; }
+  .ai-summary p { margin: 4px 0; font-size: 9px; }
+  .ai-summary ol, .ai-summary ul { margin: 4px 0 4px 18px; font-size: 9px; }
+  .ai-summary li { margin-bottom: 2px; }
+  .ai-summary strong { color: #0f172a; }
 
   /* ── Table of Contents ── */
   .toc { page-break-after: always; }
@@ -230,10 +235,18 @@
     <li><a href="#sec-audit-scope">{{ ns.n }}. Audit Scope</a></li>
     {% set ns.n = ns.n + 1 %}
 
-    {% if by_category %}
+    {% if by_category or (categories_enriched is defined and categories_enriched) %}
     <li><a href="#sec-by-category">{{ ns.n }}. Compliance by Category</a></li>
     {% set ns.n = ns.n + 1 %}
     {% endif %}
+
+    {% if per_target_findings is defined and per_target_findings | length > 1 %}
+    <li><a href="#sec-per-target">{{ ns.n }}. Per-Target Compliance Breakdown</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
+
+    <li><a href="#sec-methodology">{{ ns.n }}. Audit Methodology</a></li>
+    {% set ns.n = ns.n + 1 %}
 
     <li><a href="#sec-findings-register">{{ ns.n }}. Complete Findings Register ({{ findings|length }})</a></li>
     {% set ns.n = ns.n + 1 %}
@@ -280,6 +293,8 @@
     {% set ns.n = ns.n + 1 %}
     {% endif %}
     {% endif %}
+
+    <li><a href="#sec-appendix">{{ ns.n }}. Appendix</a></li>
   </ul>
 </div>
 
@@ -287,7 +302,7 @@
 {% if ai_summary %}
 <div class="section" id="sec-ai-summary">
   <h2>AI Executive Summary</h2>
-  <div class="ai-summary">{{ ai_summary }}</div>
+  <div class="ai-summary">{% if ai_summary_html %}{{ ai_summary_html|safe }}{% else %}{{ ai_summary }}{% endif %}</div>
 </div>
 {% endif %}
 
@@ -295,49 +310,30 @@
 {% if not section_toggles or section_toggles.get('charts', true) %}
 <div class="section" id="sec-visual-dashboard">
   <h2>Visual Dashboard</h2>
-  <div style="display: flex; gap: 40px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 20px 0;">
-    {% if chart_donut %}{{ chart_donut|safe }}{% endif %}
-    {% if chart_severity %}{{ chart_severity|safe }}{% endif %}
+  {# ── 2-column grid for paired charts ── #}
+  <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 12px 0;">
+    {% if chart_donut %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_donut|safe }}</div>{% endif %}
+    {% if chart_severity %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_severity|safe }}</div>{% endif %}
   </div>
-  {% if chart_targets %}
-  <div style="margin-top: 16px; text-align: center;">
-    {{ chart_targets|safe }}
+  <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 12px 0;">
+    {% if chart_targets %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_targets|safe }}</div>{% endif %}
+    {% if chart_categories %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_categories|safe }}</div>{% endif %}
   </div>
-  {% endif %}
-  {% if chart_categories %}
-  <div style="margin-top: 16px; text-align: center;">
-    {{ chart_categories|safe }}
+  {# ── Paired row: group compliance + FP gauge ── #}
+  <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 12px 0;">
+    {% if chart_group_compliance %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_group_compliance|safe }}</div>{% endif %}
+    {% if chart_fp_gauge %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_fp_gauge|safe }}</div>{% endif %}
   </div>
-  {% endif %}
-  {% if chart_group_compliance %}
-  <div style="margin-top: 16px; text-align: center;">
-    {{ chart_group_compliance|safe }}
-  </div>
-  {% endif %}
+  {# ── Full-width charts ── #}
   {% if chart_risk_heatmap %}
-  <div style="margin-top: 16px; text-align: center;">
-    {{ chart_risk_heatmap|safe }}
-  </div>
+  <div style="margin-top: 12px; text-align: center;">{{ chart_risk_heatmap|safe }}</div>
   {% endif %}
-  {% if chart_fp_gauge %}
-  <div style="margin-top: 16px; text-align: center;">
-    {{ chart_fp_gauge|safe }}
+  <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 12px 0;">
+    {% if chart_radar %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_radar|safe }}</div>{% endif %}
+    {% if chart_waterfall %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_waterfall|safe }}</div>{% endif %}
   </div>
-  {% endif %}
-  {% if chart_radar %}
-  <div style="margin-top: 20px; text-align: center;">
-    {{ chart_radar|safe }}
-  </div>
-  {% endif %}
   {% if chart_treemap %}
-  <div style="margin-top: 20px; text-align: center;">
-    {{ chart_treemap|safe }}
-  </div>
-  {% endif %}
-  {% if chart_waterfall %}
-  <div style="margin-top: 20px; text-align: center;">
-    {{ chart_waterfall|safe }}
-  </div>
+  <div style="margin-top: 12px; text-align: center;">{{ chart_treemap|safe }}</div>
   {% endif %}
 </div>
 {% endif %}
@@ -346,6 +342,35 @@
 {% if not section_toggles or section_toggles.get('executive_summary', true) %}
 <div class="section" id="sec-executive-summary">
   <h2>Executive Summary &amp; Compliance Overview</h2>
+
+  {# ── Risk Score Card ── #}
+  {% if risk_score is defined and risk_score %}
+  <div style="display: flex; gap: 10px; margin-bottom: 10px; align-items: stretch;">
+    <div style="background: {{ risk_score.color }}15; border: 2px solid {{ risk_score.color }}; border-radius: 8px; padding: 10px 18px; text-align: center; min-width: 100px;">
+      <div style="font-size: 28px; font-weight: 800; color: {{ risk_score.color }};">{{ risk_score.grade }}</div>
+      <div style="font-size: 8px; color: {{ risk_score.color }}; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">{{ risk_score.label }}</div>
+      <div style="font-size: 7px; color: #64748b; margin-top: 2px;">Risk Score: {{ risk_score.score }}%</div>
+    </div>
+    <div style="flex: 1;">
+      <div class="stats" style="margin-bottom: 0;">
+        <div class="stat-card">
+          <div class="val">{{ summary.overall_compliance }}%</div>
+          <div class="lbl">Compliance</div>
+          <div class="compliance-bar">
+            <div class="fill {% if summary.overall_compliance >= 80 %}fill-good{% elif summary.overall_compliance >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ summary.overall_compliance }}%"></div>
+          </div>
+        </div>
+        <div class="stat-card"><div class="val">{{ summary.total_rules }}</div><div class="lbl">Total Rules</div></div>
+        <div class="stat-card"><div class="val" style="color:#16a34a">{{ summary.passed }}</div><div class="lbl">Passed</div></div>
+        <div class="stat-card"><div class="val" style="color:#dc2626">{{ summary.failed }}</div><div class="lbl">Failed</div></div>
+        <div class="stat-card"><div class="val" style="color:#7c3aed">{{ summary.errors }}</div><div class="lbl">Errors</div></div>
+      </div>
+    </div>
+  </div>
+  <p style="font-size: 8px; color: #64748b; margin-bottom: 8px;">
+    <strong>Risk Level: {{ risk_score.risk_level }}</strong> — Score computed from compliance percentage weighted by severity of failures (Critical: 5×, High: 3×, Medium: 1×, Low: 0.3×).
+  </p>
+  {% else %}
   <div class="stats">
     <div class="stat-card">
       <div class="val">{{ summary.overall_compliance }}%</div>
@@ -359,6 +384,7 @@
     <div class="stat-card"><div class="val" style="color:#dc2626">{{ summary.failed }}</div><div class="lbl">Failed</div></div>
     <div class="stat-card"><div class="val" style="color:#7c3aed">{{ summary.errors }}</div><div class="lbl">Errors</div></div>
   </div>
+  {% endif %}
 
   <h3>Findings by Severity</h3>
   <table>
@@ -383,20 +409,30 @@
     </tbody>
   </table>
 
-  {% set top5 = namespace(items=[]) %}
+  {# ── Top 10 Critical / High Findings (upgraded from 5) ── #}
+  {% set top10 = namespace(items=[]) %}
   {% for f in findings if f.status == "FAIL" and f.severity in ["critical", "high"] %}
-    {% if top5.items | length < 5 %}
-      {% set top5.items = top5.items + [f] %}
+    {% if top10.items | length < 10 %}
+      {% set top10.items = top10.items + [f] %}
     {% endif %}
   {% endfor %}
-  {% if top5.items %}
+  {# Fall back to medium if fewer than 5 critical/high #}
+  {% if top10.items | length < 5 %}
+    {% for f in findings if f.status == "FAIL" and f.severity == "medium" %}
+      {% if top10.items | length < 10 %}
+        {% set top10.items = top10.items + [f] %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+  {% if top10.items %}
   <h3>Top Critical / High Findings</h3>
   <table>
-    <thead><tr><th>Section</th><th>Rule</th><th>Severity</th><th>Target</th></tr></thead>
+    <thead><tr><th>#</th><th>Section</th><th>Rule</th><th>Severity</th><th>Target</th></tr></thead>
     <tbody>
-      {% for f in top5.items %}
+      {% for f in top10.items %}
       <tr>
-        <td>{{ f.section_number }}</td>
+        <td style="font-weight:600; text-align:center;">{{ loop.index }}</td>
+        <td><a href="#finding-{{ f.section_number | replace('.', '-') }}" style="color:#1e40af;text-decoration:none;">{{ f.section_number }}</a></td>
         <td>{{ f.rule_title }}</td>
         <td><span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span></td>
         <td>{{ f.target_hostname }}</td>
@@ -436,8 +472,32 @@
   </table>
 </div>
 
-<!-- ═══ Compliance by Category ═══ -->
-{% if by_category %}
+<!-- ═══ Compliance by Category (enriched CIS section names) ═══ -->
+{% if categories_enriched is defined and categories_enriched %}
+<div class="section" id="sec-by-category">
+  <h2>Compliance by Category</h2>
+  <table>
+    <thead><tr><th>Section</th><th>Category Name</th><th>Total</th><th>Passed</th><th>Failed</th><th>Compliance</th></tr></thead>
+    <tbody>
+      {% for cat in categories_enriched %}
+      <tr{% if cat.compliance < 50 %} style="background:#fef2f2"{% elif cat.compliance < 80 %} style="background:#fffbeb"{% endif %}>
+        <td style="font-weight:600; text-align:center;">{{ cat.key }}</td>
+        <td style="font-weight:600">{{ cat.label }}</td>
+        <td>{{ cat.total }}</td>
+        <td style="color:#16a34a;font-weight:600">{{ cat.passed }}</td>
+        <td style="color:#dc2626;font-weight:600">{{ cat.failed }}</td>
+        <td>
+          {{ "%.1f" | format(cat.compliance) }}%
+          <div class="compliance-bar">
+            <div class="fill {% if cat.compliance >= 80 %}fill-good{% elif cat.compliance >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ cat.compliance }}%"></div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif by_category %}
 <div class="section" id="sec-by-category">
   <h2>Compliance by Category</h2>
   <table>
@@ -464,25 +524,105 @@
 </div>
 {% endif %}
 
+<!-- ═══ Per-Target Breakdown ═══ -->
+{% if per_target_findings is defined and per_target_findings | length > 1 %}
+<div class="section" id="sec-per-target" style="page-break-before: always;">
+  <h2>Per-Target Compliance Breakdown</h2>
+  <p style="font-size: 8px; color: #64748b; margin-bottom: 8px;">Individual compliance status for each audited target, sorted from lowest to highest compliance.</p>
+
+  {% for target in per_target_findings %}
+  <div style="border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;{% if target.compliance < 50 %} border-left: 3px solid #dc2626;{% elif target.compliance < 80 %} border-left: 3px solid #f59e0b;{% else %} border-left: 3px solid #16a34a;{% endif %}">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+      <h3 style="margin: 0; font-size: 10px; color: #1e3a5f;">{{ target.hostname }}</h3>
+      <span style="font-size: 14px; font-weight: 800; color: {% if target.compliance >= 80 %}#16a34a{% elif target.compliance >= 50 %}#f59e0b{% else %}#dc2626{% endif %};">
+        {{ "%.1f" | format(target.compliance) }}%
+      </span>
+    </div>
+    <div style="display: flex; gap: 8px; font-size: 8px; margin-bottom: 6px;">
+      <span>Total: <strong>{{ target.total }}</strong></span>
+      <span style="color:#16a34a">Pass: <strong>{{ target.passed }}</strong></span>
+      <span style="color:#dc2626">Fail: <strong>{{ target.failed }}</strong></span>
+      <span style="color:#7c3aed">Error: <strong>{{ target.errors }}</strong></span>
+      {% if target.critical_fails > 0 %}<span style="color:#7f1d1d">Critical Fails: <strong>{{ target.critical_fails }}</strong></span>{% endif %}
+      {% if target.high_fails > 0 %}<span style="color:#991b1b">High Fails: <strong>{{ target.high_fails }}</strong></span>{% endif %}
+    </div>
+    <div class="compliance-bar" style="height: 6px;">
+      <div class="fill {% if target.compliance >= 80 %}fill-good{% elif target.compliance >= 50 %}fill-warn{% else %}fill-bad{% endif %}" style="width: {{ target.compliance }}%"></div>
+    </div>
+    {% if target.top_failures %}
+    <p style="font-size: 7px; color: #64748b; margin: 4px 0 2px;">Top failures:</p>
+    <div style="font-size: 7px; color: #475569;">
+      {% for fail in target.top_failures %}
+      <span style="display: inline-block; background: #fef2f2; border-radius: 3px; padding: 1px 4px; margin: 1px;">{{ fail.section_number }} — {{ fail.rule_title[:60] }}{% if fail.rule_title | length > 60 %}…{% endif %}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ═══ Audit Methodology ═══ -->
+<div class="section" id="sec-methodology">
+  <h2>Audit Methodology</h2>
+  <h3>Approach</h3>
+  <p style="font-size: 8px; color: #334155; line-height: 1.5;">
+    This audit was conducted using <strong>AuditForge</strong>, an automated compliance assessment platform.
+    Each rule from the selected CIS Benchmark was evaluated against the target system(s) using
+    registry queries, security policy exports, PowerShell commands, and WMI/CIM queries executed
+    via WinRM (Windows Remote Management) or local execution.
+  </p>
+  <h3>Scoring Criteria</h3>
+  <table style="font-size: 8px;">
+    <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge" style="background:#dcfce7; color:#166534;">PASS</span></td><td>The system configuration matches the benchmark recommendation.</td></tr>
+      <tr><td><span class="badge" style="background:#fef2f2; color:#991b1b;">FAIL</span></td><td>The system configuration does NOT meet the benchmark recommendation and requires remediation.</td></tr>
+      <tr><td><span class="badge" style="background:#f3e8ff; color:#6b21a8;">ERROR</span></td><td>The audit check could not be completed (access denied, registry key missing, WinRM failure, etc.). Manual verification is required.</td></tr>
+    </tbody>
+  </table>
+  <h3>Severity Levels</h3>
+  <table style="font-size: 8px;">
+    <thead><tr><th>Level</th><th>Definition</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge sev-critical">CRITICAL</span></td><td>Immediate risk of exploitation. Must be remediated within 24-72 hours.</td></tr>
+      <tr><td><span class="badge sev-high">HIGH</span></td><td>Significant security weakness. Remediate within 1-2 weeks.</td></tr>
+      <tr><td><span class="badge sev-medium">MEDIUM</span></td><td>Moderate risk. Remediate within 30 days as part of regular patching cycles.</td></tr>
+      <tr><td><span class="badge sev-low">LOW</span></td><td>Minor hardening opportunity. Address during next maintenance window.</td></tr>
+      <tr><td><span class="badge sev-informational">INFO</span></td><td>Best practice recommendation with minimal direct security impact.</td></tr>
+    </tbody>
+  </table>
+  <h3>Risk Score Calculation</h3>
+  <p style="font-size: 8px; color: #334155; line-height: 1.5;">
+    The overall risk score combines the raw compliance percentage with a severity-weighted penalty:
+    <br><code style="font-size: 7px; background: #f1f5f9; padding: 2px 4px; border-radius: 3px;">
+    Score = Compliance% − (Critical×5 + High×3 + Medium×1 + Low×0.3) ÷ TotalRules × 10
+    </code><br>
+    Grades: <strong>A</strong> (≥90), <strong>B</strong> (≥75), <strong>C</strong> (≥60), <strong>D</strong> (≥40), <strong>F</strong> (&lt;40).
+  </p>
+</div>
+
 <!-- ═══ Complete Findings Register (master table of ALL rules) ═══ -->
 <div class="section" id="sec-findings-register" style="page-break-before: always;">
   <h2>Complete Findings Register <span class="section-count">{{ findings|length }}</span></h2>
-  <p style="font-size: 8px; color: #64748b; margin-bottom: 6px;">Comprehensive list of every audited rule, sorted by section number. Use the detailed sections below for full findings.</p>
+  <p style="font-size: 8px; color: #64748b; margin-bottom: 6px;">Comprehensive list of every audited rule, sorted by section number. Click a section number to jump to the detailed finding.</p>
   <table style="font-size: 7.5px;">
     <thead>
       <tr>
+        <th style="width:7%">#</th>
         <th style="width:8%">Section</th>
-        <th style="width:42%">Rule Title</th>
+        <th style="width:37%">Rule Title</th>
         <th style="width:10%">Severity</th>
         <th style="width:8%">Status</th>
-        <th style="width:17%">Target</th>
+        <th style="width:15%">Target</th>
         <th style="width:15%">Benchmark</th>
       </tr>
     </thead>
     <tbody>
       {% for f in findings %}
-      <tr>
-        <td style="font-weight:600;white-space:nowrap">{{ f.section_number }}</td>
+      <tr style="{% if f.status == 'FAIL' and f.severity == 'critical' %}background:#fef2f2{% elif f.status == 'FAIL' and f.severity == 'high' %}background:#fff7ed{% elif f.status == 'ERROR' %}background:#faf5ff{% endif %}">
+        <td style="text-align:center; color:#94a3b8;">{{ loop.index }}</td>
+        <td style="font-weight:600;white-space:nowrap"><a href="#finding-{{ f.section_number | replace('.', '-') }}" style="color:#1e40af;text-decoration:none;">{{ f.section_number }}</a></td>
         <td>{{ f.rule_title }}</td>
         <td><span class="badge sev-{{ f.severity }}" style="font-size:7px;padding:1px 5px">{{ f.severity | upper }}</span></td>
         <td><span class="badge st-{{ f.status | lower }}" style="font-size:7px;padding:1px 5px">{{ f.status }}</span></td>
@@ -516,7 +656,7 @@
     {% set rec_count.n = rec_count.n + 1 %}
     <div style="border-left: 3px solid {% if f.severity == 'critical' %}#dc2626{% elif f.severity == 'high' %}#ea580c{% elif f.severity == 'medium' %}#d97706{% elif f.severity == 'low' %}#2563eb{% else %}#6b7280{% endif %}; padding: 4px 8px; margin: 4px 0; page-break-inside: avoid; background: #fafbfc; border-radius: 0 4px 4px 0;">
       <p style="font-size: 8.5px; margin: 1px 0;"><strong style="color: #0f172a;">{{ rec_count.n }}. [{{ f.section_number }}] {{ f.rule_title }}</strong></p>
-      <p style="font-size: 8px; color: #475569; margin: 1px 0;">{{ f.remediation[:500] }}</p>
+      <p style="font-size: 8px; color: #475569; margin: 1px 0;">{{ f.remediation }}</p>
     </div>
     {% endif %}
   {% endfor %}
@@ -647,7 +787,7 @@
 
   {% if not section_toggles or section_toggles.get('findings_detail', true) %}
   {% for f in group.findings %}
-  <div class="finding-card sev-border-{{ f.severity }}">
+  <div class="finding-card sev-border-{{ f.severity }}" id="finding-{{ f.section_number | replace('.', '-') }}">
     <div class="header">
       <span class="rule-id">{{ f.section_number }} - {{ f.rule_title }}</span>
       <span>
@@ -675,7 +815,7 @@
     <div class="rationale-box"><strong>Rationale:</strong> {{ f.rationale }}</div>
     {% endif %}
     <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
-    <p><span class="field-label">Actual:</span> <code>{{ f.actual_output }}</code></p>
+    <p><span class="field-label">Actual:</span> <code>{{ f.actual_output[:300] }}{% if f.actual_output | length > 300 %}<span style="color:#ef4444; font-style:italic;"> [...truncated, {{ f.actual_output | length }} chars total]</span>{% endif %}</code></p>
     {% if f.evaluation_explanation %}
     <div class="eval-box"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</div>
     {% endif %}
@@ -715,7 +855,7 @@
       </div>
 
       {% for f in sev_findings %}
-      <div class="finding-card sev-border-{{ f.severity }}">
+      <div class="finding-card sev-border-{{ f.severity }}" id="finding-{{ f.section_number | replace('.', '-') }}">
         <div class="header">
           <span class="rule-id">{{ f.section_number }} - {{ f.rule_title }}</span>
           <span>
@@ -743,7 +883,7 @@
         <div class="rationale-box"><strong>Rationale:</strong> {{ f.rationale }}</div>
         {% endif %}
         <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
-        <p><span class="field-label">Actual:</span> <code>{{ f.actual_output }}</code></p>
+        <p><span class="field-label">Actual:</span> <code>{{ f.actual_output[:300] }}{% if f.actual_output | length > 300 %}<span style="color:#ef4444; font-style:italic;"> [...truncated, {{ f.actual_output | length }} chars total]</span>{% endif %}</code></p>
         {% if f.evaluation_explanation %}
         <div class="eval-box"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</div>
         {% endif %}
@@ -833,7 +973,7 @@
     </div>
 
     {% for f in sev_passed %}
-    <div class="finding-card sev-border-{{ f.severity }}" style="border-left-color: #22c55e;">
+    <div class="finding-card sev-border-{{ f.severity }}" id="finding-{{ f.section_number | replace('.', '-') }}" style="border-left-color: #22c55e;">
       <div class="header">
         <span class="rule-id">{{ f.section_number }} — {{ f.rule_title }}</span>
         <span>
@@ -858,6 +998,67 @@
 {% endif %}
 {% endif %}
 {% endif %}
+
+<!-- ═══ Compliance Trend (placeholder) ═══ -->
+<div class="section" id="sec-compliance-trend">
+  <h2>Compliance Trend</h2>
+  <div style="border: 1px dashed #cbd5e1; border-radius: 8px; padding: 20px; text-align: center; color: #94a3b8;">
+    <p style="font-size: 10px; font-weight: 600; margin-bottom: 4px;">Historical Trend Data Not Yet Available</p>
+    <p style="font-size: 8px;">When multiple scans of the same target are completed, a compliance trend chart will appear here showing progress over time.</p>
+  </div>
+</div>
+
+<!-- ═══ Appendix ═══ -->
+<div class="section" id="sec-appendix" style="page-break-before: always;">
+  <h2>Appendix</h2>
+
+  <h3>A. Benchmark Information</h3>
+  <table style="font-size: 8px;">
+    <tbody>
+      {% if audit_info is defined and audit_info %}
+      <tr><td style="font-weight:600; width:30%;">Benchmark</td><td>{{ audit_info.get('benchmark_name', 'N/A') }}</td></tr>
+      <tr><td style="font-weight:600;">Version</td><td>{{ audit_info.get('benchmark_version', 'N/A') }}</td></tr>
+      <tr><td style="font-weight:600;">Profile Level</td><td>{{ audit_info.get('profile_level', 'N/A') }}</td></tr>
+      {% endif %}
+      <tr><td style="font-weight:600;">Total Rules Evaluated</td><td>{{ summary.total_rules }}</td></tr>
+      <tr><td style="font-weight:600;">Report Generated</td><td>{{ now }}</td></tr>
+      <tr><td style="font-weight:600;">Engine</td><td>AuditForge — Automated CIS Compliance Auditing Platform</td></tr>
+    </tbody>
+  </table>
+
+  <h3>B. Glossary of Terms</h3>
+  <table style="font-size: 8px;">
+    <thead><tr><th style="width:25%;">Term</th><th>Definition</th></tr></thead>
+    <tbody>
+      <tr><td style="font-weight:600;">CIS Benchmark</td><td>Configuration guidelines published by the Center for Internet Security (CIS) for hardening operating systems, applications, and network devices.</td></tr>
+      <tr><td style="font-weight:600;">Compliance %</td><td>Percentage of audited rules that PASS relative to the total number of rules evaluated (excluding errors unless noted).</td></tr>
+      <tr><td style="font-weight:600;">Remediation</td><td>The corrective action required to bring a system setting into compliance with the benchmark recommendation.</td></tr>
+      <tr><td style="font-weight:600;">Registry Key</td><td>A Windows Registry entry that stores OS and application configuration settings. Many CIS rules validate specific registry values.</td></tr>
+      <tr><td style="font-weight:600;">Security Policy (secedit)</td><td>Windows Local Security Policy settings exported via <code>secedit.exe</code>. Includes password, lockout, and audit policies.</td></tr>
+      <tr><td style="font-weight:600;">WinRM</td><td>Windows Remote Management — a Microsoft protocol for remote administration used by AuditForge to execute audit checks on target machines.</td></tr>
+      <tr><td style="font-weight:600;">Risk Score</td><td>A weighted metric combining compliance percentage with severity-adjusted failure penalties, producing a letter grade (A–F).</td></tr>
+    </tbody>
+  </table>
+
+  <h3>C. Status Codes Reference</h3>
+  <table style="font-size: 8px;">
+    <thead><tr><th>Code</th><th>Color</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><span class="badge" style="background:#dcfce7; color:#166534;">PASS</span></td><td style="color:#16a34a;">Green</td><td>System matches benchmark expectation</td></tr>
+      <tr><td><span class="badge" style="background:#fef2f2; color:#991b1b;">FAIL</span></td><td style="color:#dc2626;">Red</td><td>System does NOT match — remediation needed</td></tr>
+      <tr><td><span class="badge" style="background:#f3e8ff; color:#6b21a8;">ERROR</span></td><td style="color:#7c3aed;">Purple</td><td>Check could not complete — manual review required</td></tr>
+    </tbody>
+  </table>
+
+  <h3>D. Disclaimer</h3>
+  <p style="font-size: 7px; color: #64748b; line-height: 1.5;">
+    This report is generated automatically by AuditForge software and is intended for informational purposes only.
+    While every effort is made to ensure accuracy, the results should be validated by a qualified security professional.
+    The compliance status reflects the configuration at the time of the audit and may change as systems are updated.
+    AuditForge does not guarantee that a system achieving 100% compliance is free from all security vulnerabilities.
+    The CIS Benchmarks are © Center for Internet Security, Inc. and are used under license.
+  </p>
+</div>
 
 </body>
 </html>

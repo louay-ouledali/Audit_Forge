@@ -1182,10 +1182,15 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                         </button>
                       </div>
 
-                      {/* Config summary line */}
+                      {/* Config summary line with page estimate */}
                       <p className="text-[11px] text-dark-muted pt-1 border-t border-dark-border mt-3">
                         {selectedScanIds.length} scan(s) · {selectedCount} rules · {groups.length || 'No'} groups · {audience} audience
                         {Object.keys(groupSummaries).length > 0 && ` · ${Object.keys(groupSummaries).length} AI summaries`}
+                        {exportFormat === 'pdf' && selectedCount > 0 && (
+                          <span className="ml-2 text-ey-yellow font-medium">
+                            ≈ {Math.max(5, Math.ceil(selectedCount * 0.45) + 8 + (includePassedRules ? Math.ceil((findings.filter(f => f.status === 'PASS').length || 0) * 0.3) : 0))} pages
+                          </span>
+                        )}
                       </p>
                     </div>
                     {/* End Left Pane container */}

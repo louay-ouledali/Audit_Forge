@@ -4,12 +4,13 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import re as _re
 from datetime import datetime, timezone
 
 import json
+import markdown as _md
 
 from jinja2 import Environment, FileSystemLoader
-import re as _re
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -33,6 +34,13 @@ from backend.models.target import Target
 logger = logging.getLogger("auditforge.reports")
 
 TEMPLATES_DIR = str(__import__("pathlib").Path(__file__).resolve().parent.parent / "templates")
+
+
+def _md_to_html(text: str) -> str:
+    """Convert Markdown text (from AI summary) to safe HTML for embedding in reports."""
+    if not text:
+        return ""
+    return _md.markdown(text, extensions=["tables", "nl2br"])
 
 # Excel color fills
 FILL_CRITICAL = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
@@ -438,7 +446,7 @@ def _generate_all_charts(data: dict, grouped_findings: list[dict] | None) -> dic
         {"label": "Passed", "value": summary["passed"], "color": "#22c55e"},
         {"label": "Failed", "value": summary["failed"], "color": "#ef4444"},
         {"label": "Errors", "value": summary["errors"], "color": "#8b5cf6"},
-    ], title="Results Distribution")
+    ], title="Results Distribution", size=220)
 
     # 2. Severity compliance bars
     sev_items = []
@@ -447,7 +455,7 @@ def _generate_all_charts(data: dict, grouped_findings: list[dict] | None) -> dic
         comp = round((info["passed"] / info["total"]) * 100, 1) if info["total"] > 0 else 0
         colors = {"critical": "#dc2626", "high": "#ea580c", "medium": "#d97706", "low": "#2563eb", "informational": "#6b7280"}
         sev_items.append({"label": sev.capitalize(), "value": comp, "color": colors[sev]})
-    charts["chart_severity"] = generate_hbar_svg(sev_items, title="Compliance by Severity")
+    charts["chart_severity"] = generate_hbar_svg(sev_items, title="Compliance by Severity", width=340)
 
     # 3. Per-target compliance bars
     target_items = []
@@ -455,7 +463,7 @@ def _generate_all_charts(data: dict, grouped_findings: list[dict] | None) -> dic
         c = t["compliance"]
         color = "#22c55e" if c >= 80 else "#f59e0b" if c >= 50 else "#ef4444"
         target_items.append({"label": t["hostname"] or t["ip_address"], "value": c, "color": color})
-    charts["chart_targets"] = generate_hbar_svg(target_items, title="Compliance by Target") if len(target_items) > 1 else ""
+    charts["chart_targets"] = generate_hbar_svg(target_items, title="Compliance by Target", width=340) if len(target_items) > 1 else ""
 
     # 4. Category stacked bar
     by_cat = data.get("by_category", {})
@@ -463,7 +471,7 @@ def _generate_all_charts(data: dict, grouped_findings: list[dict] | None) -> dic
         {"label": info.get("label", f"Section {k}"), "passed": info.get("passed", 0), "failed": info.get("failed", 0)}
         for k, info in sorted(by_cat.items(), key=lambda x: (not x[0].isdigit(), x[0]))
     ]
-    charts["chart_categories"] = generate_stacked_hbar_svg(cat_items, title="Findings by Category") if cat_items else ""
+    charts["chart_categories"] = generate_stacked_hbar_svg(cat_items, title="Findings by Category", width=450) if cat_items else ""
 
     # 5. Grouped charts & risk heatmap
     charts["chart_risk_heatmap"] = ""
@@ -476,7 +484,7 @@ def _generate_all_charts(data: dict, grouped_findings: list[dict] | None) -> dic
             {"label": g["name"], "passed": g["pass_count"], "failed": g["fail_count"]}
             for g in grouped_findings
         ]
-        charts["chart_group_compliance"] = generate_stacked_hbar_svg(gc_items, title="Compliance by Group")
+        charts["chart_group_compliance"] = generate_stacked_hbar_svg(gc_items, title="Compliance by Group", width=450)
 
         for g in grouped_findings:
             g["mini_donut"] = generate_mini_donut_svg(g["pass_count"], g["fail_count"], g["error_count"])
@@ -517,6 +525,159 @@ def _generate_all_charts(data: dict, grouped_findings: list[dict] | None) -> dic
 
 
 # ---------------------------------------------------------------------------
+# CIS Benchmark section name mapping
+# ---------------------------------------------------------------------------
+
+# Maps top-level section numbers to descriptive CIS benchmark section names.
+# Covers CIS Microsoft Windows 11 and common CIS benchmarks.
+_CIS_SECTION_NAMES: dict[str, str] = {
+    "1": "Account Policies",
+    "2": "Local Policies",
+    "3": "Event Log",
+    "4": "Restricted Groups",
+    "5": "System Services",
+    "6": "Registry",
+    "7": "File System",
+    "8": "Wired Network Policies",
+    "9": "Windows Firewall",
+    "10": "Network List Manager",
+    "11": "Wireless Network",
+    "12": "Public Key Policies",
+    "13": "Software Restriction",
+    "14": "Network Access Protection",
+    "15": "Application Control",
+    "16": "IP Security Policies",
+    "17": "Advanced Audit Policy",
+    "18": "Administrative Templates (Computer)",
+    "19": "Administrative Templates (User)",
+    "20": "File & Storage",
+    "21": "Print & Document",
+    "22": "Remote Services",
+}
+
+
+def _resolve_section_name(section_num: str, findings: list[dict]) -> str:
+    """Try to resolve a meaningful name for a top-level section number.
+
+    1. Check the CIS section name map.
+    2. Fall back to the first common word in rule titles for that section.
+    3. Default to 'Section N'.
+    """
+    if section_num in _CIS_SECTION_NAMES:
+        return f"Section {section_num}: {_CIS_SECTION_NAMES[section_num]}"
+
+    # Attempt to derive from rule titles in that section
+    titles = [f["rule_title"] for f in findings
+              if (f.get("section_number") or "").split(".")[0] == section_num and f.get("rule_title")]
+    if titles:
+        # Find most common leading word(s)
+        first_title = titles[0]
+        # Use "Ensure" prefix removal for cleaner label
+        clean = first_title.replace("Ensure ", "").replace("(L1) ", "").replace("(L2) ", "")
+        if len(clean) > 40:
+            clean = clean[:38] + ".."
+        return f"Section {section_num}: {clean}"
+
+    return f"Section {section_num}"
+
+
+def _build_enriched_categories(data: dict) -> list[dict]:
+    """Build enriched category list with resolved CIS section names and compliance bars."""
+    by_category = data.get("by_category", {})
+    findings = data.get("findings", [])
+    enriched = []
+    for cat_key in sorted(by_category.keys(), key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else 0, x)):
+        info = by_category[cat_key]
+        comp = round((info["passed"] / info["total"]) * 100, 1) if info["total"] > 0 else 0.0
+        enriched.append({
+            "key": cat_key,
+            "label": _resolve_section_name(cat_key, findings),
+            "total": info["total"],
+            "passed": info["passed"],
+            "failed": info["failed"],
+            "compliance": comp,
+        })
+    return enriched
+
+
+def _compute_risk_score(data: dict) -> dict:
+    """Compute an overall risk score with letter grade (A-F) for the audit."""
+    summary = data.get("summary", {})
+    compliance = summary.get("overall_compliance", 0)
+    by_sev = summary.get("by_severity", {})
+
+    # Weighted severity penalty: critical failures weigh much more
+    crit_fails = by_sev.get("critical", {}).get("failed", 0)
+    high_fails = by_sev.get("high", {}).get("failed", 0)
+    med_fails = by_sev.get("medium", {}).get("failed", 0)
+    low_fails = by_sev.get("low", {}).get("failed", 0)
+    total_rules = summary.get("total_rules", 1) or 1
+
+    # Weighted score: compliance % minus severity penalties
+    penalty = (crit_fails * 5 + high_fails * 3 + med_fails * 1 + low_fails * 0.3) / total_rules * 10
+    score = max(0, min(100, compliance - penalty))
+
+    if score >= 90:
+        grade, label, color = "A", "Excellent", "#16a34a"
+    elif score >= 80:
+        grade, label, color = "B", "Good", "#22c55e"
+    elif score >= 70:
+        grade, label, color = "C", "Acceptable", "#f59e0b"
+    elif score >= 50:
+        grade, label, color = "D", "Poor", "#ea580c"
+    else:
+        grade, label, color = "F", "Critical", "#dc2626"
+
+    risk_level = "LOW" if score >= 80 else "MODERATE" if score >= 60 else "HIGH" if score >= 40 else "CRITICAL"
+
+    return {
+        "score": round(score, 1),
+        "grade": grade,
+        "label": label,
+        "color": color,
+        "risk_level": risk_level,
+        "critical_fails": crit_fails,
+        "high_fails": high_fails,
+        "medium_fails": med_fails,
+        "low_fails": low_fails,
+    }
+
+
+def _build_per_target_findings(data: dict) -> list[dict]:
+    """Group findings by target hostname for per-target breakdown section."""
+    findings = data.get("findings", [])
+    targets: dict[str, dict] = {}
+    for f in findings:
+        host = f.get("target_hostname") or "Unknown"
+        if host not in targets:
+            targets[host] = {"hostname": host, "total": 0, "passed": 0, "failed": 0, "errors": 0,
+                             "critical_fails": 0, "high_fails": 0, "findings": []}
+        targets[host]["total"] += 1
+        st = f.get("status", "")
+        if st == "PASS":
+            targets[host]["passed"] += 1
+        elif st == "FAIL":
+            targets[host]["failed"] += 1
+            sev = f.get("severity", "")
+            if sev == "critical":
+                targets[host]["critical_fails"] += 1
+            elif sev == "high":
+                targets[host]["high_fails"] += 1
+        elif st == "ERROR":
+            targets[host]["errors"] += 1
+        targets[host]["findings"].append(f)
+
+    result = []
+    for host, tdata in targets.items():
+        comp = round((tdata["passed"] / tdata["total"]) * 100, 1) if tdata["total"] > 0 else 0.0
+        tdata["compliance"] = comp
+        # Top 5 failures per target
+        tdata["top_failures"] = [f for f in tdata["findings"] if f["status"] == "FAIL"][:5]
+        result.append(tdata)
+    return sorted(result, key=lambda t: t["compliance"])
+
+
+# ---------------------------------------------------------------------------
 # PDF generation
 # ---------------------------------------------------------------------------
 
@@ -542,6 +703,21 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
     charts = _generate_all_charts(data, grouped_findings)
     data.update(charts)
     data["fp_summary"] = data.get("fp_summary", {})
+
+    # ── Convert AI summary from Markdown to HTML ──
+    if data.get("ai_summary"):
+        data["ai_summary_html"] = _md_to_html(data["ai_summary"])
+    else:
+        data["ai_summary_html"] = ""
+
+    # ── Build enriched category data with real CIS section names ──
+    data["categories_enriched"] = _build_enriched_categories(data)
+
+    # ── Compute overall risk score (A-F letter grade) ──
+    data["risk_score"] = _compute_risk_score(data)
+
+    # ── Build per-target findings breakdown ──
+    data["per_target_findings"] = _build_per_target_findings(data)
 
     # Build top-N remediation items for the Recommendations section
     _sev_prio = {"critical": 0, "high": 1, "medium": 2, "low": 3, "informational": 4}
@@ -827,6 +1003,7 @@ def generate_html_report(data: dict, include_passed: bool) -> str:
         date_range=data.get("date_range", ""),
         generated_at=data.get("generated_at", ""),
         ai_summary=data.get("ai_summary", ""),
+        ai_summary_html=_md_to_html(data.get("ai_summary", "")),
         summary=data["summary"],
         targets=data.get("targets", []),
         findings=findings,
