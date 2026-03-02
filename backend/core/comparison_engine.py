@@ -16,6 +16,11 @@ Supported expression formats:
     not_contains:PrivilegeName     Negative substring check (PASS when absent)
     regex:^some_pattern$           Fallback to regex matching
 
+Compound expressions (AND):
+    <=365&&!=0   Both conditions must pass (e.g. "365 or fewer, but not 0")
+    >=1&&<=14    Range check (value between 1 and 14)
+    Multiple && separators are supported: >=1&&<=90&&!=0
+
 Legacy support:
     If the expression doesn't match any operator prefix, it is treated
     as a regex pattern for backward compatibility with existing rules.
@@ -54,13 +59,19 @@ class ComparisonResult:
 
 
 def parse_expression_type(expression: str) -> str:
-    """Return the type of expression: 'numeric', 'exact', 'not_equal', 'not_empty', 'contains', 'not_contains', 'regex', or 'legacy_regex'.
+    """Return the type of expression: 'numeric', 'exact', 'not_equal', 'not_empty', 'contains', 'not_contains', 'regex', 'compound', or 'legacy_regex'.
 
     Useful for UI display and validation.
     """
     if not expression or not expression.strip():
         return "empty"
     expr = expression.strip()
+
+    # Compound expression support (&&)
+    if "&&" in expr:
+        sub_exprs = [s.strip() for s in expr.split("&&") if s.strip()]
+        if len(sub_exprs) > 1:
+            return "compound"
 
     # Check for not_empty keyword
     if expr.lower() == "not_empty":
@@ -90,6 +101,8 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
     ----------
     expression : str
         The expected-output expression (e.g. ``">=24"``, ``"==Disabled"``).
+        Compound expressions joined by ``&&`` are also supported
+        (e.g. ``"<=365&&!=0"``).
     actual_output : str
         The raw stdout from the audit command.
 
@@ -108,6 +121,22 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
 
     expr = expression.strip()
     actual = actual_output.strip()
+
+    # ── Compound expression support (&&) ─────────────────────────────────
+    if "&&" in expr:
+        sub_exprs = [s.strip() for s in expr.split("&&") if s.strip()]
+        if len(sub_exprs) > 1:
+            results: list[ComparisonResult] = []
+            for sub in sub_exprs:
+                results.append(evaluate(sub, actual_output))
+            all_pass = all(r.matched for r in results)
+            parts = [r.explanation for r in results]
+            return ComparisonResult(
+                matched=all_pass,
+                expression=expr,
+                actual_value=actual,
+                explanation=f"{'PASS' if all_pass else 'FAIL'}: compound — " + " AND ".join(parts),
+            )
 
     # --- Collapse doubled prefixes (e.g. "regex:regex:..." -> "regex:...") ---
     expr = re.sub(r'^((?:contains|not_contains|regex):)\1+', r'\1', expr, flags=re.IGNORECASE)
@@ -363,6 +392,17 @@ def validate_expression(expression: str) -> str | None:
 
     expr = expression.strip()
 
+    # Compound expression support (&&)
+    if "&&" in expr:
+        sub_exprs = [s.strip() for s in expr.split("&&") if s.strip()]
+        if len(sub_exprs) < 2:
+            return "Compound expression '&&' requires at least two sub-expressions"
+        for sub in sub_exprs:
+            err = validate_expression(sub)
+            if err:
+                return f"In compound sub-expression '{sub}': {err}"
+        return None
+
     # not_empty keyword
     if expr.lower() == "not_empty":
         return None  # Valid
@@ -424,11 +464,19 @@ def format_expression_display(expression: str) -> str:
         "==1"   →  "Value must equal 1"
         "==Disabled"  →  "Value must equal 'Disabled'"
         "contains:Success and Failure"  →  "Output must contain 'Success and Failure'"
+        "<=365&&!=0"  →  "Value must be ≤ 365 AND Value must not equal 0"
     """
     if not expression or not expression.strip():
         return "No expected output"
 
     expr = expression.strip()
+
+    # Compound expression support (&&)
+    if "&&" in expr:
+        sub_exprs = [s.strip() for s in expr.split("&&") if s.strip()]
+        if len(sub_exprs) > 1:
+            parts = [format_expression_display(sub) for sub in sub_exprs]
+            return " AND ".join(parts)
 
     # Check for not_empty keyword
     if expr.lower() == "not_empty":
