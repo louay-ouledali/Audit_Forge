@@ -43,6 +43,32 @@ logger = logging.getLogger("auditforge")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # ── Auto-backup DB before ANY changes (prevents data loss) ───────────
+    try:
+        from backend.config import settings as _cfg
+        from pathlib import Path
+        import shutil
+
+        db_url = _cfg.resolved_database_url
+        if db_url.startswith("sqlite:///"):
+            db_path = Path(db_url.replace("sqlite:///", ""))
+            if db_path.exists() and db_path.stat().st_size > 0:
+                backup_dir = db_path.parent / "backups"
+                backup_dir.mkdir(exist_ok=True)
+                from datetime import datetime as _dt
+                ts = _dt.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = backup_dir / f"auditforge_{ts}.db"
+                shutil.copy2(str(db_path), str(backup_path))
+                logger.info("Auto-backup created: %s (%.1f MB)", backup_path.name, db_path.stat().st_size / 1024 / 1024)
+
+                # Keep only last 5 backups to avoid disk bloat
+                backups = sorted(backup_dir.glob("auditforge_*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+                for old in backups[5:]:
+                    old.unlink()
+                    logger.debug("Removed old backup: %s", old.name)
+    except Exception as exc:
+        logger.warning("Auto-backup failed (non-fatal): %s", exc)
+
     # Reset stale "processing" phase2 statuses left by crashed containers
     try:
         from backend.database import SessionLocal

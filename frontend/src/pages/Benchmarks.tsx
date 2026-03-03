@@ -440,7 +440,7 @@ export default function Benchmarks() {
             className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-colors">
             <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Import Benchmark'}
           </button>
-          <input ref={fileRef} type="file" accept=".pdf,.csv,.html,.htm,.json" className="hidden" onChange={handleUpload} />
+          <input ref={fileRef} type="file" accept=".pdf,.csv,.html,.htm,.json,.nessus,.xml" className="hidden" onChange={handleUpload} />
         </div>
       </div>
 

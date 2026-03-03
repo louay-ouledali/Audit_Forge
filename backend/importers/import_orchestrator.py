@@ -28,6 +28,18 @@ from backend.importers.csv_parser import (
     parse_nessus_csv,
 )
 from backend.importers.html_parser import detect_nessus_html, parse_nessus_html
+from backend.importers.nessus_xml_parser import (
+    detect_nessus_xml,
+    parse_nessus_xml,
+    extract_rules_from_findings as extract_rules_from_nessus_xml,
+)
+from backend.importers.qualys_parser import (
+    detect_qualys_csv,
+    detect_qualys_xml,
+    parse_qualys_csv,
+    parse_qualys_xml,
+)
+from backend.importers.openvas_parser import detect_openvas_xml, parse_openvas_xml
 from backend.importers.benchmark_resolver import resolve_benchmark
 from backend.models.benchmark import Benchmark
 from backend.models.finding import Finding
@@ -49,21 +61,39 @@ class ImportOrchestrator:
     def detect_format(self, content: str, filename: str = "") -> str:
         """Detect the format of the uploaded file content.
 
-        Returns one of: 'nessus_csv', 'nessus_html', 'auditforge_json',
-                        'auditforge_zip', 'unknown'
+        Returns one of: 'nessus_csv', 'nessus_html', 'nessus_xml',
+                        'qualys_csv', 'qualys_xml', 'openvas_xml',
+                        'auditforge_json', 'auditforge_zip', 'unknown'
         """
         if not content:
             return "unknown"
 
         stripped = content.strip()
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
         # Check for Nessus CSV (Plugin ID + Description headers)
         if detect_nessus_csv(content):
             return "nessus_csv"
 
+        # Check for .nessus XML (NessusClientData_v2)
+        if detect_nessus_xml(content) or ext == "nessus":
+            return "nessus_xml"
+
         # Check for Nessus HTML (characteristic CSS/structure)
         if detect_nessus_html(content):
             return "nessus_html"
+
+        # Check for Qualys CSV
+        if detect_qualys_csv(content):
+            return "qualys_csv"
+
+        # Check for Qualys XML
+        if detect_qualys_xml(content):
+            return "qualys_xml"
+
+        # Check for OpenVAS/GVM XML
+        if detect_openvas_xml(content):
+            return "openvas_xml"
 
         # Check for AuditForge JSON
         if stripped.startswith("[") or stripped.startswith("{"):
@@ -170,6 +200,64 @@ class ImportOrchestrator:
                 "source_tool": "nessus",
             }
 
+        if fmt in ("nessus_xml", "qualys_csv", "qualys_xml", "openvas_xml"):
+            # Parse with appropriate parser
+            if fmt == "nessus_xml":
+                findings, platform_info = parse_nessus_xml(content)
+                extracted_rules = extract_rules_from_nessus_xml(findings)
+            elif fmt == "qualys_csv":
+                findings, platform_info = parse_qualys_csv(content)
+                extracted_rules = []
+            elif fmt == "qualys_xml":
+                findings, platform_info = parse_qualys_xml(content)
+                extracted_rules = []
+            else:  # openvas_xml
+                findings, platform_info = parse_openvas_xml(content)
+                extracted_rules = []
+
+            counts = _count_statuses(findings)
+
+            # Check existing benchmark
+            benchmark_exists = False
+            existing_benchmark: Benchmark | None = None
+            if platform_info.benchmark_name:
+                from backend.importers.benchmark_resolver import _try_exact_match, _try_fuzzy_match
+                existing_benchmark = _try_exact_match(platform_info, self.db)
+                if not existing_benchmark:
+                    existing_benchmark = _try_fuzzy_match(platform_info, self.db)
+                benchmark_exists = existing_benchmark is not None
+
+            source_tool = {
+                "nessus_xml": "nessus",
+                "qualys_csv": "qualys",
+                "qualys_xml": "qualys",
+                "openvas_xml": "openvas",
+            }.get(fmt, "unknown")
+
+            return {
+                "format": fmt,
+                "filename": filename,
+                "platform": platform_info.platform,
+                "platform_family": platform_info.platform_family,
+                "os_version": platform_info.os_version,
+                "benchmark_name": platform_info.benchmark_name or "Unknown benchmark",
+                "benchmark_version": platform_info.benchmark_version or "unknown",
+                "benchmark_exists": benchmark_exists,
+                "existing_benchmark_id": existing_benchmark.id if existing_benchmark else None,
+                "existing_benchmark_name": existing_benchmark.name if existing_benchmark else None,
+                "hostname": platform_info.hostname or platform_info.ip_address or "Unknown host",
+                "ip_address": platform_info.ip_address,
+                "profile_level": platform_info.profile_level,
+                "total_findings": len(findings),
+                "total_rules": len(extracted_rules),
+                "passed": counts.get("PASS", 0),
+                "failed": counts.get("FAIL", 0),
+                "not_applicable": counts.get("NOT_APPLICABLE", 0),
+                "errors": counts.get("ERROR", 0) + counts.get("MANUAL_REVIEW", 0),
+                "scheme": platform_info.scheme or "CIS",
+                "source_tool": source_tool,
+            }
+
         return {
             "format": fmt,
             "filename": filename,
@@ -221,8 +309,23 @@ class ImportOrchestrator:
         elif fmt == "nessus_html":
             findings, platform_info = parse_nessus_html(content)
             extracted_rules = extract_rules_from_findings(findings)
+        elif fmt == "nessus_xml":
+            findings, platform_info = parse_nessus_xml(content)
+            extracted_rules = extract_rules_from_nessus_xml(findings)
+        elif fmt == "qualys_csv":
+            findings, platform_info = parse_qualys_csv(content)
+            extracted_rules = []
+        elif fmt == "qualys_xml":
+            findings, platform_info = parse_qualys_xml(content)
+            extracted_rules = []
+        elif fmt == "openvas_xml":
+            findings, platform_info = parse_openvas_xml(content)
+            extracted_rules = []
         else:
-            raise ValueError(f"Unsupported format: '{fmt}'. Smart Import accepts Nessus CSV/HTML exports.")
+            raise ValueError(
+                f"Unsupported format: '{fmt}'. Smart Import accepts "
+                "Nessus CSV/HTML/XML, Qualys CSV/XML, and OpenVAS XML exports."
+            )
 
         result.platform_info = platform_info
 
@@ -285,7 +388,7 @@ class ImportOrchestrator:
         result.scan_id = scan.id
 
         # ── Step 6: Create findings ──────────────────────────
-        stats = self._create_findings(findings, scan.id, benchmark.id)
+        stats = self._create_findings(findings, scan.id, benchmark.id, platform_info.source_tool or "nessus")
         result.findings_created = stats["findings_created"]
         result.passed = stats["passed"]
         result.failed = stats["failed"]
@@ -408,6 +511,7 @@ class ImportOrchestrator:
         parsed_findings: list[ParsedFinding],
         scan_id: int,
         benchmark_id: int,
+        source_tool: str = "nessus",
     ) -> dict[str, int]:
         """Create Finding records from parsed findings.
 
@@ -446,7 +550,7 @@ class ImportOrchestrator:
             import_metadata = json.dumps({
                 "plugin_id": pf.plugin_id,
                 "source_row": pf.source_row_index,
-                "nessus_status": pf.status,
+                "original_status": pf.status,
             }) if pf.plugin_id else None
 
             finding = Finding(
@@ -456,7 +560,7 @@ class ImportOrchestrator:
                 actual_output=actual_output[:MAX_OUTPUT_LENGTH] if actual_output else "",
                 expected_output=expected_output,
                 severity=pf.severity or rule.severity,
-                import_source="nessus",
+                import_source=source_tool,
                 import_metadata=import_metadata,
             )
             self.db.add(finding)

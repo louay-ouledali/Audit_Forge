@@ -752,3 +752,48 @@ export interface ValidationResultItem {
   audit_command: string | null;
   expected_output_regex: string | null;
 }
+
+// ── Phase 4: Framework Coverage + Platform Expansion ─────────
+
+export interface FrameworkCoverageItem {
+  key: string;
+  name: string;
+  category: string;
+  description: string;
+  controls_mapped: number;
+  rules_covered: number;
+  coverage_percentage: number;
+  sample_controls: string[];
+}
+
+export interface FrameworkCoverage {
+  benchmark_id: number;
+  benchmark_name: string;
+  total_rules: number;
+  rules_with_framework_mappings: number;
+  overall_score: number;
+  framework_count: number;
+  frameworks: FrameworkCoverageItem[];
+}
+
+export interface FrameworkRuleItem {
+  rule_id: number;
+  section_number: string;
+  title: string;
+  severity: string;
+  controls: string[];
+}
+
+export interface FrameworkRulesResponse {
+  benchmark_id: number;
+  framework_key: string;
+  framework_name: string;
+  rules: FrameworkRuleItem[];
+  total: number;
+}
+
+export interface BackupInfo {
+  filename: string;
+  size_mb: number;
+  created_at: string;
+}

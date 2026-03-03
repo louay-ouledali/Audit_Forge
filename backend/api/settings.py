@@ -218,3 +218,51 @@ async def restore_backup(
         message="Database restored successfully. Please restart the application.",
         tables_restored=tables_restored,
     )
+
+
+# ── Auto-backup management ────────────────────────────────────
+
+
+@router.get("/backups")
+def list_auto_backups():
+    """List available auto-backups (created on every startup)."""
+    db_path = _get_db_path()
+    backup_dir = db_path.parent / "backups"
+    if not backup_dir.exists():
+        return {"backups": []}
+    backups = []
+    for f in sorted(backup_dir.glob("auditforge_*.db"), key=lambda p: p.stat().st_mtime, reverse=True):
+        backups.append({
+            "filename": f.name,
+            "size_mb": round(f.stat().st_size / 1024 / 1024, 2),
+            "created_at": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
+        })
+    return {"backups": backups}
+
+
+@router.post("/backups/{filename}/restore")
+def restore_auto_backup(filename: str, db: Session = Depends(get_db)):
+    """Restore from a specific auto-backup file."""
+    db_path = _get_db_path()
+    backup_dir = db_path.parent / "backups"
+    backup_path = backup_dir / filename
+
+    if not backup_path.exists() or ".." in filename:
+        raise HTTPException(status_code=404, detail="Backup not found")
+    if not backup_path.name.startswith("auditforge_") or not backup_path.name.endswith(".db"):
+        raise HTTPException(status_code=400, detail="Invalid backup filename")
+
+    content = backup_path.read_bytes()
+    if not content[:16].startswith(b"SQLite format 3\x00"):
+        raise HTTPException(status_code=400, detail="Backup is not a valid SQLite database")
+
+    db.close()
+    try:
+        safety = db_path.with_suffix(".db.pre_restore")
+        shutil.copy2(str(db_path), str(safety))
+        db_path.write_bytes(content)
+        logger.info("Restored from auto-backup: %s (%.1f MB)", filename, len(content) / 1024 / 1024)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Restore failed: {exc}")
+
+    return {"message": f"Restored from {filename}. Restart the application to apply.", "size_mb": round(len(content) / 1024 / 1024, 2)}

@@ -193,7 +193,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   const handleSmartImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json,.zip,.csv,.html,.htm';
+    input.accept = '.json,.zip,.csv,.html,.htm,.nessus,.xml';
     input.multiple = true;
     input.onchange = async () => {
       const files = input.files;

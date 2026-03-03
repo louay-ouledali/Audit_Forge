@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Shield } from 'lucide-react';
 import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse, MigrationReadiness } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
 import RuleEditor from '@/components/benchmark/RuleEditor';
 import RuleTestPanel from '@/components/benchmark/RuleTestPanel';
+import FrameworkCoveragePanel from '@/components/FrameworkCoveragePanel';
 
 function severityBadge(severity: string) {
   const styles: Record<string, string> = {
@@ -93,7 +94,7 @@ export default function BenchmarkDetail() {
   const benchmarkImportRef = useRef<HTMLInputElement>(null);
   const rulesImportRef = useRef<HTMLInputElement>(null);
   const commandsImportRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'validation' | 'testing'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'validation' | 'testing' | 'frameworks'>('overview');
   const [migrationReadiness, setMigrationReadiness] = useState<MigrationReadiness | null>(null);
   const [showTestPanel, setShowTestPanel] = useState<number | null>(null);
 
@@ -664,6 +665,9 @@ export default function BenchmarkDetail() {
         )}
         <button onClick={() => setActiveTab('testing')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'testing' ? 'border-b-2 border-sky-400 text-sky-400' : 'text-dark-secondary hover:text-white'}`}>
           <Activity className="inline h-3.5 w-3.5 mr-1" />Testing & Readiness
+        </button>
+        <button onClick={() => setActiveTab('frameworks')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'frameworks' ? 'border-b-2 border-purple-400 text-purple-400' : 'text-dark-secondary hover:text-white'}`}>
+          <Shield className="inline h-3.5 w-3.5 mr-1" />Frameworks
         </button>
       </div>
 
@@ -1413,6 +1417,11 @@ export default function BenchmarkDetail() {
             </ol>
           </div>
         </div>
+      )}
+
+      {/* Framework Coverage Tab */}
+      {activeTab === 'frameworks' && benchmark && (
+        <FrameworkCoveragePanel benchmarkId={benchmark.id} benchmarkName={benchmark.name} />
       )}
 
     </div >

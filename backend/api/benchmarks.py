@@ -1751,3 +1751,168 @@ def bulk_dismiss_corrections(benchmark_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": f"Dismissed corrections for {count} commands", "count": count}
 
+
+# ── Framework Coverage Dashboard ──
+
+# Known framework families for categorization
+FRAMEWORK_DEFINITIONS = {
+    "NIST_800_53": {"name": "NIST 800-53", "category": "Government", "description": "Security and Privacy Controls for Federal Information Systems"},
+    "NIST_800_171": {"name": "NIST 800-171", "category": "Government", "description": "Protecting Controlled Unclassified Information"},
+    "NIST_CSF": {"name": "NIST CSF", "category": "Government", "description": "Cybersecurity Framework"},
+    "HIPAA": {"name": "HIPAA", "category": "Healthcare", "description": "Health Insurance Portability and Accountability Act"},
+    "PCI_DSS": {"name": "PCI-DSS", "category": "Financial", "description": "Payment Card Industry Data Security Standard"},
+    "SOC_2": {"name": "SOC 2", "category": "Audit", "description": "Service Organization Control 2"},
+    "GDPR": {"name": "GDPR", "category": "Privacy", "description": "General Data Protection Regulation"},
+    "ISO_27001": {"name": "ISO 27001", "category": "International", "description": "Information Security Management"},
+    "CIS_Controls": {"name": "CIS Controls", "category": "Best Practice", "description": "Center for Internet Security Controls"},
+    "CIS_CSC": {"name": "CIS Controls", "category": "Best Practice", "description": "CIS Critical Security Controls"},
+    "CMMC": {"name": "CMMC", "category": "Government", "description": "Cybersecurity Maturity Model Certification"},
+    "MITRE_ATT&CK": {"name": "MITRE ATT&CK", "category": "Threat", "description": "Adversarial Tactics, Techniques & Common Knowledge"},
+    "CCE": {"name": "CCE", "category": "Reference", "description": "Common Configuration Enumeration"},
+    "CVE": {"name": "CVE", "category": "Vulnerability", "description": "Common Vulnerabilities and Exposures"},
+}
+
+
+@router.get("/{benchmark_id}/framework-coverage")
+def get_framework_coverage(benchmark_id: int, db: Session = Depends(get_db)):
+    """Get compliance framework coverage analysis for a benchmark.
+
+    Analyzes framework_mappings across all rules and returns:
+    - Per-framework coverage summary
+    - Controls mapped per framework
+    - Overall multi-framework coverage score
+    """
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    rules = db.query(Rule).filter(Rule.benchmark_id == benchmark_id).all()
+    total_rules = len(rules)
+
+    if total_rules == 0:
+        return {
+            "benchmark_id": benchmark_id,
+            "benchmark_name": benchmark.name,
+            "total_rules": 0,
+            "frameworks": [],
+            "overall_score": 0,
+        }
+
+    # Aggregate framework mappings across all rules
+    framework_data: dict[str, dict] = {}  # framework_key -> {controls, rule_count, rule_ids}
+
+    for rule in rules:
+        mappings = {}
+        # Try framework_mappings column first
+        if rule.framework_mappings:
+            try:
+                mappings = json.loads(rule.framework_mappings) if isinstance(rule.framework_mappings, str) else rule.framework_mappings
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Also check references_json for additional mappings
+        if rule.references_json and not mappings:
+            try:
+                refs = json.loads(rule.references_json) if isinstance(rule.references_json, str) else rule.references_json
+                if isinstance(refs, dict):
+                    mappings = refs
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        for fw_key, controls in mappings.items():
+            if not isinstance(controls, list):
+                controls = [str(controls)]
+
+            if fw_key not in framework_data:
+                framework_data[fw_key] = {
+                    "controls": set(),
+                    "rule_count": 0,
+                    "rule_ids": [],
+                }
+
+            framework_data[fw_key]["controls"].update(str(c) for c in controls)
+            framework_data[fw_key]["rule_count"] += 1
+            framework_data[fw_key]["rule_ids"].append(rule.id)
+
+    # Build response
+    frameworks = []
+    rules_with_mappings = set()
+    for fw_key, data in sorted(framework_data.items(), key=lambda x: x[1]["rule_count"], reverse=True):
+        definition = FRAMEWORK_DEFINITIONS.get(fw_key, {})
+        coverage_pct = round(data["rule_count"] / total_rules * 100, 1)
+        rules_with_mappings.update(data["rule_ids"])
+
+        frameworks.append({
+            "key": fw_key,
+            "name": definition.get("name", fw_key.replace("_", " ")),
+            "category": definition.get("category", "Other"),
+            "description": definition.get("description", ""),
+            "controls_mapped": len(data["controls"]),
+            "rules_covered": data["rule_count"],
+            "coverage_percentage": coverage_pct,
+            "sample_controls": sorted(data["controls"])[:10],
+        })
+
+    overall_score = round(len(rules_with_mappings) / total_rules * 100, 1) if total_rules > 0 else 0
+
+    return {
+        "benchmark_id": benchmark_id,
+        "benchmark_name": benchmark.name,
+        "total_rules": total_rules,
+        "rules_with_framework_mappings": len(rules_with_mappings),
+        "overall_score": overall_score,
+        "framework_count": len(frameworks),
+        "frameworks": frameworks,
+    }
+
+
+@router.get("/{benchmark_id}/framework-coverage/{framework_key}/rules")
+def get_framework_rules(
+    benchmark_id: int,
+    framework_key: str,
+    db: Session = Depends(get_db),
+):
+    """Get all rules mapped to a specific framework for a benchmark."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    rules = db.query(Rule).filter(Rule.benchmark_id == benchmark_id).all()
+    matched_rules = []
+
+    for rule in rules:
+        mappings = {}
+        if rule.framework_mappings:
+            try:
+                mappings = json.loads(rule.framework_mappings) if isinstance(rule.framework_mappings, str) else rule.framework_mappings
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if not mappings and rule.references_json:
+            try:
+                refs = json.loads(rule.references_json) if isinstance(rule.references_json, str) else rule.references_json
+                if isinstance(refs, dict):
+                    mappings = refs
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        if framework_key in mappings:
+            controls = mappings[framework_key]
+            if not isinstance(controls, list):
+                controls = [str(controls)]
+            matched_rules.append({
+                "rule_id": rule.id,
+                "section_number": rule.section_number,
+                "title": rule.title,
+                "severity": rule.severity,
+                "controls": controls,
+            })
+
+    definition = FRAMEWORK_DEFINITIONS.get(framework_key, {})
+    return {
+        "benchmark_id": benchmark_id,
+        "framework_key": framework_key,
+        "framework_name": definition.get("name", framework_key),
+        "rules": matched_rules,
+        "total": len(matched_rules),
+    }
+

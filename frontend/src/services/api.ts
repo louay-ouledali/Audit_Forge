@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -219,6 +219,28 @@ export async function validateRuleCommand(benchmarkId: number, ruleId: number, p
 
 export async function getMigrationReadiness(benchmarkId: number): Promise<MigrationReadiness> {
   const { data } = await api.get(`/benchmarks/${benchmarkId}/migration-readiness`);
+  return data;
+}
+
+// Framework Coverage
+export async function getFrameworkCoverage(benchmarkId: number): Promise<FrameworkCoverage> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/framework-coverage`);
+  return data;
+}
+
+export async function getFrameworkRules(benchmarkId: number, frameworkKey: string): Promise<FrameworkRulesResponse> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/framework-coverage/${frameworkKey}/rules`);
+  return data;
+}
+
+// Backups
+export async function listBackups(): Promise<BackupInfo[]> {
+  const { data } = await api.get('/settings/backups');
+  return data;
+}
+
+export async function restoreFromBackup(filename: string): Promise<{ message: string }> {
+  const { data } = await api.post(`/settings/backups/${filename}/restore`);
   return data;
 }
 
