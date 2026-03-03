@@ -5,8 +5,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    network_mode: host
     volumes:
       - ./backend:/app/backend
       - ./data:/app/data
@@ -16,8 +15,6 @@ services:
       - DATABASE_URL=sqlite:///data/auditforge.db
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     working_dir: /app
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   frontend:
     build:

@@ -1,19 +1,25 @@
 """Network discovery — advanced host fingerprinting & identification.
 
 Uses pure-Python TCP probing, banner grabbing, SMB/NTLM fingerprinting,
-SNMP sysDescr, UPnP/SSDP, mDNS, MAC OUI lookup, hostname heuristics,
-and deep HTTP inspection — all without external dependencies (no nmap/scapy).
+SNMP sysDescr, UPnP/SSDP, mDNS, NetBIOS Name Service, ARP sweep,
+MAC OUI lookup, hostname heuristics, and deep HTTP inspection — all
+without external dependencies (no nmap/scapy).
+
+Requires ``network_mode: host`` in Docker for reliable ARP/MAC, ICMP,
+multicast (mDNS/SSDP), and NetBIOS access to the host LAN.
 
 Detection layers (in priority order):
+  0. **ARP sweep** → pre-scan ping + ARP table read for MAC addresses
   1. **SMB/NTLM negotiation** → exact Windows version + build + domain
   2. **SNMP sysDescr** → exact device model & firmware (network devices)
   3. **SSH / FTP / Telnet / SMTP banners** → OS family + version
   4. **HTTP deep inspection** → Server header, <title>, login page text
-  5. **UPnP SSDP** → manufacturer, model, firmware for routers & IoT
-  6. **mDNS** → Apple devices, Chromecasts, printers
-  7. **MAC OUI** → vendor from NIC manufacturer (ARP table)
+  5. **UPnP SSDP** → multicast + unicast; manufacturer, model, firmware
+  6. **mDNS / Bonjour** → multicast + unicast; Apple, Chromecast, printers
+  7. **MAC OUI** → vendor from NIC manufacturer (ARP cache)
   8. **Hostname heuristics** → pattern matching (TP-Link, NETGEAR, etc.)
-  9. **Port-based heuristics** → fallback OS family guess
+  9. **NetBIOS Name Service** → Windows hostname, domain, MAC (UDP 137)
+  10. **Port-based heuristics** → fallback OS family guess
 
 Each layer contributes to a confidence-weighted result. The highest-confidence
 detection wins.  All detections are aggregated into:
@@ -21,7 +27,7 @@ detection wins.  All detections are aggregated into:
   - **vendor**: e.g. "Microsoft", "TP-Link", "Ubiquiti"
   - **device_model**: e.g. "Archer AX73", "EdgeRouter X"
   - **firmware**: e.g. "3.10.0-build20230101"
-  - **detection_method**: which layer provided the winning detection
+  - **detection_method**: which layer(s) that contributed
   - **confidence**: 0-100 score
 """
 
@@ -159,6 +165,254 @@ async def _ping_host(ip: str, timeout: float = 1.5) -> bool:
         return rc == 0
     except (asyncio.TimeoutError, OSError, FileNotFoundError):
         return False
+
+
+# ═══════════════════════════════════════════════════════════
+# Layer 0: ARP sweep — discover ALL Layer-2 hosts + MAC
+# ═══════════════════════════════════════════════════════════
+
+# Module-level cache populated by _arp_sweep before per-host scans
+_arp_cache: dict[str, str] = {}  # ip → MAC address
+
+
+async def _arp_sweep(ips: list[str]) -> dict[str, str]:
+    """Populate the ARP table by pinging a broadcast + every IP, then read it.
+
+    This runs once *before* per-host scanning.  With ``network_mode: host``
+    the process shares the host's ARP table, so we get real MAC addresses.
+
+    Returns ``{ip: mac}`` for every reachable host.
+    """
+    global _arp_cache
+    result: dict[str, str] = {}
+
+    # Step 1: Broadcast ping to pre-fill ARP (Linux only, best-effort)
+    if sys.platform != "win32":
+        # Determine the broadcast address from the first IP's /24
+        try:
+            import ipaddress as _ipa
+            sample = _ipa.ip_address(ips[0])
+            network = _ipa.ip_network(f"{sample}/24", strict=False)
+            bcast = str(network.broadcast_address)
+            proc = await asyncio.create_subprocess_exec(
+                "ping", "-b", "-c", "1", "-W", "1", bcast,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(proc.wait(), timeout=3)
+        except Exception:
+            pass
+
+    # Step 2: Rapid parallel ping to populate ARP entries
+    sem = asyncio.Semaphore(100)
+
+    async def _quick_ping(ip: str) -> None:
+        async with sem:
+            try:
+                if sys.platform == "win32":
+                    cmd = ["ping", "-n", "1", "-w", "500", ip]
+                else:
+                    cmd = ["ping", "-c", "1", "-W", "1", ip]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await asyncio.wait_for(proc.wait(), timeout=2.5)
+            except Exception:
+                pass
+
+    # Ping all IPs quickly in parallel (just to fill ARP)
+    await asyncio.gather(*[_quick_ping(ip) for ip in ips])
+
+    # Step 3: Read ARP table
+    try:
+        if sys.platform == "win32":
+            proc = await asyncio.create_subprocess_exec(
+                "arp", "-a",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+            output = stdout.decode("utf-8", errors="replace")
+            # Windows: "  192.168.1.5     aa-bb-cc-dd-ee-ff     dynamic"
+            for line in output.splitlines():
+                m = re.match(
+                    r"\s*(\d+\.\d+\.\d+\.\d+)\s+"
+                    r"((\w\w[:-]){5}\w\w)\s+",
+                    line,
+                )
+                if m:
+                    ip_addr = m.group(1)
+                    mac = m.group(2).upper().replace("-", ":")
+                    if mac != "FF:FF:FF:FF:FF:FF" and not mac.startswith("01:00:5E"):
+                        result[ip_addr] = mac
+        else:
+            # Linux: read /proc/net/arp (faster than subprocess)
+            try:
+                with open("/proc/net/arp", "r") as f:
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 4 and parts[3] != "00:00:00:00:00:00":
+                            ip_addr = parts[0]
+                            mac = parts[3].upper()
+                            if mac != "FF:FF:FF:FF:FF:FF" and not mac.startswith("01:00:5E"):
+                                result[ip_addr] = mac
+            except FileNotFoundError:
+                # Fallback to arp -n
+                proc = await asyncio.create_subprocess_exec(
+                    "arp", "-n",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+                output = stdout.decode("utf-8", errors="replace")
+                for line in output.splitlines():
+                    m = re.search(
+                        r"(\d+\.\d+\.\d+\.\d+)\s+.*?((\w\w:){5}\w\w)",
+                        line,
+                    )
+                    if m:
+                        ip_addr = m.group(1)
+                        mac = m.group(2).upper()
+                        if mac != "00:00:00:00:00:00" and mac != "FF:FF:FF:FF:FF:FF":
+                            result[ip_addr] = mac
+    except Exception as exc:
+        logger.debug("ARP table read failed: %s", exc)
+
+    logger.info("ARP sweep found %d hosts with MAC addresses", len(result))
+    _arp_cache = result
+    return result
+
+
+# ═══════════════════════════════════════════════════════════
+# Layer 9: NetBIOS Name Service query (UDP 137)
+# ═══════════════════════════════════════════════════════════
+
+async def _netbios_name_query(
+    ip: str, timeout: float = 2.0
+) -> dict[str, Any]:
+    """Send a NetBIOS Name Service NBSTAT query to UDP 137.
+
+    Returns dict with hostname, mac_address, vendor, domain,
+    detection_method, confidence.  Empty dict on failure.
+    """
+    result: dict[str, Any] = {}
+
+    # NBSTAT query (Node Status Request)
+    # Transaction ID (2) + Flags (2) + Questions (2) + Answers/Auth/Additional (6) + Name + Type/Class
+    name_query = (
+        b"\x00\x01"          # Transaction ID
+        b"\x00\x00"          # Flags: query
+        b"\x00\x01"          # Questions: 1
+        b"\x00\x00"          # Answer RRs: 0
+        b"\x00\x00"          # Authority RRs: 0
+        b"\x00\x00"          # Additional RRs: 0
+        # Query: * (CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA) — wildcard NBSTAT
+        b"\x20"              # Name length: 32
+        b"CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        b"\x00"              # End of name
+        b"\x00\x21"          # Type: NBSTAT (0x21)
+        b"\x00\x01"          # Class: IN
+    )
+
+    loop = asyncio.get_event_loop()
+    try:
+        transport, _ = await asyncio.wait_for(
+            loop.create_datagram_endpoint(
+                lambda: asyncio.DatagramProtocol(),
+                remote_addr=(ip, 137),
+            ),
+            timeout=timeout,
+        )
+    except Exception:
+        return result
+
+    try:
+        transport.sendto(name_query)
+
+        data = None
+        start = time.monotonic()
+        while time.monotonic() - start < timeout:
+            await asyncio.sleep(0.1)
+            try:
+                sock = transport.get_extra_info("socket")
+                if sock:
+                    sock.setblocking(False)
+                    try:
+                        data, _ = sock.recvfrom(4096)
+                        break
+                    except (BlockingIOError, OSError):
+                        pass
+            except Exception:
+                pass
+    finally:
+        transport.close()
+
+    if not data or len(data) < 57:
+        return result
+
+    try:
+        # Parse NetBIOS NBSTAT response
+        # Skip header (12 bytes) + name (34 bytes) + type/class (4 bytes) + TTL (4 bytes) + rdlength (2 bytes)
+        # = offset 56, then num_names (1 byte)
+        num_names = data[56]
+        offset = 57
+        hostname = ""
+        domain = ""
+
+        for i in range(num_names):
+            if offset + 18 > len(data):
+                break
+            name_bytes = data[offset:offset + 15].rstrip(b"\x20")
+            name_suffix = data[offset + 15]
+            name_flags = struct.unpack_from(">H", data, offset + 16)[0]
+            offset += 18
+
+            try:
+                name_str = name_bytes.decode("ascii", errors="replace").strip()
+            except Exception:
+                continue
+
+            is_group = bool(name_flags & 0x8000)
+
+            if name_suffix == 0x00 and not is_group and not hostname:
+                hostname = name_str
+            elif name_suffix == 0x00 and is_group and not domain:
+                domain = name_str
+
+        # MAC address is the last 6 bytes after all name entries
+        mac_offset = offset
+        mac = ""
+        if mac_offset + 6 <= len(data):
+            mac_bytes = data[mac_offset:mac_offset + 6]
+            if mac_bytes != b"\x00\x00\x00\x00\x00\x00":
+                mac = ":".join(f"{b:02X}" for b in mac_bytes)
+
+        if hostname:
+            result["hostname"] = hostname
+            result["detection_method"] = "netbios"
+            result["confidence"] = 60
+            if domain:
+                result["domain"] = domain
+            if mac:
+                result["mac_address"] = mac
+                oui_vendor = _lookup_oui_vendor(mac)
+                if oui_vendor:
+                    result["vendor"] = oui_vendor
+                    result["confidence"] = 70
+        elif mac:
+            result["mac_address"] = mac
+            result["detection_method"] = "netbios_mac"
+            result["confidence"] = 30
+            oui_vendor = _lookup_oui_vendor(mac)
+            if oui_vendor:
+                result["vendor"] = oui_vendor
+
+    except Exception as exc:
+        logger.debug("NetBIOS parse failed for %s: %s", ip, exc)
+
+    return result
 
 
 async def _reverse_dns(ip: str) -> str:
@@ -1074,7 +1328,13 @@ async def _snmp_sysdescr(
 # ═══════════════════════════════════════════════════════════
 
 def _get_mac_from_arp(ip: str) -> str:
-    """Read the local ARP table to find the MAC address for an IP."""
+    """Get MAC address for an IP — prefers the ARP sweep cache, falls back to live lookup."""
+    # Fast path: use pre-populated ARP cache from Layer 0 sweep
+    cached = _arp_cache.get(ip)
+    if cached:
+        return cached
+
+    # Fallback: live ARP table lookup (for single-IP scans where sweep wasn't run)
     try:
         if sys.platform == "win32":
             output = subprocess.check_output(
@@ -1121,14 +1381,27 @@ def _lookup_oui_vendor(mac: str) -> str:
 # ═══════════════════════════════════════════════════════════
 
 async def _upnp_discover(ip: str, timeout: float = 2.0) -> dict[str, Any]:
-    """Send SSDP M-SEARCH and optionally fetch the device description XML.
+    """Send SSDP M-SEARCH via multicast (+ unicast fallback) and fetch device XML.
 
     Returns dict with: vendor, device_model, os_version, firmware,
     detection_method, confidence. Empty dict on failure.
     """
     result: dict[str, Any] = {}
 
-    msearch = (
+    SSDP_MCAST = "239.255.255.250"
+
+    # Multicast M-SEARCH (standard SSDP)
+    msearch_mcast = (
+        "M-SEARCH * HTTP/1.1\r\n"
+        f"HOST: {SSDP_MCAST}:1900\r\n"
+        "MAN: \"ssdp:discover\"\r\n"
+        "MX: 2\r\n"
+        "ST: upnp:rootdevice\r\n"
+        "\r\n"
+    ).encode()
+
+    # Unicast M-SEARCH (direct to host)
+    msearch_unicast = (
         "M-SEARCH * HTTP/1.1\r\n"
         f"HOST: {ip}:1900\r\n"
         "MAN: \"ssdp:discover\"\r\n"
@@ -1137,39 +1410,63 @@ async def _upnp_discover(ip: str, timeout: float = 2.0) -> dict[str, Any]:
         "\r\n"
     ).encode()
 
+    data = None
     loop = asyncio.get_event_loop()
-    try:
-        transport, _ = await asyncio.wait_for(
-            loop.create_datagram_endpoint(
-                lambda: asyncio.DatagramProtocol(),
-                remote_addr=(ip, 1900),
-            ),
-            timeout=timeout,
-        )
-    except Exception:
-        return result
 
+    # Try 1: Multicast M-SEARCH (reaches devices that only listen on multicast)
     try:
-        transport.sendto(msearch)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(0)
+        sock.bind(("", 0))  # Ephemeral port
+        # Set multicast TTL
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        sock.sendto(msearch_mcast, (SSDP_MCAST, 1900))
 
-        # Wait for response
-        data = None
         start = time.monotonic()
         while time.monotonic() - start < timeout:
             await asyncio.sleep(0.15)
             try:
-                sock = transport.get_extra_info("socket")
-                if sock:
-                    sock.setblocking(False)
-                    try:
-                        data, _ = sock.recvfrom(4096)
-                        break
-                    except (BlockingIOError, OSError):
-                        pass
-            except Exception:
+                raw, addr = sock.recvfrom(4096)
+                if addr[0] == ip:
+                    data = raw
+                    break
+            except (BlockingIOError, OSError):
                 pass
-    finally:
-        transport.close()
+        sock.close()
+    except Exception:
+        pass
+
+    # Try 2: Unicast fallback if multicast didn't reach the host
+    if not data:
+        try:
+            transport, _ = await asyncio.wait_for(
+                loop.create_datagram_endpoint(
+                    lambda: asyncio.DatagramProtocol(),
+                    remote_addr=(ip, 1900),
+                ),
+                timeout=timeout,
+            )
+            try:
+                transport.sendto(msearch_unicast)
+                start = time.monotonic()
+                while time.monotonic() - start < timeout:
+                    await asyncio.sleep(0.15)
+                    try:
+                        s = transport.get_extra_info("socket")
+                        if s:
+                            s.setblocking(False)
+                            try:
+                                data, _ = s.recvfrom(4096)
+                                break
+                            except (BlockingIOError, OSError):
+                                pass
+                    except Exception:
+                        pass
+            finally:
+                transport.close()
+        except Exception:
+            pass
 
     if not data:
         return result
@@ -1252,52 +1549,80 @@ async def _upnp_discover(ip: str, timeout: float = 2.0) -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════
 
 async def _mdns_probe(ip: str, timeout: float = 2.0) -> dict[str, Any]:
-    """Send mDNS query to discover Apple/Google/printer devices.
+    """Send mDNS query via multicast 224.0.0.251 (+ unicast fallback).
 
     Returns dict with: vendor, device_model, detection_method, confidence.
     """
     result: dict[str, Any] = {}
 
-    # Build a minimal mDNS query for _services._dns-sd._udp.local
-    # DNS query for _http._tcp.local (PTR)
-    query_name = b"\x05_http\x04_tcp\x05local\x00"
-    # DNS header: ID=0, flags=0, QD=1, AN=0, NS=0, AR=0
-    dns_header = struct.pack(">HHHHHH", 0, 0, 1, 0, 0, 0)
-    # Question: name + type PTR (12) + class IN (1) with unicast bit
-    question = query_name + struct.pack(">HH", 12, 0x8001)
-    mdns_query = dns_header + question
+    MDNS_MCAST = "224.0.0.251"
+    MDNS_PORT = 5353
 
-    loop = asyncio.get_event_loop()
-    try:
-        transport, _ = await asyncio.wait_for(
-            loop.create_datagram_endpoint(
-                lambda: asyncio.DatagramProtocol(),
-                remote_addr=(ip, 5353),
-            ),
-            timeout=timeout,
-        )
-    except Exception:
-        return result
+    # Build mDNS query for _http._tcp.local (PTR) + _services._dns-sd._udp.local
+    query_name_http = b"\x05_http\x04_tcp\x05local\x00"
+    query_name_svc = b"\x09_services\x07_dns-sd\x04_udp\x05local\x00"
+    # DNS header: ID=0, flags=0, QD=2
+    dns_header = struct.pack(">HHHHHH", 0, 0, 2, 0, 0, 0)
+    question1 = query_name_http + struct.pack(">HH", 12, 0x8001)  # PTR, unicast-response
+    question2 = query_name_svc + struct.pack(">HH", 12, 0x8001)
+    mdns_query = dns_header + question1 + question2
 
+    data = None
+
+    # Try 1: Multicast to 224.0.0.251 (standard mDNS)
     try:
-        transport.sendto(mdns_query)
-        data = None
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.settimeout(0)
+        sock.bind(("", 0))
+        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+        sock.sendto(mdns_query, (MDNS_MCAST, MDNS_PORT))
+
         start = time.monotonic()
         while time.monotonic() - start < timeout:
             await asyncio.sleep(0.15)
             try:
-                sock = transport.get_extra_info("socket")
-                if sock:
-                    sock.setblocking(False)
-                    try:
-                        data, _ = sock.recvfrom(4096)
-                        break
-                    except (BlockingIOError, OSError):
-                        pass
-            except Exception:
+                raw, addr = sock.recvfrom(4096)
+                if addr[0] == ip:
+                    data = raw
+                    break
+            except (BlockingIOError, OSError):
                 pass
-    finally:
-        transport.close()
+        sock.close()
+    except Exception:
+        pass
+
+    # Try 2: Unicast fallback (direct to host)
+    if not data:
+        loop = asyncio.get_event_loop()
+        try:
+            transport, _ = await asyncio.wait_for(
+                loop.create_datagram_endpoint(
+                    lambda: asyncio.DatagramProtocol(),
+                    remote_addr=(ip, MDNS_PORT),
+                ),
+                timeout=timeout,
+            )
+            try:
+                transport.sendto(mdns_query)
+                start = time.monotonic()
+                while time.monotonic() - start < timeout:
+                    await asyncio.sleep(0.15)
+                    try:
+                        s = transport.get_extra_info("socket")
+                        if s:
+                            s.setblocking(False)
+                            try:
+                                data, _ = s.recvfrom(4096)
+                                break
+                            except (BlockingIOError, OSError):
+                                pass
+                    except Exception:
+                        pass
+            finally:
+                transport.close()
+        except Exception:
+            pass
 
     if data:
         resp_text = data.decode("utf-8", errors="replace").lower()
@@ -1309,12 +1634,13 @@ async def _mdns_probe(ip: str, timeout: float = 2.0) -> dict[str, Any]:
                       "detection_method": "mdns", "confidence": 70}
         elif "printer" in resp_text or "ipp" in resp_text:
             result = {"detection_method": "mdns", "confidence": 50}
-            # Try to find printer model
             for brand in ("hp", "brother", "epson", "canon", "xerox", "lexmark", "ricoh"):
                 if brand in resp_text:
                     result["vendor"] = brand.capitalize()
                     result["confidence"] = 65
                     break
+        elif data:  # Got *some* response — host supports mDNS
+            result = {"detection_method": "mdns", "confidence": 20}
 
     return result
 
@@ -1562,10 +1888,8 @@ async def _fingerprint_host(
     if 445 in port_numbers:
         smb_task = asyncio.create_task(_smb_ntlm_fingerprint(ip))
 
-    # Layer 2: SNMP sysDescr (only if port 161 is open)
-    snmp_task = None
-    if 161 in port_numbers:
-        snmp_task = asyncio.create_task(_snmp_sysdescr(ip))
+    # Layer 2: SNMP sysDescr — always try (UDP service, not gated on TCP port scan)
+    snmp_task = asyncio.create_task(_snmp_sysdescr(ip))
 
     # Layer 4: UPnP/SSDP (try for all hosts — many respond even without port 1900 in scan)
     upnp_task = asyncio.create_task(_upnp_discover(ip))
@@ -1580,8 +1904,11 @@ async def _fingerprint_host(
             http_task = asyncio.create_task(_http_deep_inspect(ip, hport))
             break
 
+    # Layer 9: NetBIOS Name Service (UDP 137 — discovers Windows hosts + MAC)
+    netbios_task = asyncio.create_task(_netbios_name_query(ip))
+
     # Wait for all async tasks
-    all_tasks = [t for t in [smb_task, snmp_task, upnp_task, mdns_task, http_task] if t]
+    all_tasks = [t for t in [smb_task, snmp_task, upnp_task, mdns_task, http_task, netbios_task] if t]
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)
 
@@ -1662,6 +1989,19 @@ async def _fingerprint_host(
     if banner_result:
         candidates.append(banner_result)
 
+    # Layer 9: NetBIOS Name Service
+    netbios_hostname = ""
+    if netbios_task and not netbios_task.cancelled():
+        try:
+            r = netbios_task.result()
+            if r:
+                candidates.append(r)
+                # NetBIOS can provide hostname — use it if rDNS failed
+                if r.get("hostname"):
+                    netbios_hostname = r["hostname"]
+        except Exception:
+            pass
+
     # ── Merge: pick highest confidence for each field ──
     best: dict[str, Any] = {
         "os_version": "",
@@ -1670,6 +2010,7 @@ async def _fingerprint_host(
         "firmware": "",
         "mac_address": mac or "",
         "domain": "",
+        "hostname_override": netbios_hostname,
         "detection_method": "",
         "confidence": 0,
     }
@@ -1701,6 +2042,8 @@ async def _fingerprint_host(
             best["domain"] = candidate["domain"]
         if not best["mac_address"] and candidate.get("mac_address"):
             best["mac_address"] = candidate["mac_address"]
+        if not best["hostname_override"] and candidate.get("hostname"):
+            best["hostname_override"] = candidate["hostname"]
 
     # Build composite detection_method showing all methods used
     methods_used = list(dict.fromkeys(
@@ -1965,6 +2308,16 @@ async def discover_network(
     logger.info("Starting discovery of %d hosts on %s", total, subnet)
     start_time = time.monotonic()
 
+    # Layer 0: ARP sweep — pre-populate ARP cache for MAC addresses
+    # This pings all IPs in parallel then reads the ARP table once
+    logger.info("Running ARP sweep for %d hosts...", total)
+    arp_results = await _arp_sweep(hosts_to_scan)
+    logger.info("ARP sweep complete: %d MAC addresses discovered", len(arp_results))
+
+    # Hosts found by ARP but missed by TCP/ICMP later will still get a
+    # DiscoveredHost entry (ensures phones, IoT, stealth hosts appear).
+    arp_only_ips: set[str] = set(arp_results.keys())
+
     sem = asyncio.Semaphore(MAX_CONCURRENT_HOSTS)
     discovered: list[DiscoveredHost] = []
 
@@ -1978,10 +2331,35 @@ async def discover_network(
         for host in results:
             if host is not None:
                 discovered.append(host)
+                arp_only_ips.discard(host.ip)  # Already scanned
 
         if discovery_id and discovery_id in _discovery_progress:
             _discovery_progress[discovery_id]["scanned"] = min(batch_start + len(batch), total)
             _discovery_progress[discovery_id]["found"] = len(discovered)
+
+    # Create entries for ARP-only hosts (responded to ping but had no open TCP ports)
+    for arp_ip in arp_only_ips:
+        mac = arp_results.get(arp_ip, "")
+        vendor = _lookup_oui_vendor(mac) if mac else ""
+        os_guess = "unknown"
+        if vendor:
+            vendor_lower = vendor.lower()
+            if any(kw in vendor_lower for kw in ("samsung", "google", "oneplus",
+                   "xiaomi", "huawei", "oppo", "realme", "motorola", "sony",
+                   "lg", "nokia", "honor", "amazon", "apple")):
+                os_guess = "mobile"
+            elif any(kw in vendor_lower for kw in ("tp-link", "netgear", "asus",
+                     "d-link", "linksys", "cisco", "juniper", "mikrotik",
+                     "ubiquiti", "fortinet", "arista", "meraki", "sonicwall")):
+                os_guess = "network"
+        discovered.append(DiscoveredHost(
+            ip=arp_ip,
+            mac_address=mac,
+            vendor=vendor,
+            os_guess=os_guess,
+            detection_method="arp_sweep",
+            confidence=25 if vendor else 10,
+        ))
 
     elapsed = time.monotonic() - start_time
     logger.info(
