@@ -47,32 +47,66 @@ from typing import Any
 
 logger = logging.getLogger("auditforge.discovery")
 
-# Well-known ports to probe and what they indicate
+# Well-known TCP ports to probe and what they indicate
 # fmt: off
 PROBE_PORTS: list[tuple[int, str, str]] = [
     # (port, service_name, platform_hint)
-    (22,    "SSH",          "linux"),
+    # ── Windows ──
     (135,   "MSRPC",        "windows"),
     (139,   "NetBIOS",      "windows"),
     (445,   "SMB",          "windows"),
     (3389,  "RDP",          "windows"),
     (5985,  "WinRM-HTTP",   "windows"),
     (5986,  "WinRM-HTTPS",  "windows"),
+    # ── Linux / Unix ──
+    (22,    "SSH",          "linux"),
+    (548,   "AFP",          "linux"),       # Apple Filing Protocol (macOS)
+    # ── Web ──
     (80,    "HTTP",         "unknown"),
     (443,   "HTTPS",        "unknown"),
-    (161,   "SNMP",         "network"),
+    (8080,  "HTTP-Alt",     "unknown"),
+    (8443,  "HTTPS-Alt",    "unknown"),
+    (8000,  "HTTP-Dev",     "unknown"),
+    (8888,  "HTTP-Alt2",    "unknown"),
+    (9090,  "HTTP-Mgmt",    "unknown"),
+    # ── Network devices ──
     (23,    "Telnet",       "network"),
     (830,   "NETCONF",      "network"),
+    (53,    "DNS",          "network"),
+    (514,   "Syslog",       "network"),
+    # ── Databases ──
     (1433,  "MSSQL",        "database"),
     (5432,  "PostgreSQL",   "database"),
     (1521,  "Oracle",       "database"),
     (3306,  "MySQL",        "database"),
-    (8080,  "HTTP-Alt",     "unknown"),
-    (8443,  "HTTPS-Alt",    "unknown"),
-    (53,    "DNS",          "network"),
-    (514,   "Syslog",       "network"),
+    (6379,  "Redis",        "database"),
+    (27017, "MongoDB",      "database"),
+    # ── IoT / Media / VoIP ──
+    (631,   "IPP",          "unknown"),     # Printers (Internet Printing Protocol)
+    (5060,  "SIP",          "unknown"),     # VoIP
+    (5900,  "VNC",          "unknown"),     # Remote desktop
+    (62078, "iphone-sync",  "mobile"),      # Apple iOS device sync
+    (9100,  "RAW-Print",    "unknown"),     # HP JetDirect / network printers
+    # ── Mail ──
+    (25,    "SMTP",         "unknown"),
+    (110,   "POP3",         "unknown"),
+    (143,   "IMAP",         "unknown"),
+    # ── Other ──
+    (21,    "FTP",          "unknown"),
+    (161,   "SNMP",         "network"),     # TCP SNMP (rare, but checked)
 ]
 # fmt: on
+
+# UDP ports to probe (sent a protocol-specific packet, wait for response)
+UDP_PROBE_PORTS: list[tuple[int, str, str]] = [
+    # (port, service_name, platform_hint)
+    (161,   "SNMP",         "network"),
+    (137,   "NetBIOS-NS",   "windows"),
+    (53,    "DNS",          "network"),
+    (123,   "NTP",          "network"),
+    (1900,  "SSDP",         "unknown"),
+    (5353,  "mDNS",         "unknown"),
+]
 
 # Concurrency limits
 MAX_CONCURRENT_HOSTS = 50
@@ -82,11 +116,11 @@ BANNER_READ_TIMEOUT = 3.0  # seconds to wait for a service banner
 BANNER_MAX_BYTES = 1024    # max bytes to read from a banner
 
 # Ports that send a banner immediately upon connection (no request needed)
-BANNER_PORTS_PASSIVE = {22, 21, 23, 25, 110, 143}  # SSH, FTP, Telnet, SMTP, POP3, IMAP
+BANNER_PORTS_PASSIVE = {22, 21, 23, 25, 110, 143, 5900}  # SSH, FTP, Telnet, SMTP, POP3, IMAP, VNC
 # Ports that need an HTTP request to get a useful banner
-BANNER_PORTS_HTTP = {80, 443, 8080, 8443}
+BANNER_PORTS_HTTP = {80, 443, 8080, 8443, 8000, 8888, 9090, 631, 9100}
 # Database ports that send a banner or respond to a probe
-BANNER_PORTS_DB = {3306, 5432}  # MySQL greeting, PostgreSQL
+BANNER_PORTS_DB = {3306, 5432, 6379, 27017}  # MySQL, PostgreSQL, Redis, MongoDB
 
 
 @dataclass
@@ -165,6 +199,98 @@ async def _ping_host(ip: str, timeout: float = 1.5) -> bool:
         return rc == 0
     except (asyncio.TimeoutError, OSError, FileNotFoundError):
         return False
+
+
+# ═══════════════════════════════════════════════════════════
+# UDP port probing — protocol-specific packets
+# ═══════════════════════════════════════════════════════════
+
+# Pre-built UDP probe packets for common services
+_UDP_PROBES: dict[int, tuple[bytes, str, str]] = {
+    # port: (probe_packet, service_name, platform_hint)
+    53: (
+        # DNS query for "version.bind" TXT CH (works on most DNS resolvers)
+        b"\x00\x01\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+        b"\x07version\x04bind\x00\x00\x10\x00\x03",
+        "DNS", "network",
+    ),
+    123: (
+        # NTP version request (mode 3, version 3)
+        b"\x1b" + b"\x00" * 47,
+        "NTP", "network",
+    ),
+    161: (
+        # SNMPv2c GET sysDescr.0 (community "public")
+        b"\x30\x26\x02\x01\x01\x04\x06public"
+        b"\xa0\x19\x02\x01\x01\x02\x01\x00\x02\x01\x00"
+        b"\x30\x0e\x30\x0c\x06\x08\x2b\x06\x01\x02\x01\x01\x01\x00\x05\x00",
+        "SNMP", "network",
+    ),
+    137: (
+        # NetBIOS NBSTAT wildcard query
+        b"\x00\x01\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+        b"\x20CKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\x00"
+        b"\x00\x21\x00\x01",
+        "NetBIOS-NS", "windows",
+    ),
+    1900: (
+        # SSDP M-SEARCH unicast
+        b"M-SEARCH * HTTP/1.1\r\n"
+        b"HOST: 239.255.255.250:1900\r\n"
+        b"MAN: \"ssdp:discover\"\r\n"
+        b"MX: 1\r\n"
+        b"ST: upnp:rootdevice\r\n\r\n",
+        "SSDP", "unknown",
+    ),
+    5353: (
+        # mDNS query for _http._tcp.local
+        b"\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+        b"\x05_http\x04_tcp\x05local\x00\x00\x0c\x00\x01",
+        "mDNS", "unknown",
+    ),
+}
+
+
+async def _udp_probe_host(
+    ip: str, timeout: float = 2.0
+) -> list[dict[str, Any]]:
+    """Send protocol-specific UDP probes and return list of responding ports.
+
+    Each entry is ``{"port": int, "service": str, "platform_hint": str, "proto": "udp"}``.
+    """
+    results: list[dict[str, Any]] = []
+
+    async def _probe_udp_port(port: int, packet: bytes, svc: str, hint: str) -> dict[str, Any] | None:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(0)
+            sock.sendto(packet, (ip, port))
+
+            start = time.monotonic()
+            while time.monotonic() - start < timeout:
+                await asyncio.sleep(0.15)
+                try:
+                    data, addr = sock.recvfrom(4096)
+                    if data:
+                        sock.close()
+                        return {"port": port, "service": svc, "platform_hint": hint, "proto": "udp"}
+                except (BlockingIOError, OSError):
+                    pass
+            sock.close()
+        except Exception:
+            pass
+        return None
+
+    tasks = [
+        _probe_udp_port(port, pkt, svc, hint)
+        for port, (pkt, svc, hint) in _UDP_PROBES.items()
+    ]
+    probe_results = await asyncio.gather(*tasks)
+    for r in probe_results:
+        if r is not None:
+            results.append(r)
+
+    return results
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1899,7 +2025,7 @@ async def _fingerprint_host(
 
     # Layer 6: HTTP deep inspection (for any HTTP port)
     http_task = None
-    for hport in (80, 443, 8080, 8443, 8000, 8888):
+    for hport in (80, 443, 8080, 8443, 8000, 8888, 9090, 631, 9100):
         if hport in port_numbers:
             http_task = asyncio.create_task(_http_deep_inspect(ip, hport))
             break
@@ -2058,21 +2184,28 @@ async def _fingerprint_host(
 def _guess_os(open_ports: list[dict[str, Any]]) -> str:
     """Guess the OS/platform type based on which ports are open."""
     port_numbers = {p["port"] for p in open_ports}
-    hints = [p["platform_hint"] for p in open_ports]
 
     # Strong Windows indicators
     windows_ports = {135, 139, 445, 3389, 5985, 5986}
     if port_numbers & windows_ports:
         return "windows"
 
+    # Apple / iOS device
+    if 62078 in port_numbers or 548 in port_numbers:
+        return "mobile"
+
     # Strong Linux indicator
     if 22 in port_numbers and not (port_numbers & windows_ports):
         return "linux"
 
     # Database
-    db_ports = {1433, 5432, 1521, 3306}
+    db_ports = {1433, 5432, 1521, 3306, 6379, 27017}
     if port_numbers & db_ports and not (port_numbers & windows_ports) and 22 not in port_numbers:
         return "database"
+
+    # Printer indicators
+    if port_numbers & {631, 9100}:
+        return "unknown"  # printers don't fit neatly into a category
 
     # Network device indicators
     network_ports = {23, 161, 830}
@@ -2095,6 +2228,8 @@ def _detect_connection_methods(os_guess: str, open_ports: list[dict[str, Any]]) 
         methods.append("telnet")
     if 161 in port_numbers:
         methods.append("snmp")
+    if 5900 in port_numbers:
+        methods.append("vnc")
 
     # Database-specific
     if 1433 in port_numbers:
@@ -2103,6 +2238,10 @@ def _detect_connection_methods(os_guess: str, open_ports: list[dict[str, Any]]) 
         methods.append("postgresql")
     if 1521 in port_numbers:
         methods.append("oracle")
+    if 6379 in port_numbers:
+        methods.append("redis")
+    if 27017 in port_numbers:
+        methods.append("mongodb")
 
     return methods
 
@@ -2111,11 +2250,16 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
     """Scan a single host: ping/port probe → banner grab → multi-layer fingerprint.
 
     Returns a DiscoveredHost even if no ports are open (e.g. phones, IoT)
-    as long as the host responds to ICMP ping or has an ARP entry.
+    as long as the host responds to ICMP ping, has an ARP entry, or answers
+    any UDP probe.
     """
     async with sem:
+        # Check ARP cache first — if the host responded to the ARP sweep,
+        # it's alive even if TCP/ICMP fail (phones, IoT, firewalled hosts)
+        arp_alive = ip in _arp_cache
+
         # Phase 1: Quick alive check — TCP on common ports + ICMP ping in parallel
-        quick_ports = [22, 80, 135, 443, 445, 3389, 5985]
+        quick_ports = [22, 80, 135, 443, 445, 3389, 5985, 8080, 631]
         alive_tasks: list[Any] = [_probe_port(ip, p, timeout=1.0) for p in quick_ports]
         alive_tasks.append(_ping_host(ip, timeout=1.5))
         alive_results = await asyncio.gather(*alive_tasks)
@@ -2123,7 +2267,7 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
         tcp_alive = any(alive_results[:-1])
         ping_alive = alive_results[-1]
 
-        if not tcp_alive and not ping_alive:
+        if not tcp_alive and not ping_alive and not arp_alive:
             return None  # Host appears completely down
 
         # Phase 2: Full port scan (only bother if TCP showed signs of life)
@@ -2151,6 +2295,13 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
             # Banner grabbing (only for open ports)
             if open_ports:
                 banners = await _grab_banners(ip, open_ports)
+
+        # Phase 3: UDP port probing (lightweight — always run)
+        udp_ports = await _udp_probe_host(ip)
+        for up in udp_ports:
+            # Add to open_ports if not already present from TCP scan
+            if not any(p["port"] == up["port"] for p in open_ports):
+                open_ports.append(up)
 
         hostname = await _reverse_dns(ip)
         os_guess = _guess_os(open_ports) if open_ports else "unknown"
