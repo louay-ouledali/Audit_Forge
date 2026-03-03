@@ -69,7 +69,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:
         logger.warning("Auto-backup failed (non-fatal): %s", exc)
 
+    init_db()
+
+    # ── Auto-run Alembic migrations so new columns are always present ────
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+        import os
+
+        alembic_ini = os.path.join(os.path.dirname(__file__), "alembic.ini")
+        alembic_cfg = AlembicConfig(alembic_ini)
+        alembic_command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied successfully")
+    except Exception as exc:
+        logger.warning("Alembic auto-migration failed (non-fatal): %s", exc)
+
     # Reset stale "processing" phase2 statuses left by crashed containers
+    # (must run AFTER migrations so all columns exist)
     try:
         from backend.database import SessionLocal
         from backend.models.benchmark import Benchmark
@@ -85,20 +101,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             db.close()
     except Exception as exc:
         logger.warning("Failed to reset stale statuses: %s", exc)
-    init_db()
-
-    # ── Auto-run Alembic migrations so new columns are always present ────
-    try:
-        from alembic.config import Config as AlembicConfig
-        from alembic import command as alembic_command
-        import os
-
-        alembic_ini = os.path.join(os.path.dirname(__file__), "alembic.ini")
-        alembic_cfg = AlembicConfig(alembic_ini)
-        alembic_command.upgrade(alembic_cfg, "head")
-        logger.info("Alembic migrations applied successfully")
-    except Exception as exc:
-        logger.warning("Alembic auto-migration failed (non-fatal): %s", exc)
 
     # ── Sync pre-loaded benchmark packs from backend/preloaded/ ──────────
     try:

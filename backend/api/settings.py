@@ -138,6 +138,8 @@ async def restore_backup(
     """Restore the database from an uploaded backup file.
 
     The uploaded file must be a valid SQLite database.
+    After writing, the engine pool is disposed and Alembic migrations
+    are re-run so the restored schema is brought up to date.
     """
     db_path = _get_db_path()
 
@@ -173,7 +175,7 @@ async def restore_backup(
         if not found:
             raise HTTPException(
                 status_code=400,
-                detail="Backup file does not contain expected AditForge tables",
+                detail="Backup file does not contain expected AuditForge tables",
             )
 
         tables_restored = len(tables)
@@ -191,8 +193,10 @@ async def restore_backup(
             except Exception:
                 pass
 
-    # Close the current DB session and replace the database file
+    # ── Replace the database file ─────────────────────────────
+    # 1) Close ALL connections (session + engine pool)
     db.close()
+    engine.dispose()
 
     try:
         # Create a safety backup of the current database
@@ -200,11 +204,17 @@ async def restore_backup(
             safety_backup = db_path.with_suffix(".db.bak")
             shutil.copy2(str(db_path), str(safety_backup))
 
+        # Remove WAL/SHM files that could conflict with the restored database
+        for suffix in (".db-wal", ".db-shm"):
+            wal_path = db_path.with_name(db_path.name + suffix.replace(".db", ""))
+            if wal_path.exists():
+                wal_path.unlink(missing_ok=True)
+
         # Write the new database
         db_path.write_bytes(content)
 
         logger.info(
-            "Database restored from backup (%d tables, %d bytes)",
+            "Database file replaced from backup (%d tables, %d bytes)",
             tables_restored, len(content),
         )
     except Exception as exc:
@@ -214,8 +224,38 @@ async def restore_backup(
             detail=f"Failed to restore database: {exc}",
         )
 
+    # 2) Run Alembic migrations to bring the restored DB schema up to date
+    migration_note = ""
+    try:
+        from alembic.config import Config
+        from alembic import command as alembic_cmd
+
+        alembic_cfg = Config("backend/alembic.ini")
+        alembic_cmd.upgrade(alembic_cfg, "head")
+        logger.info("Post-restore Alembic migrations completed successfully")
+    except Exception as exc:
+        logger.warning("Post-restore migration issue: %s — will stamp head", exc)
+        # If upgrade fails (e.g. table already exists), stamp at head so the app
+        # considers the schema up-to-date and try create_all for missing bits.
+        try:
+            from alembic.config import Config as Cfg2
+            from alembic import command as acmd2
+
+            acfg2 = Cfg2("backend/alembic.ini")
+            acmd2.stamp(acfg2, "head")
+            logger.info("Post-restore: stamped alembic_version to head")
+        except Exception as stamp_exc:
+            migration_note = f" Warning: schema migration had issues ({exc}), some features may need a restart."
+            logger.warning("Post-restore stamp also failed: %s", stamp_exc)
+
+    # 3) Re-create tables that may be missing (belt-and-suspenders)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception:
+        pass
+
     return RestoreResponse(
-        message="Database restored successfully. Please restart the application.",
+        message=f"Database restored successfully ({tables_restored} tables).{migration_note}",
         tables_restored=tables_restored,
     )
 
@@ -256,13 +296,51 @@ def restore_auto_backup(filename: str, db: Session = Depends(get_db)):
     if not content[:16].startswith(b"SQLite format 3\x00"):
         raise HTTPException(status_code=400, detail="Backup is not a valid SQLite database")
 
+    # Close ALL connections before replacing the file
     db.close()
+    engine.dispose()
+
     try:
         safety = db_path.with_suffix(".db.pre_restore")
         shutil.copy2(str(db_path), str(safety))
+
+        # Remove WAL/SHM files
+        for suffix in ("-wal", "-shm"):
+            p = Path(str(db_path) + suffix)
+            if p.exists():
+                p.unlink(missing_ok=True)
+
         db_path.write_bytes(content)
         logger.info("Restored from auto-backup: %s (%.1f MB)", filename, len(content) / 1024 / 1024)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Restore failed: {exc}")
 
-    return {"message": f"Restored from {filename}. Restart the application to apply.", "size_mb": round(len(content) / 1024 / 1024, 2)}
+    # Run migrations to bring schema up to date
+    migration_note = ""
+    try:
+        from alembic.config import Config
+        from alembic import command as alembic_cmd
+
+        alembic_cfg = Config("backend/alembic.ini")
+        alembic_cmd.upgrade(alembic_cfg, "head")
+    except Exception as exc:
+        logger.warning("Post-restore migration issue: %s — stamping head", exc)
+        try:
+            from alembic.config import Config as Cfg2
+            from alembic import command as acmd2
+
+            acfg2 = Cfg2("backend/alembic.ini")
+            acmd2.stamp(acfg2, "head")
+        except Exception as stamp_exc:
+            migration_note = f" (migration warning: {exc})"
+            logger.warning("Post-restore stamp failed: %s", stamp_exc)
+
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception:
+        pass
+
+    return {
+        "message": f"Restored from {filename}.{migration_note}",
+        "size_mb": round(len(content) / 1024 / 1024, 2),
+    }

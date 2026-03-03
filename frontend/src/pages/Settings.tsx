@@ -139,8 +139,15 @@ export default function Settings() {
     try {
       const result = await api.restoreBackup(file);
       setToast({ type: 'success', message: `${result.message} (${result.tables_restored} tables)` });
-    } catch {
-      setToast({ type: 'error', message: 'Failed to restore backup' });
+    } catch (err: unknown) {
+      let msg = 'Failed to restore backup';
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosErr = err as { response?: { data?: { detail?: string } } };
+        if (axiosErr.response?.data?.detail) msg = axiosErr.response.data.detail;
+      } else if (err instanceof Error) {
+        msg = err.message;
+      }
+      setToast({ type: 'error', message: msg });
     } finally {
       setRestoring(false);
       restoreFileRef.current = null;
