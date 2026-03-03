@@ -628,8 +628,8 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
           {% endif %}
           {% if f.description %}<p><span class="field-lbl">Description:</span> {{ f.description }}</p>{% endif %}
           {% if f.rationale %}<p style="background:#fefce8;border-left:3px solid #eab308;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Rationale:</strong> {{ f.rationale }}</p>{% endif %}
-          <p><span class="field-lbl">Expected:</span> <code>{{ f.expected_output }}</code></p>
-          <p><span class="field-lbl">Actual:</span> <code>{{ f.actual_output }}</code></p>
+          <p><span class="field-lbl">Expected:</span> <code>{{ f.expected_output_display|default(f.expected_output, true) }}</code>{% if f.expected_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:0.75rem;"> ({{ f.expected_output_length }} chars)</span>{% endif %}</p>
+          <p><span class="field-lbl">Actual:</span> <code>{{ f.actual_output_display|default(f.actual_output, true) }}</code>{% if f.actual_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:0.75rem;"> ({{ f.actual_output_length }} chars{% if f.actual_output_lines_hidden %}, {{ f.actual_output_lines_hidden }} lines hidden{% endif %})</span>{% endif %}</p>
           {% if f.evaluation_explanation %}<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</p>{% endif %}
           {% if f.remediation and (not section_toggles or section_toggles.get('recommendations', true)) %}<p><span class="field-lbl">Remediation:</span> {{ f.remediation }}</p>{% endif %}
           {% if f.ai_advice %}<p style="background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> {{ f.ai_advice }}</p>{% endif %}
@@ -822,8 +822,8 @@ if ($('findingsBody')) {
           fpDetail +
           (f.description ? '<p><span class="field-label">Description:</span> ' + esc(f.description) + '</p>' : '') +
           (f.rationale ? '<p style="background:#fefce8;border-left:3px solid #eab308;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Rationale:</strong> ' + esc(f.rationale) + '</p>' : '') +
-          '<p><span class="field-label">Expected:</span> <code>' + esc(f.expected_output) + '</code></p>' +
-          '<p><span class="field-label">Actual:</span> <code>' + esc(f.actual_output) + '</code></p>' +
+          '<p><span class="field-label">Expected:</span> <code>' + esc(f.expected_output_display || f.expected_output) + '</code>' + (f.expected_output_truncated ? '<span style="color:#64748b;font-style:italic;font-size:0.75rem"> (' + f.expected_output_length + ' chars)</span>' : '') + '</p>' +
+          '<p><span class="field-label">Actual:</span> <code>' + esc(f.actual_output_display || f.actual_output) + '</code>' + (f.actual_output_truncated ? '<span style="color:#64748b;font-style:italic;font-size:0.75rem"> (' + f.actual_output_length + ' chars' + (f.actual_output_lines_hidden ? ', ' + f.actual_output_lines_hidden + ' lines hidden' : '') + ')</span>' : '') + '</p>' +
           (f.evaluation_explanation ? '<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Evaluation:</strong> ' + esc(f.evaluation_explanation) + '</p>' : '') +
           (f.remediation ? '<p><span class="field-label">Remediation:</span> ' + esc(f.remediation) + '</p>' : '') +
           (f.ai_advice ? '<p style="background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> ' + esc(f.ai_advice) + '</p>' : '') +

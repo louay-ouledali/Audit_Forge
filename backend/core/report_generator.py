@@ -22,7 +22,7 @@ _ILLEGAL_XLSX_RE = _re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
 
 from backend.ai.llm_manager import llm_manager
 from backend.core.false_positive_detector import enrich_findings_with_fp
-from backend.core.text_utils import normalize_unicode
+from backend.core.text_utils import normalize_unicode, smart_truncate
 from backend.models.benchmark import Benchmark
 from backend.models.client import Client
 from backend.models.finding import Finding
@@ -303,6 +303,18 @@ def aggregate_report_data(
         return parts
 
     findings_rows.sort(key=_section_sort_key)
+
+    # ── Smart output truncation for display ──
+    for f in findings_rows:
+        actual_t = smart_truncate(f["actual_output"], max_chars=400)
+        expected_t = smart_truncate(f["expected_output"], max_chars=400)
+        f["actual_output_display"] = actual_t["text"]
+        f["actual_output_truncated"] = actual_t["truncated"]
+        f["actual_output_length"] = actual_t["original_length"]
+        f["actual_output_lines_hidden"] = actual_t["lines_hidden"]
+        f["expected_output_display"] = expected_t["text"]
+        f["expected_output_truncated"] = expected_t["truncated"]
+        f["expected_output_length"] = expected_t["original_length"]
 
     # ── False-positive detection ──
     findings_rows, fp_summary = enrich_findings_with_fp(findings_rows)

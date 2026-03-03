@@ -107,3 +107,76 @@ def normalize_unicode(text: str | None) -> str:
     text = _MULTI_SPACE.sub(" ", text)
 
     return text
+
+
+# ── Smart output truncation ──
+
+def smart_truncate(text: str | None, max_chars: int = 400) -> dict:
+    """Intelligently truncate long audit output, preserving context.
+
+    Unlike a blind ``text[:300]`` slice, this function:
+      - Preserves the **first 2 lines** and **last 2 lines** of multi-line output
+      - Breaks at word boundaries when possible
+      - Returns metadata about what was removed
+
+    Returns
+    -------
+    dict
+        ``{"text": str, "truncated": bool, "original_length": int, "lines_hidden": int}``
+    """
+    if not text:
+        return {"text": "", "truncated": False, "original_length": 0, "lines_hidden": 0}
+
+    original_length = len(text)
+    if original_length <= max_chars:
+        return {"text": text, "truncated": False, "original_length": original_length, "lines_hidden": 0}
+
+    lines = text.splitlines()
+
+    # For multi-line output: keep first 2 + last 2 lines if that fits
+    if len(lines) > 5:
+        head = lines[:2]
+        tail = lines[-2:]
+        head_text = "\n".join(head)
+        tail_text = "\n".join(tail)
+        combined = f"{head_text}\n[...{len(lines) - 4} lines hidden...]\n{tail_text}"
+        if len(combined) <= max_chars + 80:  # allow slight overflow for readability
+            return {
+                "text": combined,
+                "truncated": True,
+                "original_length": original_length,
+                "lines_hidden": len(lines) - 4,
+            }
+
+    # Fall back to character-level truncation at the last word boundary
+    # Keep ~75% from the start and ~25% from the end
+    head_budget = int(max_chars * 0.70)
+    tail_budget = max_chars - head_budget - 30  # 30 chars for the indicator
+
+    head_part = text[:head_budget]
+    # Try to break at a word boundary
+    last_space = head_part.rfind(' ')
+    last_newline = head_part.rfind('\n')
+    break_at = max(last_space, last_newline)
+    if break_at > head_budget * 0.5:
+        head_part = head_part[:break_at]
+
+    tail_part = text[-tail_budget:] if tail_budget > 20 else ""
+    if tail_part:
+        first_space = tail_part.find(' ')
+        first_newline = tail_part.find('\n')
+        candidates = [x for x in (first_space, first_newline) if x >= 0]
+        if candidates and min(candidates) < len(tail_part) * 0.3:
+            tail_part = tail_part[min(candidates) + 1:]
+
+    hidden_chars = original_length - len(head_part) - len(tail_part)
+    indicator = f" [...{hidden_chars} chars hidden...] "
+
+    result_text = head_part + indicator + tail_part if tail_part else head_part + f" [...truncated, {original_length} chars total]"
+
+    return {
+        "text": result_text.strip(),
+        "truncated": True,
+        "original_length": original_length,
+        "lines_hidden": 0,
+    }

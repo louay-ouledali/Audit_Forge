@@ -814,8 +814,8 @@
     {% if f.rationale %}
     <div class="rationale-box"><strong>Rationale:</strong> {{ f.rationale }}</div>
     {% endif %}
-    <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
-    <p><span class="field-label">Actual:</span> <code>{{ f.actual_output[:300] }}{% if f.actual_output | length > 300 %}<span style="color:#ef4444; font-style:italic;"> [...truncated, {{ f.actual_output | length }} chars total]</span>{% endif %}</code></p>
+    <p><span class="field-label">Expected:</span> <code>{{ f.expected_output_display|default(f.expected_output, true) }}</code>{% if f.expected_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:7.5px;"> ({{ f.expected_output_length }} chars)</span>{% endif %}</p>
+    <p><span class="field-label">Actual:</span> <code class="output-val">{{ f.actual_output_display|default(f.actual_output, true) }}</code>{% if f.actual_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:7.5px;"> ({{ f.actual_output_length }} chars{% if f.actual_output_lines_hidden %}, {{ f.actual_output_lines_hidden }} lines hidden{% endif %})</span>{% endif %}</p>
     {% if f.evaluation_explanation %}
     <div class="eval-box"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</div>
     {% endif %}
@@ -882,8 +882,8 @@
         {% if f.rationale %}
         <div class="rationale-box"><strong>Rationale:</strong> {{ f.rationale }}</div>
         {% endif %}
-        <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
-        <p><span class="field-label">Actual:</span> <code>{{ f.actual_output[:300] }}{% if f.actual_output | length > 300 %}<span style="color:#ef4444; font-style:italic;"> [...truncated, {{ f.actual_output | length }} chars total]</span>{% endif %}</code></p>
+        <p><span class="field-label">Expected:</span> <code>{{ f.expected_output_display|default(f.expected_output, true) }}</code>{% if f.expected_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:7.5px;"> ({{ f.expected_output_length }} chars)</span>{% endif %}</p>
+        <p><span class="field-label">Actual:</span> <code class="output-val">{{ f.actual_output_display|default(f.actual_output, true) }}</code>{% if f.actual_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:7.5px;"> ({{ f.actual_output_length }} chars{% if f.actual_output_lines_hidden %}, {{ f.actual_output_lines_hidden }} lines hidden{% endif %})</span>{% endif %}</p>
         {% if f.evaluation_explanation %}
         <div class="eval-box"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</div>
         {% endif %}
