@@ -263,6 +263,46 @@ export interface EnrichStatus {
   status: string;
 }
 
+// ── Phase 2: Custom Benchmark + AI Rule Creation ──
+
+export interface CustomBenchmarkCreate {
+  name: string;
+  version?: string;
+  platform?: string;
+  platform_family?: string;
+}
+
+export interface AIRuleCreateRequest {
+  section_number: string;
+  title: string;
+  description?: string;
+  rationale?: string;
+  severity?: string;
+  profile_applicability?: string;
+  generate_commands?: boolean;
+}
+
+export interface AIRuleCreateResponse {
+  rule_id: number;
+  section_number: string;
+  title: string;
+  commands_generated: boolean;
+  message: string;
+}
+
+export interface RuleFullUpdate {
+  title?: string;
+  description?: string;
+  rationale?: string;
+  profile_applicability?: string;
+  assessment_type?: string;
+  default_value?: string;
+  audit_description_raw?: string;
+  remediation_description_raw?: string;
+  severity?: string;
+  enabled?: boolean;
+}
+
 export interface VerifyStatus {
   status: string;
   total: number;

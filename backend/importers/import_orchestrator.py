@@ -27,6 +27,7 @@ from backend.importers.csv_parser import (
     extract_rules_from_findings,
     parse_nessus_csv,
 )
+from backend.importers.html_parser import detect_nessus_html, parse_nessus_html
 from backend.importers.benchmark_resolver import resolve_benchmark
 from backend.models.benchmark import Benchmark
 from backend.models.finding import Finding
@@ -61,7 +62,7 @@ class ImportOrchestrator:
             return "nessus_csv"
 
         # Check for Nessus HTML (characteristic CSS/structure)
-        if self._looks_like_nessus_html(content):
+        if detect_nessus_html(content):
             return "nessus_html"
 
         # Check for AuditForge JSON
@@ -131,10 +132,41 @@ class ImportOrchestrator:
             }
 
         if fmt == "nessus_html":
+            findings, platform_info = parse_nessus_html(content)
+            extracted_rules = extract_rules_from_findings(findings)
+
+            counts = _count_statuses(findings)
+
+            benchmark_exists = False
+            existing_benchmark: Benchmark | None = None
+            if platform_info.benchmark_name:
+                from backend.importers.benchmark_resolver import _try_exact_match, _try_fuzzy_match
+                existing_benchmark = _try_exact_match(platform_info, self.db)
+                if not existing_benchmark:
+                    existing_benchmark = _try_fuzzy_match(platform_info, self.db)
+                benchmark_exists = existing_benchmark is not None
+
             return {
                 "format": fmt,
                 "filename": filename,
-                "message": "Nessus HTML parsing available in Phase 2. Please use CSV export for now.",
+                "platform": platform_info.platform,
+                "platform_family": platform_info.platform_family,
+                "os_version": platform_info.os_version,
+                "benchmark_name": platform_info.benchmark_name or "Unknown benchmark",
+                "benchmark_version": platform_info.benchmark_version or "unknown",
+                "benchmark_exists": benchmark_exists,
+                "existing_benchmark_id": existing_benchmark.id if existing_benchmark else None,
+                "existing_benchmark_name": existing_benchmark.name if existing_benchmark else None,
+                "hostname": platform_info.hostname or platform_info.ip_address or "Unknown host",
+                "ip_address": platform_info.ip_address,
+                "profile_level": platform_info.profile_level,
+                "total_findings": len(findings),
+                "total_rules": len(extracted_rules),
+                "passed": counts.get("PASS", 0),
+                "failed": counts.get("FAIL", 0),
+                "not_applicable": counts.get("NOT_APPLICABLE", 0),
+                "errors": counts.get("ERROR", 0) + counts.get("MANUAL_REVIEW", 0),
+                "scheme": platform_info.scheme or "CIS",
                 "source_tool": "nessus",
             }
 
@@ -187,7 +219,8 @@ class ImportOrchestrator:
             findings, platform_info = parse_nessus_csv(content)
             extracted_rules = extract_rules_from_findings(findings)
         elif fmt == "nessus_html":
-            raise ValueError("Nessus HTML import is planned for Phase 2. Please use the CSV export for now.")
+            findings, platform_info = parse_nessus_html(content)
+            extracted_rules = extract_rules_from_findings(findings)
         else:
             raise ValueError(f"Unsupported format: '{fmt}'. Smart Import accepts Nessus CSV/HTML exports.")
 
@@ -512,17 +545,6 @@ class ImportOrchestrator:
         except Exception as exc:
             logger.warning("Failed to create ImportRecord: %s", exc)
             return None
-
-    @staticmethod
-    def _looks_like_nessus_html(content: str) -> bool:
-        """Check if content looks like a Nessus HTML report."""
-        head = content[:5000].lower()
-        return (
-            "<html" in head
-            and ("nessus" in head or "tenable" in head or "compliance" in head)
-            and ("plugin" in head or "vulnerability" in head or "failed" in head)
-        )
-
 
 def _count_statuses(findings: list[ParsedFinding]) -> dict[str, int]:
     """Count findings by status."""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from backend.importers.base import ExtractedRule, ImportResult, ParsedFinding, PlatformInfo
+from backend.importers.html_parser import detect_nessus_html, parse_nessus_html
 from backend.importers.import_orchestrator import ImportOrchestrator
 
 __all__ = [
@@ -11,4 +12,6 @@ __all__ = [
     "ImportResult",
     "ParsedFinding",
     "PlatformInfo",
+    "detect_nessus_html",
+    "parse_nessus_html",
 ]

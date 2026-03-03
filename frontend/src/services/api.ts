@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -157,6 +157,47 @@ export async function importBenchmark(file: File): Promise<{ benchmark_id: numbe
 
 export async function deleteBenchmark(id: number): Promise<void> {
   await api.delete(`/benchmarks/${id}`);
+}
+
+// Phase 2: Custom Benchmark + AI Rule Creation
+export async function createCustomBenchmark(payload: CustomBenchmarkCreate): Promise<{ benchmark_id: number; name: string; message: string }> {
+  const { data } = await api.post('/benchmarks/create', payload);
+  return data;
+}
+
+export async function createRuleWithAI(benchmarkId: number, payload: AIRuleCreateRequest): Promise<AIRuleCreateResponse> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/rules/create`, payload);
+  return data;
+}
+
+export async function updateRuleFull(benchmarkId: number, ruleId: number, payload: RuleFullUpdate): Promise<Rule> {
+  const { data } = await api.put(`/benchmarks/${benchmarkId}/rules/${ruleId}`, payload);
+  return data.data;
+}
+
+export async function deleteRuleFromBenchmark(benchmarkId: number, ruleId: number): Promise<void> {
+  await api.delete(`/benchmarks/${benchmarkId}/rules/${ruleId}`);
+}
+
+export async function bulkGenerateCommands(benchmarkId: number): Promise<{ message: string; total_rules: number; status: string }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/generate-commands`);
+  return data;
+}
+
+export async function exportBenchmarkFull(benchmarkId: number): Promise<Blob> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/export`, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function importBenchmarkFile(benchmarkId: number, file: File): Promise<{ message: string; rules_imported: number; commands_imported: number }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/import-benchmark`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
 }
 
 export async function getBenchmarkStatus(id: number): Promise<BenchmarkStatus> {

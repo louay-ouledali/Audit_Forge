@@ -142,3 +142,17 @@ class RuleCommandEnvelope(BaseModel):
 class RuleTagEnvelope(BaseModel):
     data: list[RuleTagResponse]
     message: str = "success"
+
+
+class RuleFullUpdate(BaseModel):
+    """Full rule update for editable benchmarks — allows editing all text fields."""
+    title: str | None = None
+    description: str | None = None
+    rationale: str | None = None
+    profile_applicability: str | None = None
+    assessment_type: str | None = None
+    default_value: str | None = None
+    audit_description_raw: str | None = None
+    remediation_description_raw: str | None = None
+    severity: str | None = None
+    enabled: bool | None = None

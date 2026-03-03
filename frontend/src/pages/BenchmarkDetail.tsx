@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X } from 'lucide-react';
-import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport } from '@/types';
+import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap } from 'lucide-react';
+import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
+import RuleEditor from '@/components/benchmark/RuleEditor';
 
 function severityBadge(severity: string) {
   const styles: Record<string, string> = {
@@ -87,6 +88,8 @@ export default function BenchmarkDetail() {
   const [unlockReason, setUnlockReason] = useState('');
   const [showUnlockForm, setShowUnlockForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showAddRule, setShowAddRule] = useState(false);
+  const benchmarkImportRef = useRef<HTMLInputElement>(null);
   const rulesImportRef = useRef<HTMLInputElement>(null);
   const commandsImportRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'validation'>('overview');
@@ -363,6 +366,71 @@ export default function BenchmarkDetail() {
     }
   };
 
+  // -- Phase 2: Editable Benchmark handlers --
+
+  const handleRuleCreated = async (result: AIRuleCreateResponse) => {
+    setShowAddRule(false);
+    setSuccessMsg(result.message + (result.commands_generated ? ' (commands generated)' : ''));
+    await fetchData();
+    await fetchRules();
+  };
+
+  const handleDeleteRule = async (ruleId: number, sectionNumber: string) => {
+    if (!window.confirm(`Delete rule ${sectionNumber}? This cannot be undone.`)) return;
+    try {
+      setActionLoading(true);
+      await api.deleteRuleFromBenchmark(benchmarkId, ruleId);
+      setSuccessMsg(`Rule ${sectionNumber} deleted`);
+      await fetchData();
+      await fetchRules();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to delete rule');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleBulkGenerateAll = async () => {
+    try {
+      setActionLoading(true);
+      const result = await api.bulkGenerateCommands(benchmarkId);
+      setSuccessMsg(result.message);
+      await fetchData();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start command generation');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleExportBenchmarkFull = async () => {
+    try {
+      const blob = await api.exportBenchmarkFull(benchmarkId);
+      const name = benchmark?.name?.replace(/ /g, '_') || 'benchmark';
+      downloadBlob(blob, `${name}.auditforge.json`);
+    } catch {
+      setError('Failed to export benchmark');
+    }
+  };
+
+  const handleImportBenchmarkFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      setActionLoading(true);
+      const result = await api.importBenchmarkFile(benchmarkId, file);
+      setError('');
+      setSuccessMsg(result.message);
+      await fetchData();
+      await fetchRules();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to import benchmark file');
+    } finally {
+      setActionLoading(false);
+      if (benchmarkImportRef.current) benchmarkImportRef.current.value = '';
+    }
+  };
+
   const handleExpandRule = async (ruleId: number) => {
     if (expandedRule === ruleId) {
       setExpandedRule(null);
@@ -515,6 +583,16 @@ export default function BenchmarkDetail() {
         {benchmark.source === 'nessus_reconstructed' && (
           <span className={`${benchmark.is_ready ? '' : 'ml-auto'} inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-400`}>
             Nessus Import
+          </span>
+        )}
+        {benchmark.source === 'custom' && (
+          <span className={`${benchmark.is_ready ? '' : 'ml-auto'} inline-flex items-center gap-1 rounded-full bg-sky-500/10 px-3 py-1 text-sm font-medium text-sky-400`}>
+            Custom
+          </span>
+        )}
+        {benchmark.is_editable && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-3 py-1 text-sm font-medium text-amber-400">
+            Editable
           </span>
         )}
       </div>
@@ -858,8 +936,50 @@ export default function BenchmarkDetail() {
       )}
 
       {/* Rules Section */}
-      {activeTab === 'rules' && benchmark.phase1_status === 'completed' && (
-        <div className="rounded-xl border border-dark-border bg-dark-card animate-in fade-in slide-in-from-bottom-2 duration-300">
+      {activeTab === 'rules' && (benchmark.phase1_status === 'completed' || benchmark.source === 'custom') && (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {/* Editable Benchmark Toolbar */}
+          {benchmark.is_editable && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+              <span className="text-xs font-medium text-amber-400 mr-2">Benchmark Studio</span>
+              <button
+                onClick={() => setShowAddRule(true)}
+                disabled={showAddRule}
+                className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50"
+              >
+                <Plus className="h-3 w-3" /> Add Rule
+              </button>
+              <button
+                onClick={handleBulkGenerateAll}
+                disabled={actionLoading || benchmark.phase2_status === 'processing'}
+                className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+              >
+                <Zap className="h-3 w-3" /> Generate All Commands
+              </button>
+              <button
+                onClick={handleExportBenchmarkFull}
+                className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white"
+              >
+                <Download className="h-3 w-3" /> Export .auditforge.json
+              </button>
+              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                <Upload className="h-3 w-3" /> Import Rules
+                <input ref={benchmarkImportRef} type="file" accept=".json" className="hidden" onChange={handleImportBenchmarkFile} disabled={actionLoading} />
+              </label>
+            </div>
+          )}
+
+          {/* Add Rule Form */}
+          {showAddRule && benchmark.is_editable && (
+            <RuleEditor
+              benchmarkId={benchmarkId}
+              onRuleCreated={handleRuleCreated}
+              onCancel={() => setShowAddRule(false)}
+              existingSections={rules.map(r => r.section_number)}
+            />
+          )}
+
+          <div className="rounded-xl border border-dark-border bg-dark-card">
           <div className="border-b border-dark-border p-4">
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-lg font-medium text-white">Rules</h3>
@@ -899,7 +1019,7 @@ export default function BenchmarkDetail() {
                 <div key={rule.id}>
                   <button
                     onClick={() => handleExpandRule(rule.id)}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-dark-elevated"
+                    className="group flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-dark-elevated"
                   >
                     <span className="min-w-[60px] text-sm font-mono text-dark-secondary">{rule.section_number}</span>
                     <span className="flex-1 text-sm font-medium text-white">{rule.title}</span>
@@ -915,6 +1035,22 @@ export default function BenchmarkDetail() {
                     )}
                     {rule.source === 'cis_extract' && (
                       <span className="rounded bg-ey-yellow/10 px-2 py-0.5 text-[10px] font-medium text-ey-yellow">CIS</span>
+                    )}
+                    {rule.source === 'manual' && (
+                      <span className="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400">manual</span>
+                    )}
+                    {rule.source === 'imported' && (
+                      <span className="rounded bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">imported</span>
+                    )}
+                    {benchmark.is_editable && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.id, rule.section_number); }}
+                        disabled={actionLoading}
+                        className="rounded p-1 text-dark-muted hover:bg-red-500/10 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                        title="Delete rule"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     )}
                     {expandedRule === rule.id ? <ChevronUp className="h-4 w-4 text-dark-muted" /> : <ChevronDown className="h-4 w-4 text-dark-muted" />}
                   </button>
@@ -1140,6 +1276,7 @@ export default function BenchmarkDetail() {
               ))
             )}
           </div>
+        </div>
         </div>
       )
       }

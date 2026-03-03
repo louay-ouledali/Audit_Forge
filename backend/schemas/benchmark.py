@@ -23,6 +23,12 @@ class BenchmarkResponse(BaseModel):
     is_ready: bool = False
     status: str = "active"
     notes: str | None = None
+    # Phase 1 / Benchmark Studio fields
+    is_editable: bool = False
+    parent_benchmark_id: int | None = None
+    migration_readiness: float | None = None
+    source: str | None = None
+    source_details: str | None = None
 
 
 class BenchmarkDetailEnvelope(BaseModel):
@@ -98,4 +104,62 @@ class ValidationResultItem(BaseModel):
 class ValidationResultsResponse(BaseModel):
     data: list[ValidationResultItem]
     total: int
+
+
+# ── Phase 2: Custom Benchmark + AI Rule Creation ──
+
+
+class CustomBenchmarkCreate(BaseModel):
+    """Create a new custom (editable) benchmark."""
+    name: str
+    version: str = "1.0"
+    platform: str = "Windows"
+    platform_family: str = "Windows"
+
+
+class CustomBenchmarkResponse(BaseModel):
+    benchmark_id: int
+    name: str
+    message: str = "Custom benchmark created"
+
+
+class AIRuleCreateRequest(BaseModel):
+    """Create a new rule with AI-generated commands."""
+    section_number: str
+    title: str
+    description: str | None = None
+    rationale: str | None = None
+    severity: str = "medium"
+    profile_applicability: str | None = None
+    generate_commands: bool = True
+
+
+class AIRuleCreateResponse(BaseModel):
+    rule_id: int
+    section_number: str
+    title: str
+    commands_generated: bool = False
+    message: str = "Rule created"
+
+
+class BulkGenerateRequest(BaseModel):
+    """Request bulk command generation for rules without commands."""
+    concurrency: int = 3
+
+
+class BulkGenerateResponse(BaseModel):
+    message: str
+    total_rules: int = 0
+    commands_generated: int = 0
+    status: str = "started"
+
+
+class BenchmarkExportResponse(BaseModel):
+    """Metadata about the exported benchmark."""
+    benchmark_name: str
+    version: str
+    platform: str
+    total_rules: int
+    total_commands: int
+    export_date: str
     message: str = "success"

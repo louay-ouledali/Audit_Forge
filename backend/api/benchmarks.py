@@ -40,8 +40,15 @@ from backend.schemas.benchmark import (
     ValidationResultItem,
     ValidationCorrection,
     VerifyStatusResponse,
+    CustomBenchmarkCreate,
+    CustomBenchmarkResponse,
+    AIRuleCreateRequest,
+    AIRuleCreateResponse,
+    BulkGenerateRequest,
+    BulkGenerateResponse,
+    BenchmarkExportResponse,
 )
-from backend.schemas.rule import VerificationReportResponse, VerificationResultsResponse
+from backend.schemas.rule import VerificationReportResponse, VerificationResultsResponse, RuleResponse, RuleFullUpdate
 
 logger = logging.getLogger("auditforge.api.benchmarks")
 
@@ -133,6 +140,404 @@ async def import_benchmark(
     background_tasks.add_task(run_phase1, benchmark.id, pdf_path)
 
     return BenchmarkImportResponse(benchmark_id=benchmark.id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 2: Custom Benchmark Creation
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.post("/create", response_model=CustomBenchmarkResponse, status_code=201)
+def create_custom_benchmark(
+    payload: CustomBenchmarkCreate,
+    db: Session = Depends(get_db),
+):
+    """Create a new custom (editable) benchmark.
+
+    Custom benchmarks start empty and can have rules added manually
+    or imported from other benchmarks via the Benchmark Studio.
+    """
+    benchmark = Benchmark(
+        name=payload.name,
+        version=payload.version,
+        platform=payload.platform,
+        platform_family=payload.platform_family,
+        source="custom",
+        is_editable=True,
+        phase1_status="completed",  # no PDF to parse
+        total_rules=0,
+    )
+    db.add(benchmark)
+    db.commit()
+    db.refresh(benchmark)
+    logger.info("Custom benchmark created: id=%d, name='%s'", benchmark.id, benchmark.name)
+    return CustomBenchmarkResponse(benchmark_id=benchmark.id, name=benchmark.name)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 2: AI-Assisted Rule Creation (within a benchmark)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.post("/{benchmark_id}/rules/create", response_model=AIRuleCreateResponse, status_code=201)
+async def create_rule_with_ai(
+    benchmark_id: int,
+    payload: AIRuleCreateRequest,
+    db: Session = Depends(get_db),
+):
+    """Create a new rule in an editable benchmark, optionally generating AI commands."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    if not benchmark.is_editable:
+        raise HTTPException(status_code=400, detail="Only editable benchmarks can have rules added manually")
+
+    # Check for duplicate section_number
+    existing = (
+        db.query(Rule)
+        .filter(Rule.benchmark_id == benchmark_id, Rule.section_number == payload.section_number)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Section {payload.section_number} already exists in this benchmark",
+        )
+
+    # Create the rule
+    rule = Rule(
+        benchmark_id=benchmark_id,
+        section_number=payload.section_number,
+        title=payload.title,
+        description=payload.description,
+        rationale=payload.rationale,
+        severity=payload.severity,
+        profile_applicability=payload.profile_applicability,
+        source="manual",
+        enabled=True,
+    )
+    db.add(rule)
+    db.flush()
+
+    # Update benchmark rule count
+    benchmark.total_rules = (benchmark.total_rules or 0) + 1
+
+    commands_generated = False
+
+    if payload.generate_commands:
+        try:
+            from backend.ai.benchmark_ai import generate_commands_for_batch
+
+            rules_batch = [{
+                "section_number": rule.section_number,
+                "title": rule.title,
+                "audit_description_raw": payload.description or "",
+                "remediation_description_raw": payload.rationale or "",
+            }]
+
+            results = await generate_commands_for_batch(
+                rules_batch,
+                platform=benchmark.platform,
+                platform_family=benchmark.platform_family,
+            )
+
+            if results:
+                result = results[0]
+                cmd = RuleCommand(
+                    rule_id=rule.id,
+                    audit_command=result.get("audit_command", ""),
+                    expected_output_regex=result.get("expected_output_regex", ""),
+                    expected_output_description=result.get("expected_output_description", ""),
+                    remediation_command=result.get("remediation_command", ""),
+                    remediation_description=result.get("remediation_description", ""),
+                    status="generated",
+                    source=result.get("source", "llm_generated"),
+                )
+                db.add(cmd)
+                commands_generated = True
+        except Exception as exc:
+            logger.warning("AI command generation failed for rule %s: %s", rule.section_number, exc)
+
+    db.commit()
+    db.refresh(rule)
+
+    return AIRuleCreateResponse(
+        rule_id=rule.id,
+        section_number=rule.section_number,
+        title=rule.title,
+        commands_generated=commands_generated,
+    )
+
+
+@router.put("/{benchmark_id}/rules/{rule_id}", response_model=dict)
+def update_rule_full(
+    benchmark_id: int,
+    rule_id: int,
+    payload: RuleFullUpdate,
+    db: Session = Depends(get_db),
+):
+    """Full rule update for editable benchmarks — allows editing all text fields."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    if not benchmark.is_editable:
+        raise HTTPException(status_code=400, detail="Only rules in editable benchmarks can be fully edited")
+
+    rule = db.query(Rule).filter(Rule.id == rule_id, Rule.benchmark_id == benchmark_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found in this benchmark")
+
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(rule, field, value)
+
+    db.commit()
+    db.refresh(rule)
+    return {"data": RuleResponse.model_validate(rule), "message": "Rule updated"}
+
+
+@router.delete("/{benchmark_id}/rules/{rule_id}")
+def delete_rule_from_benchmark(
+    benchmark_id: int,
+    rule_id: int,
+    db: Session = Depends(get_db),
+):
+    """Delete a rule from an editable benchmark."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    if not benchmark.is_editable:
+        raise HTTPException(status_code=400, detail="Only rules in editable benchmarks can be deleted")
+
+    rule = db.query(Rule).filter(Rule.id == rule_id, Rule.benchmark_id == benchmark_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found in this benchmark")
+
+    db.delete(rule)
+    benchmark.total_rules = max(0, (benchmark.total_rules or 0) - 1)
+    db.commit()
+    return {"message": f"Rule {rule.section_number} deleted"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 2: Bulk AI Command Generation
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.post("/{benchmark_id}/generate-commands", response_model=BulkGenerateResponse)
+async def bulk_generate_commands(
+    benchmark_id: int,
+    background_tasks: BackgroundTasks,
+    payload: BulkGenerateRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    """Start bulk AI command generation for all rules without commands.
+
+    Uses the existing Phase 2 enrichment pipeline (generate_commands_for_batch)
+    to create audit + remediation commands for every rule that doesn't have one yet.
+    """
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    if benchmark.phase2_status == "processing":
+        raise HTTPException(status_code=409, detail="Enrichment is already running")
+
+    # Count rules without commands
+    rules_needing_commands = (
+        db.query(Rule)
+        .outerjoin(RuleCommand, Rule.id == RuleCommand.rule_id)
+        .filter(Rule.benchmark_id == benchmark_id, RuleCommand.id.is_(None))
+        .count()
+    )
+
+    if rules_needing_commands == 0:
+        return BulkGenerateResponse(
+            message="All rules already have commands",
+            total_rules=benchmark.total_rules or 0,
+            commands_generated=0,
+            status="already_complete",
+        )
+
+    # Start enrichment via existing Phase 2 pipeline
+    benchmark.phase2_status = "processing"
+    db.commit()
+
+    background_tasks.add_task(run_phase2, benchmark_id)
+
+    return BulkGenerateResponse(
+        message=f"Started command generation for {rules_needing_commands} rules",
+        total_rules=rules_needing_commands,
+        status="started",
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Phase 2: Benchmark Export (.auditforge.json)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/{benchmark_id}/export")
+def export_benchmark(benchmark_id: int, db: Session = Depends(get_db)):
+    """Export a complete benchmark as .auditforge.json (rules + commands + metadata)."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    rules = db.query(Rule).filter(Rule.benchmark_id == benchmark_id).order_by(Rule.section_number).all()
+    commands = {
+        rc.rule_id: rc
+        for rc in db.query(RuleCommand).filter(
+            RuleCommand.rule_id.in_([r.id for r in rules])
+        ).all()
+    }
+
+    export_data = {
+        "format": "auditforge_benchmark",
+        "format_version": "2.0",
+        "export_date": datetime.now(timezone.utc).isoformat(),
+        "benchmark": {
+            "name": benchmark.name,
+            "version": benchmark.version,
+            "platform": benchmark.platform,
+            "platform_family": benchmark.platform_family,
+            "source": benchmark.source,
+            "total_rules": benchmark.total_rules,
+        },
+        "rules": [],
+    }
+
+    for rule in rules:
+        rule_data: dict = {
+            "section_number": rule.section_number,
+            "title": rule.title,
+            "description": rule.description,
+            "rationale": rule.rationale,
+            "profile_applicability": rule.profile_applicability,
+            "assessment_type": rule.assessment_type,
+            "default_value": rule.default_value,
+            "audit_description_raw": rule.audit_description_raw,
+            "remediation_description_raw": rule.remediation_description_raw,
+            "severity": rule.severity,
+            "framework_mappings": rule.framework_mappings,
+        }
+
+        cmd = commands.get(rule.id)
+        if cmd:
+            rule_data["command"] = {
+                "audit_command": cmd.audit_command,
+                "expected_output_regex": cmd.expected_output_regex,
+                "expected_output_description": cmd.expected_output_description,
+                "remediation_command": cmd.remediation_command,
+                "remediation_description": cmd.remediation_description,
+                "source": cmd.source,
+                "status": cmd.status,
+            }
+
+        export_data["rules"].append(rule_data)
+
+    content = json.dumps(export_data, indent=2, default=str)
+    safe_name = benchmark.name.replace(" ", "_")
+    filename = f"{safe_name}_v{benchmark.version}.auditforge.json"
+
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{benchmark_id}/import-benchmark")
+async def import_benchmark_file(
+    benchmark_id: int,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """Import rules (and commands) from an .auditforge.json file into this benchmark.
+
+    Only allowed for editable benchmarks.
+    """
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    if not benchmark.is_editable:
+        raise HTTPException(status_code=400, detail="Only editable benchmarks can import rules")
+
+    content = await file.read()
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+
+    if data.get("format") != "auditforge_benchmark":
+        raise HTTPException(status_code=400, detail="Invalid file format — expected auditforge_benchmark")
+
+    rules_data = data.get("rules", [])
+    if not rules_data:
+        raise HTTPException(status_code=400, detail="No rules found in file")
+
+    # Get existing section numbers to avoid duplicates
+    existing_sections = set(
+        r.section_number
+        for r in db.query(Rule.section_number).filter(Rule.benchmark_id == benchmark_id).all()
+    )
+
+    imported = 0
+    commands_imported = 0
+
+    for rd in rules_data:
+        sec = rd.get("section_number", "")
+        if not sec or sec in existing_sections:
+            continue
+
+        rule = Rule(
+            benchmark_id=benchmark_id,
+            section_number=sec,
+            title=rd.get("title", sec),
+            description=rd.get("description"),
+            rationale=rd.get("rationale"),
+            profile_applicability=rd.get("profile_applicability"),
+            assessment_type=rd.get("assessment_type"),
+            default_value=rd.get("default_value"),
+            audit_description_raw=rd.get("audit_description_raw"),
+            remediation_description_raw=rd.get("remediation_description_raw"),
+            severity=rd.get("severity", "medium"),
+            framework_mappings=rd.get("framework_mappings"),
+            source="imported",
+        )
+        db.add(rule)
+        db.flush()
+        imported += 1
+        existing_sections.add(sec)
+
+        cmd_data = rd.get("command")
+        if cmd_data:
+            cmd = RuleCommand(
+                rule_id=rule.id,
+                audit_command=cmd_data.get("audit_command", ""),
+                expected_output_regex=cmd_data.get("expected_output_regex", ""),
+                expected_output_description=cmd_data.get("expected_output_description", ""),
+                remediation_command=cmd_data.get("remediation_command", ""),
+                remediation_description=cmd_data.get("remediation_description", ""),
+                source=cmd_data.get("source", "imported"),
+                status=cmd_data.get("status", "generated"),
+            )
+            db.add(cmd)
+            commands_imported += 1
+
+    benchmark.total_rules = (benchmark.total_rules or 0) + imported
+    db.commit()
+
+    logger.info(
+        "Imported %d rules (%d with commands) into benchmark %d",
+        imported, commands_imported, benchmark_id,
+    )
+
+    return {
+        "message": f"Imported {imported} rules ({commands_imported} with commands)",
+        "rules_imported": imported,
+        "commands_imported": commands_imported,
+    }
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkDetailEnvelope)

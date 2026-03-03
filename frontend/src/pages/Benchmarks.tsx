@@ -4,7 +4,7 @@ import {
   Upload, Trash2, RefreshCw, ChevronRight, ChevronLeft, Database,
   Monitor, Server, Network, Cloud, AppWindow, Smartphone, GitBranch,
   Box, Shield, Laptop, Globe, HardDrive, Flame, Router,
-  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List
+  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List, Plus
 } from 'lucide-react';
 import type { CatalogCategory, CatalogVendor, ProductLine, BenchmarkCatalog, CatalogBenchmark } from '@/types';
 import * as api from '@/services/api';
@@ -254,6 +254,9 @@ function BenchmarkRow({ benchmark, onNavigate, onDelete }: { benchmark: CatalogB
           {benchmark.source === 'imported' && !['preloaded', 'nessus_reconstructed'].includes(benchmark.source) && (
             <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">Imported</span>
           )}
+          {benchmark.source === 'custom' && (
+            <span className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">Custom</span>
+          )}
         </div>
         <div className="mt-1 flex items-center gap-3 text-xs text-dark-secondary">
           <span>{benchmark.total_rules} rules</span>
@@ -324,6 +327,11 @@ export default function Benchmarks() {
   const [searchQuery, setSearchQuery] = useState('');
   const [nav, setNav] = useState<NavState>({ level: 'categories' });
   const [viewMode, setViewMode] = useState<'hierarchy' | 'flat'>('hierarchy');
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newBenchmarkName, setNewBenchmarkName] = useState('');
+  const [newBenchmarkPlatform, setNewBenchmarkPlatform] = useState('Windows');
+  const [newBenchmarkFamily, setNewBenchmarkFamily] = useState('Windows');
+  const [creating, setCreating] = useState(false);
 
   const allBenchmarksFlat = useMemo(() => {
     if (!catalog) return [];
@@ -353,6 +361,27 @@ export default function Benchmarks() {
     if (!window.confirm('Delete this benchmark and all associated data?')) return;
     try { await api.deleteBenchmark(id); await fetchCatalog(); }
     catch { setError('Failed to delete benchmark'); }
+  };
+
+  /* Create Custom Benchmark */
+  const handleCreateCustom = async () => {
+    if (!newBenchmarkName.trim()) return;
+    setCreating(true); setError('');
+    try {
+      const result = await api.createCustomBenchmark({
+        name: newBenchmarkName.trim(),
+        platform: newBenchmarkPlatform,
+        platform_family: newBenchmarkFamily,
+      });
+      setShowCreateDialog(false);
+      setNewBenchmarkName('');
+      await fetchCatalog();
+      navigate(`/benchmarks/${result.benchmark_id}`);
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to create benchmark');
+    } finally {
+      setCreating(false);
+    }
   };
 
   /* Navigation helpers */
@@ -403,6 +432,10 @@ export default function Benchmarks() {
           <button onClick={fetchCatalog} className="rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors">
             <RefreshCw className="h-4 w-4" />
           </button>
+          <button onClick={() => setShowCreateDialog(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-ey-yellow/30 bg-ey-yellow/10 px-4 py-2 text-sm font-medium text-ey-yellow hover:bg-ey-yellow/20 transition-colors">
+            <Plus className="h-4 w-4" /> Custom Benchmark
+          </button>
           <button onClick={() => fileRef.current?.click()} disabled={uploading}
             className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-colors">
             <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Import Benchmark'}
@@ -416,6 +449,58 @@ export default function Benchmarks() {
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span className="flex-1">{error}</span>
           <button onClick={() => setError('')} className="shrink-0 p-0.5 hover:text-red-300"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      )}
+
+      {/* Create Custom Benchmark Dialog */}
+      {showCreateDialog && (
+        <div className="rounded-xl border border-ey-yellow/30 bg-dark-card p-5 space-y-4">
+          <h3 className="text-base font-semibold text-white flex items-center gap-2">
+            <Plus className="h-5 w-5 text-ey-yellow" /> Create Custom Benchmark
+          </h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-3">
+              <label className="block text-xs text-dark-secondary mb-1">Benchmark Name *</label>
+              <input type="text" value={newBenchmarkName} onChange={(e) => setNewBenchmarkName(e.target.value)}
+                placeholder="e.g. My Custom Windows Hardening v1.0"
+                className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20" />
+            </div>
+            <div>
+              <label className="block text-xs text-dark-secondary mb-1">Platform</label>
+              <select value={newBenchmarkPlatform} onChange={(e) => setNewBenchmarkPlatform(e.target.value)}
+                className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20">
+                <option value="Windows">Windows</option>
+                <option value="Linux">Linux</option>
+                <option value="macOS">macOS</option>
+                <option value="Network">Network Device</option>
+                <option value="Cloud">Cloud Provider</option>
+                <option value="Database">Database</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-dark-secondary mb-1">Platform Family</label>
+              <select value={newBenchmarkFamily} onChange={(e) => setNewBenchmarkFamily(e.target.value)}
+                className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20">
+                <option value="Windows">Windows</option>
+                <option value="Unix">Unix</option>
+                <option value="Network">Network</option>
+                <option value="Cloud">Cloud</option>
+                <option value="Database">Database</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={handleCreateCustom} disabled={creating || !newBenchmarkName.trim()}
+              className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-colors">
+              {creating ? 'Creating...' : 'Create Benchmark'}
+            </button>
+            <button onClick={() => { setShowCreateDialog(false); setNewBenchmarkName(''); }}
+              className="rounded-lg border border-dark-border px-4 py-2 text-sm text-dark-secondary hover:bg-dark-overlay hover:text-white transition-colors">
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
