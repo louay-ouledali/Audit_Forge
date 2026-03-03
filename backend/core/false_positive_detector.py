@@ -10,8 +10,9 @@ Detection strategies:
   3. Multi-value output ambiguity  (multiple lines when single expected)
   4. Known Windows / Linux edge-case patterns
   5. Auditor override signals  (manual overrides suggest prior FP)
-  6. Default-value match  (actual matches documented default)
+  6. Default-value match  (actual matches documented default — fuzzy)
   7. Cross-finding consistency  (same rule passes on similar targets)
+  8. Semantic output comparison  (SID↔name, registry format, path normalisation)
 """
 from __future__ import annotations
 
@@ -127,6 +128,273 @@ def _gpo_equivalent(actual_val: str, expected_val: str) -> bool:
         if a in group_vals and e in group_vals:
             return True
     return False
+
+
+# ═══════════════════════════════════════════════════════════
+#  Semantic normalisation layer (Phase 2)
+# ═══════════════════════════════════════════════════════════
+
+# ── Well-known Windows SID ↔ name mapping ──
+# Covers built-in accounts, groups, and service SIDs that frequently appear
+# in CIS benchmark actual vs expected outputs.
+_SID_TO_NAME: dict[str, str] = {
+    # Built-in users
+    "s-1-5-18":  "local system",
+    "s-1-5-19":  "local service",
+    "s-1-5-20":  "network service",
+    # Built-in groups (domain-relative RIDs under S-1-5-32-*)
+    "s-1-5-32-544": "administrators",
+    "s-1-5-32-545": "users",
+    "s-1-5-32-546": "guests",
+    "s-1-5-32-547": "power users",
+    "s-1-5-32-548": "account operators",
+    "s-1-5-32-549": "server operators",
+    "s-1-5-32-550": "print operators",
+    "s-1-5-32-551": "backup operators",
+    "s-1-5-32-552": "replicators",
+    "s-1-5-32-554": "pre-windows 2000 compatible access",
+    "s-1-5-32-555": "remote desktop users",
+    "s-1-5-32-556": "network configuration operators",
+    "s-1-5-32-557": "incoming forest trust builders",
+    "s-1-5-32-558": "performance monitor users",
+    "s-1-5-32-559": "performance log users",
+    "s-1-5-32-560": "windows authorization access group",
+    "s-1-5-32-561": "terminal server license servers",
+    "s-1-5-32-562": "distributed com users",
+    "s-1-5-32-568": "iis_iusrs",
+    "s-1-5-32-569": "cryptographic operators",
+    "s-1-5-32-573": "event log readers",
+    "s-1-5-32-574": "certificate service dcom access",
+    "s-1-5-32-575": "rds remote access servers",
+    "s-1-5-32-576": "rds endpoint servers",
+    "s-1-5-32-577": "rds management servers",
+    "s-1-5-32-578": "hyper-v administrators",
+    "s-1-5-32-579": "access control assistance operators",
+    "s-1-5-32-580": "remote management users",
+    # Well-known authority SIDs
+    "s-1-0-0":     "nobody",
+    "s-1-1-0":     "everyone",
+    "s-1-2-0":     "local",
+    "s-1-3-0":     "creator owner",
+    "s-1-3-1":     "creator group",
+    "s-1-5-1":     "dialup",
+    "s-1-5-2":     "network",
+    "s-1-5-3":     "batch",
+    "s-1-5-4":     "interactive",
+    "s-1-5-6":     "service",
+    "s-1-5-7":     "anonymous logon",
+    "s-1-5-9":     "enterprise domain controllers",
+    "s-1-5-10":    "self",
+    "s-1-5-11":    "authenticated users",
+    "s-1-5-13":    "terminal server user",
+    "s-1-5-14":    "remote interactive logon",
+    "s-1-5-15":    "this organization",
+    # NT AUTHORITY / NT SERVICE prefixed
+    "s-1-5-80":    "nt service",
+    "s-1-5-83-0":  "nt virtual machine\\virtual machines",
+    # Domain-relative well-known RIDs
+    "s-1-5-21-*-500": "administrator",
+    "s-1-5-21-*-501": "guest",
+    "s-1-5-21-*-502": "krbtgt",
+    "s-1-5-21-*-512": "domain admins",
+    "s-1-5-21-*-513": "domain users",
+    "s-1-5-21-*-514": "domain guests",
+    "s-1-5-21-*-515": "domain computers",
+    "s-1-5-21-*-516": "domain controllers",
+    "s-1-5-21-*-517": "cert publishers",
+    "s-1-5-21-*-518": "schema admins",
+    "s-1-5-21-*-519": "enterprise admins",
+    "s-1-5-21-*-520": "group policy creator owners",
+}
+
+# Reverse map: name → canonical SID pattern
+_NAME_TO_SID: dict[str, str] = {v: k for k, v in _SID_TO_NAME.items()}
+
+# Common name prefixes that are semantically irrelevant
+_STRIP_PREFIXES = [
+    "builtin\\", "builtin/", "nt authority\\", "nt authority/",
+    "nt service\\", "nt service/", "local\\", "local/",
+    "computername\\", "hostname\\",
+]
+
+# Registry path variations that are semantically identical
+# All paths are normalised to the HKEY_* long form as canonical.
+_REGISTRY_ALIASES: list[tuple[str, str]] = [
+    # PowerShell provider prefixes → strip
+    ("microsoft.powershell.core\\registry::hkey_local_machine\\",
+                                        "hkey_local_machine\\"),
+    ("microsoft.powershell.core\\registry::hkey_current_user\\",
+                                        "hkey_current_user\\"),
+    ("registry::hkey_local_machine\\",  "hkey_local_machine\\"),
+    ("registry::hkey_current_user\\",   "hkey_current_user\\"),
+    ("registry::hkey_classes_root\\",   "hkey_classes_root\\"),
+    # Short aliases → long form
+    ("hklm:\\",                         "hkey_local_machine\\"),
+    ("hkcu:\\",                         "hkey_current_user\\"),
+    ("hkcr:\\",                         "hkey_classes_root\\"),
+    ("hklm\\",                          "hkey_local_machine\\"),
+    ("hkcu\\",                          "hkey_current_user\\"),
+    ("hkcr\\",                          "hkey_classes_root\\"),
+    ("hku\\",                           "hkey_users\\"),
+    ("hkcc\\",                          "hkey_current_config\\"),
+]
+
+# Common Windows value representation equivalences
+_VALUE_ALIASES: dict[str, set[str]] = {
+    "(blank)":           {"", "(empty)", "(null)", "(not set)", "(none)", "null"},
+    "(value not set)":   {"", "(blank)", "(null)", "(not set)", "(none)", "null",
+                          "(value not present)"},
+    "4294967295":        {"0xffffffff", "-1", "ffffffff", "not configured"},
+    "0":                 {"0x0", "0x00000000", "false", "disabled", "no"},
+    "1":                 {"0x1", "0x00000001", "true", "enabled", "yes"},
+}
+
+
+def _resolve_sid(text: str) -> str:
+    """Resolve a SID string to its well-known name, or return text unchanged.
+
+    Handles both exact SIDs (S-1-5-32-544) and domain-relative SIDs
+    (S-1-5-21-XXXX-XXXX-XXXX-500 → administrator).
+    """
+    sid_lower = text.lower().strip()
+    # Direct lookup
+    if sid_lower in _SID_TO_NAME:
+        return _SID_TO_NAME[sid_lower]
+    # Domain-relative SID pattern: S-1-5-21-<domain>-<RID>
+    m = re.match(r'^(s-1-5-21)-[\d]+-[\d]+-[\d]+-(\d+)$', sid_lower)
+    if m:
+        wildcard_key = f"{m.group(1)}-*-{m.group(2)}"
+        if wildcard_key in _SID_TO_NAME:
+            return _SID_TO_NAME[wildcard_key]
+    return text.lower().strip()
+
+
+def _normalize_principal(text: str) -> str:
+    """Normalize a Windows security principal name.
+
+    - Resolves SIDs to names
+    - Strips BUILTIN/, NT AUTHORITY/, hostname/ prefixes
+    - Lowercases
+    - Collapses whitespace
+    """
+    t = text.lower().strip()
+    # If it looks like a SID, resolve it
+    if t.startswith("s-1-"):
+        t = _resolve_sid(t)
+    # Strip domain/prefix qualifiers
+    for prefix in _STRIP_PREFIXES:
+        if t.startswith(prefix):
+            t = t[len(prefix):]
+            break
+    # Strip any remaining domain\\user → user
+    if "\\" in t:
+        parts = t.rsplit("\\", 1)
+        # Only strip if the left side looks like a domain/hostname (no spaces)
+        if len(parts) == 2 and " " not in parts[0]:
+            t = parts[1]
+    return t.strip()
+
+
+def _normalize_registry_path(text: str) -> str:
+    """Normalize registry path representations to a canonical form.
+
+    - Lowercases
+    - Converts short aliases (HKLM\\) to long form (HKEY_LOCAL_MACHINE\\)
+    - Strips PowerShell provider prefixes (Registry::, etc.)
+    - Normalises backslash/forward-slash
+    """
+    t = text.lower().strip()
+    # Normalise slashes
+    t = t.replace("/", "\\")
+    # Remove trailing backslash
+    t = t.rstrip("\\")
+    # Apply alias expansions (iterate longest-first is ok, they don't overlap)
+    for short, long in _REGISTRY_ALIASES:
+        if t.startswith(short):
+            t = long + t[len(short):]
+            break
+    # Remove PowerShell provider prefix if still present
+    t = re.sub(r'^(?:microsoft\.powershell\.core\\)?registry::', '', t)
+    return t.strip()
+
+
+def _normalize_value_representation(text: str) -> str:
+    """Normalize common Windows value representations.
+
+    - Hex ↔ decimal conversion
+    - Blank/null synonyms
+    - Strips REG_* type prefixes
+    - Strips leading 0x and leading zeros
+    """
+    t = text.lower().strip()
+    # Strip REG_DWORD/REG_SZ/etc. type prefixes
+    t = re.sub(r'^reg_(dword|sz|expand_sz|multi_sz|binary|qword|none)\s*:?\s*', '', t)
+    # Strip parenthetical type hints: "(REG_DWORD)" at start or end
+    t = re.sub(r'\(reg_\w+\)', '', t).strip()
+    # Check alias groups
+    for canonical, aliases in _VALUE_ALIASES.items():
+        if t == canonical or t in aliases:
+            return canonical
+    # Try hex → decimal normalisation
+    hex_m = re.match(r'^0x([0-9a-f]+)$', t)
+    if hex_m:
+        try:
+            return str(int(hex_m.group(1), 16))
+        except ValueError:
+            pass
+    return t
+
+
+def _semantic_normalize(text: str, context: str = "value") -> str:
+    """Full semantic normalisation pipeline.
+
+    Parameters
+    ----------
+    text : str
+        Raw value to normalise.
+    context : str
+        Hint about what the text represents:
+        - "principal" → SID resolution + prefix stripping
+        - "regpath"   → registry path canonicalisation
+        - "value"     → general value normalisation (default)
+    """
+    if not text:
+        return ""
+    t = text.strip()
+    if context == "principal":
+        return _normalize_principal(t)
+    if context == "regpath":
+        return _normalize_registry_path(t)
+    # General value normalisation
+    t = _normalize_value_representation(t)
+    return _normalize_for_compare(t)
+
+
+def _detect_context(actual: str, expected: str) -> str:
+    """Auto-detect the semantic context of actual/expected values.
+
+    Returns one of: "principal", "regpath", "value".
+    """
+    a = actual.lower()
+    e = expected.lower()
+    # SID detection
+    if re.search(r's-1-\d+-', a) or re.search(r's-1-\d+-', e):
+        return "principal"
+    # Principal names (BUILTIN\\, NT AUTHORITY\\, well-known group names)
+    principal_hints = [
+        "builtin\\", "nt authority\\", "nt service\\",
+        "administrators", "backup operators", "remote desktop users",
+        "authenticated users", "everyone", "local service", "network service",
+        "guests", "users", "power users", "domain admins",
+    ]
+    if any(h in a or h in e for h in principal_hints):
+        return "principal"
+    # Registry path detection
+    if any(p in a or p in e for p in [
+        "hkey_", "hklm", "hkcu", "hkcr", "registry::",
+    ]):
+        return "regpath"
+    return "value"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -529,20 +797,165 @@ def _detect_override_signal(finding: dict) -> FPSignal | None:
 
 
 def _detect_default_value_match(finding: dict) -> FPSignal | None:
-    """Detect when actual output matches the documented default value."""
+    """Detect when actual output matches the documented default value.
+
+    Uses semantic normalisation so format differences (hex vs decimal,
+    BUILTIN\\Administrators vs Administrators, etc.) don't prevent matching.
+    """
     default = (finding.get("default_value") or "").strip()
     actual = (finding.get("actual_output") or "").strip()
 
     if not default or not actual:
         return None
 
+    # Try exact (case-insensitive) first
     if actual.lower() == default.lower():
         return FPSignal(
-            reason=f"Actual output matches the CIS-documented default value ('{default}') - may be intended baseline",
+            reason=f"Actual output matches the CIS-documented default value ('{default}') — may be intended baseline",
             confidence=35,
             category="default_match",
         )
+
+    # Try semantic normalisation
+    context = _detect_context(actual, default)
+    a_norm = _semantic_normalize(actual, context)
+    d_norm = _semantic_normalize(default, context)
+    if a_norm and d_norm and a_norm == d_norm:
+        return FPSignal(
+            reason=f"Actual output semantically matches the CIS default value after normalisation "
+                   f"('{actual[:60]}' ≈ '{default[:60]}') — may be intended baseline",
+            confidence=40,
+            category="default_match",
+        )
+
+    # Try fuzzy match on normalised values
+    if a_norm and d_norm and len(a_norm) >= 4 and len(d_norm) >= 4:
+        ratio = SequenceMatcher(None, a_norm, d_norm).ratio()
+        if ratio >= 0.85:
+            return FPSignal(
+                reason=f"Actual output closely matches the CIS default value "
+                       f"({round(ratio * 100)}% similar) — may be intended baseline",
+                confidence=30,
+                category="default_match",
+            )
+
     return None
+
+
+# ═══════════════════════════════════════════════════════════
+#  Semantic output comparison (Phase 2)
+# ═══════════════════════════════════════════════════════════
+
+def _detect_semantic_match(finding: dict) -> FPSignal | None:
+    """Detect when actual and expected outputs are semantically equivalent
+    despite differing in surface representation.
+
+    Covers:
+    - SID ↔ name resolution (S-1-5-32-544 ↔ Administrators)
+    - Registry path normalisation (HKLM\\ ↔ HKEY_LOCAL_MACHINE\\)
+    - Value representation (0x1 ↔ 1, REG_DWORD: 1 ↔ 1)
+    - Principal name normalisation (BUILTIN\\Administrators ↔ Administrators)
+    - Multi-value semantic set comparison
+    """
+    actual_raw = (finding.get("actual_output") or "").strip()
+    expected_raw = (finding.get("expected_output") or "").strip()
+
+    if not actual_raw or not expected_raw:
+        return None
+
+    # Skip operator-prefixed expected values — those are numeric thresholds
+    if re.match(r'^[><=!]{1,2}\s', expected_raw):
+        return None
+
+    context = _detect_context(actual_raw, expected_raw)
+
+    # ── Single-value comparison ──
+    a_norm = _semantic_normalize(actual_raw, context)
+    e_norm = _semantic_normalize(expected_raw, context)
+
+    if not a_norm or not e_norm:
+        return None
+
+    if a_norm == e_norm:
+        return FPSignal(
+            reason=_semantic_match_reason(context, actual_raw, expected_raw),
+            confidence=70,
+            category="semantic_match",
+        )
+
+    # ── Multi-value semantic set comparison ──
+    # Split both into items and normalize each individually
+    actual_items = _split_value_list(actual_raw)
+    expected_items = _split_value_list(expected_raw)
+
+    if len(expected_items) >= 2 or len(actual_items) >= 2:
+        a_set = {_semantic_normalize(i, context) for i in actual_items if i.strip()}
+        e_set = {_semantic_normalize(i, context) for i in expected_items if i.strip()}
+        a_set.discard("")
+        e_set.discard("")
+
+        if a_set and e_set and a_set == e_set:
+            return FPSignal(
+                reason=f"Semantic match (set): actual and expected contain the same "
+                       f"{len(e_set)} items after normalisation (order/format differs)",
+                confidence=68,
+                category="semantic_match",
+            )
+
+        # Check if one is a subset of the other
+        if e_set and a_set and e_set.issubset(a_set) and len(a_set) > len(e_set):
+            extras = len(a_set) - len(e_set)
+            return FPSignal(
+                reason=f"Semantic near-match (set): actual has all {len(e_set)} expected items "
+                       f"plus {extras} extra after normalisation",
+                confidence=55,
+                category="semantic_match",
+            )
+
+        if a_set and e_set and a_set.issubset(e_set) and len(e_set) > len(a_set):
+            missing = len(e_set) - len(a_set)
+            match_pct = round(len(a_set) / len(e_set) * 100)
+            if match_pct >= 70:
+                return FPSignal(
+                    reason=f"Semantic near-match (set): {len(a_set)}/{len(e_set)} expected items present "
+                           f"({match_pct}%) after normalisation — {missing} missing",
+                    confidence=42,
+                    category="semantic_match",
+                )
+
+    # ── Cross-format fuzzy fallback ──
+    # After full semantic normalisation, try fuzzy match
+    if len(a_norm) >= 6 and len(e_norm) >= 6:
+        ratio = SequenceMatcher(None, a_norm, e_norm).ratio()
+        if ratio >= 0.88:
+            return FPSignal(
+                reason=f"Semantic near-match: {round(ratio * 100)}% similar after normalisation "
+                       f"(context: {context}) — likely a formatting difference",
+                confidence=55 if ratio >= 0.95 else 42,
+                category="semantic_match",
+            )
+
+    return None
+
+
+def _semantic_match_reason(context: str, actual: str, expected: str) -> str:
+    """Build a human-readable reason string for a semantic match."""
+    a_short = actual[:50] + ("..." if len(actual) > 50 else "")
+    e_short = expected[:50] + ("..." if len(expected) > 50 else "")
+    if context == "principal":
+        return (
+            f"Semantic match (principal): '{a_short}' and '{e_short}' resolve to "
+            f"the same security principal (SID/name equivalence)"
+        )
+    if context == "regpath":
+        return (
+            f"Semantic match (registry): '{a_short}' and '{e_short}' point to "
+            f"the same registry location (path alias)"
+        )
+    return (
+        f"Semantic match (value): '{a_short}' and '{e_short}' are equivalent "
+        f"after normalisation (format/representation difference)"
+    )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -610,6 +1023,7 @@ def analyze_finding(finding: dict, all_findings: list[dict] | None = None) -> FP
     for detector in [
         lambda f: _detect_empty_output(f),
         lambda f: _detect_near_miss(f),
+        lambda f: _detect_semantic_match(f),
         lambda f: _detect_multi_value_output(f),
         lambda f: _detect_edge_case_patterns(f),
         lambda f: _detect_override_signal(f),
