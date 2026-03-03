@@ -73,7 +73,7 @@ export default function TargetActionBar({
           <button
             onClick={onSmartImport}
             className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 hover:text-emerald-300"
-            title="Import results from a ZIP/JSON and auto-detect the target"
+            title="Import results from ZIP/JSON/CSV (Nessus) and auto-detect the target"
           >
             <FileSearch className="h-3.5 w-3.5" /> Smart Import
           </button>

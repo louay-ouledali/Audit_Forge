@@ -248,6 +248,12 @@ function BenchmarkRow({ benchmark, onNavigate, onDelete }: { benchmark: CatalogB
           {benchmark.source === 'preloaded' && (
             <span className="shrink-0 rounded bg-ey-yellow/10 px-1.5 py-0.5 text-[10px] font-medium text-ey-yellow">Preloaded</span>
           )}
+          {benchmark.source === 'nessus_reconstructed' && (
+            <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">Nessus Import</span>
+          )}
+          {benchmark.source === 'imported' && !['preloaded', 'nessus_reconstructed'].includes(benchmark.source) && (
+            <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">Imported</span>
+          )}
         </div>
         <div className="mt-1 flex items-center gap-3 text-xs text-dark-secondary">
           <span>{benchmark.total_rules} rules</span>
@@ -338,7 +344,7 @@ export default function Benchmarks() {
     const file = e.target.files?.[0]; if (!file) return;
     setUploading(true); setError('');
     try { await api.importBenchmark(file); await fetchCatalog(); }
-    catch { setError('Benchmark import failed. Ensure it is a valid CIS benchmark PDF.'); }
+    catch { setError('Benchmark import failed. Ensure it is a valid CIS benchmark PDF, Nessus CSV, or HTML export.'); }
     finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
   };
 
@@ -399,9 +405,9 @@ export default function Benchmarks() {
           </button>
           <button onClick={() => fileRef.current?.click()} disabled={uploading}
             className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-colors">
-            <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Import PDF'}
+            <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Import Benchmark'}
           </button>
-          <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={handleUpload} />
+          <input ref={fileRef} type="file" accept=".pdf,.csv,.html,.htm,.json" className="hidden" onChange={handleUpload} />
         </div>
       </div>
 

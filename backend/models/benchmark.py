@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -35,4 +35,11 @@ class Benchmark(Base):
     preloaded_version = Column(String, nullable=True)  # Pack version for upgrade tracking
     pack_hash = Column(String, nullable=True)  # SHA-256 of the .auditforge.json file
 
-    rules = relationship("Rule", back_populates="benchmark", cascade="all, delete-orphan")
+    # ── Smart Import / Benchmark Studio fields ──
+    is_editable = Column(Boolean, default=False)         # True for reconstructed/custom benchmarks
+    parent_benchmark_id = Column(Integer, ForeignKey("benchmarks.id", ondelete="SET NULL"), nullable=True)
+    migration_readiness = Column(Float, nullable=True)   # % of rules with validated commands
+    source_details = Column(Text, nullable=True)         # JSON: {import_source, auto_detected, platform_info}
+
+    rules = relationship("Rule", back_populates="benchmark", cascade="all, delete-orphan",
+                         foreign_keys="[Rule.benchmark_id]")

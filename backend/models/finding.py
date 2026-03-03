@@ -21,6 +21,10 @@ class Finding(Base):
     severity = Column(String)
     evaluation_explanation = Column(Text)  # Human-readable explanation of the comparison result
 
+    # ── Import provenance (source-agnostic, 2 columns) ──────
+    import_source = Column(String, nullable=True)      # "nessus", "qualys", "native", null
+    import_metadata = Column(Text, nullable=True)       # JSON blob: {plugin_id, source_row, ...}
+
     ai_advice = Column(Text)
     ai_advice_generated_at = Column(DateTime)
 

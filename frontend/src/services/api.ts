@@ -477,13 +477,69 @@ export interface SmartImportResponse extends ImportResultsResponse {
   benchmark_id: number;
   benchmark_name: string;
   target_created: boolean;
+  // Smart Import Phase 1 additions
+  benchmark_reconstructed?: boolean;
+  rules_matched?: number;
+  rules_created?: number;
+  fp_suspects?: number;
+  migration_readiness?: number;
+  import_record_id?: number | null;
+  not_applicable?: number;
+  warnings?: string[];
 }
 
-export async function smartImport(file: File, missionId?: number | null, clientId?: number | null): Promise<SmartImportResponse> {
+export interface SmartImportPreviewResponse {
+  format: string;
+  filename: string;
+  platform?: string;
+  platform_family?: string;
+  os_version?: string;
+  benchmark_name?: string;
+  benchmark_version?: string;
+  benchmark_exists?: boolean;
+  existing_benchmark_id?: number | null;
+  existing_benchmark_name?: string | null;
+  hostname?: string;
+  ip_address?: string;
+  profile_level?: string;
+  total_findings?: number;
+  total_rules?: number;
+  passed?: number;
+  failed?: number;
+  not_applicable?: number;
+  errors?: number;
+  scheme?: string;
+  source_tool?: string;
+  message?: string;
+}
+
+export async function smartImportPreview(file: File, clientId?: number | null): Promise<SmartImportPreviewResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (clientId) formData.append('client_id', clientId.toString());
+  const { data } = await api.post('/scans/smart-import/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function smartImport(
+  file: File,
+  missionId?: number | null,
+  clientId?: number | null,
+  options?: {
+    targetId?: number | null;
+    runFpDetection?: boolean;
+    allowBenchmarkCreation?: boolean;
+  },
+): Promise<SmartImportResponse> {
   const formData = new FormData();
   formData.append('file', file);
   if (missionId) formData.append('mission_id', missionId.toString());
   if (clientId) formData.append('client_id', clientId.toString());
+  if (options?.targetId) formData.append('target_id', options.targetId.toString());
+  if (options?.runFpDetection !== undefined) formData.append('run_fp_detection', String(options.runFpDetection));
+  if (options?.allowBenchmarkCreation !== undefined) formData.append('allow_benchmark_creation', String(options.allowBenchmarkCreation));
   const { data } = await api.post('/scans/smart-import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });

@@ -197,6 +197,12 @@ export interface Benchmark {
   is_ready: boolean;
   status: string;
   notes: string | null;
+  // Smart Import Phase 1 additions
+  is_editable?: boolean;
+  parent_benchmark_id?: number | null;
+  migration_readiness?: number | null;
+  source?: string;
+  source_details?: string | null;
 }
 
 // ── Benchmark Catalog (hierarchical classification) ──
@@ -274,6 +280,9 @@ export interface Rule {
   assessment_type: string | null;
   enabled: boolean;
   tags: RuleTag[];
+  // Smart Import Phase 1 additions
+  source?: string | null;
+  framework_mappings?: string | null;
 }
 
 export interface RuleTag {

@@ -253,6 +253,15 @@ def detect_format_and_import(
     if "RULE_START|" in stripped:
         return parse_marker_results(stripped, scan_id, benchmark_id, db)
 
+    # Check for Nessus CSV format — redirect to Smart Import orchestrator
+    from backend.importers.csv_parser import detect_nessus_csv
+    if detect_nessus_csv(stripped):
+        raise ValueError(
+            "This file appears to be a Nessus CSV export. "
+            "Please use the Smart Import feature (POST /scans/smart-import) "
+            "which supports Nessus reverse engineering."
+        )
+
     # Try JSON as fallback (might be wrapped)
     try:
         return parse_json_results(stripped, scan_id, benchmark_id, db)

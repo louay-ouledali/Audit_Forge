@@ -512,7 +512,43 @@ export default function BenchmarkDetail() {
             <CheckCircle2 className="h-4 w-4" /> Ready
           </span>
         )}
+        {benchmark.source === 'nessus_reconstructed' && (
+          <span className={`${benchmark.is_ready ? '' : 'ml-auto'} inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-400`}>
+            Nessus Import
+          </span>
+        )}
       </div>
+
+      {/* Migration Readiness Bar (for reconstructed benchmarks) */}
+      {benchmark.source === 'nessus_reconstructed' && benchmark.migration_readiness != null && (
+        <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-dark-secondary">Migration Readiness</h3>
+            <span className={`text-sm font-bold ${
+              benchmark.migration_readiness >= 80 ? 'text-emerald-400' :
+              benchmark.migration_readiness >= 50 ? 'text-amber-400' : 'text-red-400'
+            }`}>
+              {benchmark.migration_readiness.toFixed(0)}%
+            </span>
+          </div>
+          <div className="h-2.5 w-full rounded-full bg-dark-overlay overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${
+                benchmark.migration_readiness >= 80 ? 'bg-emerald-500' :
+                benchmark.migration_readiness >= 50 ? 'bg-amber-500' : 'bg-red-500'
+              }`}
+              style={{ width: `${Math.min(100, benchmark.migration_readiness)}%` }}
+            />
+          </div>
+          <p className="text-xs text-dark-muted mt-2">
+            {benchmark.migration_readiness >= 80
+              ? 'Most rules have audit commands — ready for scanning.'
+              : benchmark.migration_readiness >= 50
+              ? 'Some rules need enrichment before this benchmark can be used for scanning.'
+              : 'Run Phase 2 enrichment to generate audit commands for imported rules.'}
+          </p>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
@@ -874,6 +910,12 @@ export default function BenchmarkDetail() {
                     {rule.tags.map((t) => (
                       <span key={t.id} className="rounded bg-sky-500/10 px-2 py-0.5 text-xs text-sky-400">{t.tag_id}</span>
                     ))}
+                    {rule.source === 'nessus_import' && (
+                      <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">imported</span>
+                    )}
+                    {rule.source === 'cis_extract' && (
+                      <span className="rounded bg-ey-yellow/10 px-2 py-0.5 text-[10px] font-medium text-ey-yellow">CIS</span>
+                    )}
                     {expandedRule === rule.id ? <ChevronUp className="h-4 w-4 text-dark-muted" /> : <ChevronDown className="h-4 w-4 text-dark-muted" />}
                   </button>
                   {expandedRule === rule.id && (

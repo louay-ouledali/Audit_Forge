@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { Target } from '@/types';
 import * as api from '@/services/api';
+import type { SmartImportPreviewResponse } from '@/services/api';
 import { inputClass } from '../mission/badgeHelpers';
 import DiscoveryBar from './DiscoveryBar';
 import TargetActionBar from './TargetActionBar';
@@ -18,6 +19,8 @@ import ActiveScansPanel from './scan/ActiveScansPanel';
 import UsbBulkExportDialog from './scan/UsbBulkExportDialog';
 import PrerequisiteGuideModal from './PrerequisiteGuideModal';
 import ScanHistoryPanel from './ScanHistoryPanel';
+import ImportPreviewModal from '../import/ImportPreviewModal';
+import type { ImportOptions } from '../import/ImportPreviewModal';
 
 interface Props {
   missionId: number;
@@ -59,6 +62,13 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   // Prerequisites guide modal
   const [prereqTarget, setPrereqTarget] = useState<Target | null>(null);
   const [showPrereqs, setShowPrereqs] = useState(false);
+
+  // Smart Import Preview Modal state
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewData, setPreviewData] = useState<SmartImportPreviewResponse | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewFilename, setPreviewFilename] = useState('');
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
 
   const unassignedTargets = clientTargets.filter(
     ct => !missionTargets.some(mt => mt.id === ct.id),
@@ -183,13 +193,39 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   const handleSmartImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json,.zip';
+    input.accept = '.json,.zip,.csv,.html,.htm';
     input.multiple = true;
     input.onchange = async () => {
       const files = input.files;
       if (!files || files.length === 0) return;
       setError('');
 
+      // Check if any file is a Nessus-type file (CSV/HTML) — show preview for first one
+      const firstFile = files[0];
+      const ext = firstFile.name.split('.').pop()?.toLowerCase();
+      const isNessusType = ext === 'csv' || ext === 'html' || ext === 'htm';
+
+      if (isNessusType && files.length === 1) {
+        // Show preview modal for Nessus-type files
+        setPendingImportFile(firstFile);
+        setPreviewFilename(firstFile.name);
+        setPreviewLoading(true);
+        setShowPreviewModal(true);
+        try {
+          const preview = await api.smartImportPreview(firstFile, clientId);
+          setPreviewData(preview);
+        } catch (err: unknown) {
+          const msg = err && typeof err === 'object' && 'response' in err
+            ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail || 'Preview failed'
+            : err instanceof Error ? err.message : 'Preview failed';
+          setPreviewData({ format: 'error', filename: firstFile.name, message: msg });
+        } finally {
+          setPreviewLoading(false);
+        }
+        return;
+      }
+
+      // Legacy flow for JSON/ZIP files (or multi-file)
       let totalFindings = 0;
       let totalCompliance = 0;
       let fileCount = 0;
@@ -213,7 +249,6 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         const avgCompliance = (totalCompliance / fileCount).toFixed(1);
         scan.setError(''); // clear any scan errors
         setError('');
-        // Show brief success via error state (green would be better but reuse existing UI)
         await handleRefreshAll();
         alert(`Smart Import complete!\n\n${fileCount} file(s) imported\n${totalFindings} findings created\nAvg compliance: ${avgCompliance}%${errors.length ? '\n\nErrors:\n' + errors.join('\n') : ''}`);
       } else {
@@ -221,6 +256,30 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       }
     };
     input.click();
+  };
+
+  const handlePreviewImport = async (options: ImportOptions) => {
+    if (!pendingImportFile) return;
+    try {
+      const res = await api.smartImport(pendingImportFile, missionId, clientId, {
+        runFpDetection: options.runFpDetection,
+        allowBenchmarkCreation: options.allowBenchmarkCreation,
+        targetId: options.targetId,
+      });
+      setShowPreviewModal(false);
+      setPendingImportFile(null);
+      setPreviewData(null);
+      await handleRefreshAll();
+
+      const parts: string[] = [`Smart Import complete!`];
+      parts.push(`${res.findings_created} findings imported`);
+      if (res.benchmark_reconstructed) parts.push(`Benchmark reconstructed: ${res.benchmark_name}`);
+      if (res.fp_suspects && res.fp_suspects > 0) parts.push(`${res.fp_suspects} potential false positives flagged`);
+      if (res.warnings && res.warnings.length > 0) parts.push(`\nWarnings:\n${res.warnings.join('\n')}`);
+      alert(parts.join('\n'));
+    } catch (err) {
+      throw err; // Let the modal handle the error display
+    }
   };
 
   const handleBulkImport = async () => {
@@ -427,6 +486,16 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         target={prereqTarget}
         open={showPrereqs}
         onClose={() => { setShowPrereqs(false); setTimeout(() => setPrereqTarget(null), 300); }}
+      />
+
+      {/* ── 9. Smart Import Preview Modal ─────────────────── */}
+      <ImportPreviewModal
+        open={showPreviewModal}
+        onClose={() => { setShowPreviewModal(false); setPendingImportFile(null); setPreviewData(null); }}
+        preview={previewData}
+        loading={previewLoading}
+        filename={previewFilename}
+        onImport={handlePreviewImport}
       />
     </div>
   );

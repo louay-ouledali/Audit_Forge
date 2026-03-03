@@ -34,6 +34,10 @@ class Rule(Base):
     severity = Column(String, default="medium")
     enabled = Column(Boolean, default=True)
 
+    # ── Smart Import provenance ──
+    source = Column(String, nullable=True)                # "cis_extract", "nessus_import", "manual", null
+    framework_mappings = Column(Text, nullable=True)      # JSON: {"NIST_800_53": ["AC-3"], "HIPAA": ["164.306"], ...}
+
     # ── Pre-loaded benchmark intelligence fields ──
     narrative_group = Column(String, nullable=True)       # Key into report_profile.narrative_groups
     security_themes_json = Column(Text, nullable=True)    # JSON array of theme strings

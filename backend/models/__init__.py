@@ -5,6 +5,7 @@ from backend.models.benchmark import Benchmark
 from backend.models.client import Client
 from backend.models.discovery_cache import DiscoveryCache
 from backend.models.finding import Finding
+from backend.models.import_record import ImportRecord
 from backend.models.llm_cache import LLMCache
 from backend.models.mission import Mission
 from backend.models.mission_analysis import MissionAnalysis
@@ -25,6 +26,7 @@ __all__ = [
     "Client",
     "DiscoveryCache",
     "Finding",
+    "ImportRecord",
     "LLMCache",
     "Mission",
     "MissionAnalysis",

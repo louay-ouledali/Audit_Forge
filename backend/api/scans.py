@@ -682,18 +682,61 @@ async def import_with_new_scan(
     return {**stats, "scan_id": scan.id}
 
 
+# ── Smart Import — Preview ───────────────────────────────────
+
+
+@router.post("/smart-import/preview")
+async def smart_import_preview(
+    file: UploadFile = File(...),
+    client_id: int | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    """Preview what a Smart Import would produce WITHOUT creating anything.
+
+    Returns auto-detected platform, benchmark, finding counts, etc.
+    Used by the frontend ImportPreviewModal.
+    """
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=400, detail="File too large")
+
+    content = raw.decode("utf-8", errors="replace")
+    filename = file.filename or ""
+
+    from backend.importers.import_orchestrator import ImportOrchestrator
+    orchestrator = ImportOrchestrator(db)
+
+    try:
+        preview_data = orchestrator.preview(content, filename, client_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return preview_data
+
+
+# ── Smart Import — Execute ───────────────────────────────────
+
+
 @router.post("/smart-import")
 async def smart_import(
     mission_id: int | None = Form(None),
     client_id: int | None = Form(None),
+    target_id: int | None = Form(None),
+    run_fp_detection: bool = Form(True),
+    allow_benchmark_creation: bool = Form(True),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
     """Auto-detect target and benchmark from uploaded results, creating if needed.
 
-    Accepts a ZIP (with system_info.json + audit_results.json) or a standalone
-    audit_results.json.  The endpoint extracts system metadata, matches/creates
-    the target and benchmark, then imports findings.
+    Accepts:
+    - ZIP (with system_info.json + audit_results.json) — legacy AuditForge format
+    - Standalone audit_results.json — legacy AuditForge format
+    - Nessus CSV (.csv) — compliance scan export
+    - Nessus HTML (.html/.htm) — compliance scan report (Phase 2)
+
+    For Nessus files: uses the ImportOrchestrator pipeline (reverse engineering).
+    For legacy files: uses the existing direct import flow.
     """
     import io
     import json
@@ -704,6 +747,34 @@ async def smart_import(
         raise HTTPException(status_code=400, detail="File too large")
 
     filename = file.filename or ""
+
+    # ── Nessus file detection → delegate to ImportOrchestrator ──
+    content_str = raw.decode("utf-8", errors="replace")
+    is_nessus = (
+        filename.lower().endswith((".csv", ".html", ".htm"))
+        or _looks_like_nessus(content_str)
+    )
+
+    if is_nessus:
+        from backend.importers.import_orchestrator import ImportOrchestrator
+        orchestrator = ImportOrchestrator(db)
+
+        try:
+            result = orchestrator.execute(
+                content_str,
+                filename,
+                client_id=client_id,
+                mission_id=mission_id,
+                target_id=target_id,
+                run_fp_detection=run_fp_detection,
+                allow_benchmark_creation=allow_benchmark_creation,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        return result.to_dict()
+
+    # ── Legacy AuditForge format (ZIP / JSON) ────────────────
     system_info: dict | None = None
     result_content: str | None = None
 
@@ -1462,3 +1533,18 @@ def cancel_batch(batch_id: int, db: Session = Depends(get_db)):
         "cancelled_items": cancelled_count,
         "message": f"Cancelled {cancelled_count} pending items",
     }
+
+
+# ── Private helpers ──────────────────────────────────────────
+
+
+def _looks_like_nessus(content: str) -> bool:
+    """Quick heuristic to detect Nessus CSV or HTML content."""
+    from backend.importers.csv_parser import detect_nessus_csv
+    from backend.importers.import_orchestrator import ImportOrchestrator
+
+    if detect_nessus_csv(content):
+        return True
+    if ImportOrchestrator._looks_like_nessus_html(content):
+        return True
+    return False
