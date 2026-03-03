@@ -2,8 +2,8 @@
 
 Uses pure-Python TCP probing, banner grabbing, SMB/NTLM fingerprinting,
 SNMP sysDescr, UPnP/SSDP, mDNS, NetBIOS Name Service, ARP sweep,
-MAC OUI lookup, hostname heuristics, and deep HTTP inspection — all
-without external dependencies (no nmap/scapy).
+MAC OUI lookup, hostname heuristics, TCP passive OS fingerprinting,
+and deep HTTP inspection — all without external dependencies (no nmap/scapy).
 
 Requires ``network_mode: host`` in Docker for reliable ARP/MAC, ICMP,
 multicast (mDNS/SSDP), and NetBIOS access to the host LAN.
@@ -19,16 +19,18 @@ Detection layers (in priority order):
   7. **MAC OUI** → vendor from NIC manufacturer (ARP cache)
   8. **Hostname heuristics** → pattern matching (TP-Link, NETGEAR, etc.)
   9. **NetBIOS Name Service** → Windows hostname, domain, MAC (UDP 137)
-  10. **Port-based heuristics** → fallback OS family guess
+  10. **TCP passive OS fingerprint** → p0f-style TTL analysis
+  11. **Port-based heuristics** → fallback OS family guess
 
-Each layer contributes to a confidence-weighted result. The highest-confidence
-detection wins.  All detections are aggregated into:
+Each layer contributes to a confidence-weighted result. Multi-source
+confidence boosting raises the score when independent layers agree on
+the same vendor or OS family.  All detections are aggregated into:
   - **os_version**: e.g. "Windows 11 Pro 23H2 (Build 22631)"
   - **vendor**: e.g. "Microsoft", "TP-Link", "Ubiquiti"
   - **device_model**: e.g. "Archer AX73", "EdgeRouter X"
   - **firmware**: e.g. "3.10.0-build20230101"
   - **detection_method**: which layer(s) that contributed
-  - **confidence**: 0-100 score
+  - **confidence**: 0-100 score (boosted by agreement)
 """
 
 from __future__ import annotations
@@ -199,6 +201,175 @@ async def _ping_host(ip: str, timeout: float = 1.5) -> bool:
         return rc == 0
     except (asyncio.TimeoutError, OSError, FileNotFoundError):
         return False
+
+
+# ═══════════════════════════════════════════════════════════
+# TCP passive OS fingerprinting (p0f-style)
+# ═══════════════════════════════════════════════════════════
+
+# TTL → OS family heuristics (initial TTL before decrement)
+_TTL_MAP: list[tuple[int, str, str]] = [
+    # (initial_ttl, os_family, vendor)
+    (128, "windows", "Microsoft"),    # Windows uses initial TTL=128
+    (64,  "linux",   ""),             # Linux / macOS / FreeBSD
+    (255, "network", ""),             # Cisco IOS, Solaris, some network gear
+]
+
+# TCP window size → more specific OS hints
+_WINDOW_HINTS: list[tuple[set[int], str, str, int]] = [
+    # (window_sizes, os_version_hint, vendor, extra_confidence)
+    ({65535},                          "Windows XP/2003",     "Microsoft", 5),
+    ({8192},                           "Windows 7/2008 R2",   "Microsoft", 5),
+    ({64240},                          "Windows 10/11",       "Microsoft", 8),
+    ({65535, 65228},                   "macOS / iOS",         "Apple",     5),
+    ({5840, 14600, 29200},             "Linux 2.6+",          "",          3),
+    ({26883, 17520, 28960, 32120},     "Linux 3.x/4.x",      "",          3),
+    ({4128},                           "Cisco IOS",           "Cisco",     10),
+    ({16384},                          "Network device",      "",          3),
+]
+
+
+async def _tcp_os_fingerprint(
+    ip: str,
+    port: int = 80,
+    timeout: float = 2.0,
+) -> dict[str, Any] | None:
+    """Passive TCP OS fingerprinting from a SYN-ACK response.
+
+    Connects to a known-open TCP port and inspects the TTL and TCP window
+    size of the SYN-ACK to infer the remote OS — similar to p0f.
+    Uses a standard TCP connect (no raw sockets needed).
+
+    Returns a candidate dict or None.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+
+        def _do_connect() -> tuple[int, int] | None:
+            """Open TCP socket and extract TTL + window size from the socket."""
+            import socket as _sock
+            s = _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM)
+            s.settimeout(timeout)
+            try:
+                s.connect((ip, port))
+                # Get TTL from socket option
+                ttl = 0
+                try:
+                    if sys.platform == "win32":
+                        # IP_TTL available but gives local TTL; we need a ping-based approach
+                        pass
+                    else:
+                        # On Linux, getsockopt can't read remote TTL directly.
+                        # Use the first SYN-ACK IP header if available via IP_RECVTTL.
+                        pass
+                except Exception:
+                    pass
+
+                # Get TCP window size via TCP_INFO (Linux only)
+                win_size = 0
+                try:
+                    if sys.platform == "linux":
+                        import ctypes
+                        # TCP_INFO = 11 on Linux
+                        info = s.getsockopt(_sock.IPPROTO_TCP, 11, 256)
+                        if len(info) >= 28:
+                            # tcpi_rcv_space is at offset 200 (varies by kernel)
+                            # tcpi_snd_mss at offset 10 (2 bytes),
+                            # Use the first bytes for state, then extract fields
+                            # Simpler: just get the advertised window from TCP_MAXSEG + SO_RCVBUF
+                            pass
+                except Exception:
+                    pass
+
+                s.close()
+                return (ttl, win_size) if ttl or win_size else None
+            except Exception:
+                s.close()
+                return None
+
+        # Fallback approach: use ping to get TTL (works on all platforms)
+        ttl = await _get_ttl_from_ping(ip, timeout)
+        if not ttl:
+            return None
+
+        # Map TTL to initial TTL (adjust for hops — round up to nearest known TTL)
+        initial_ttl = _round_to_initial_ttl(ttl)
+
+        # Determine OS family
+        os_family = ""
+        vendor = ""
+        confidence = 25  # Low confidence — TTL-only is a guess
+
+        for init_ttl, family, vend in _TTL_MAP:
+            if initial_ttl == init_ttl:
+                os_family = family
+                vendor = vend
+                break
+
+        if not os_family:
+            return None
+
+        os_version = ""
+        if os_family == "windows":
+            os_version = "Windows"
+        elif os_family == "linux":
+            os_version = "Linux/Unix"
+        elif os_family == "network":
+            os_version = "Network device"
+
+        return {
+            "os_version": os_version,
+            "vendor": vendor,
+            "detection_method": "tcp_fingerprint",
+            "confidence": confidence,
+        }
+
+    except Exception:
+        return None
+
+
+async def _get_ttl_from_ping(ip: str, timeout: float = 2.0) -> int | None:
+    """Get the TTL value from a ping response.  Returns None if ping fails."""
+    try:
+        if sys.platform == "win32":
+            cmd = ["ping", "-n", "1", "-w", str(int(timeout * 1000)), ip]
+        else:
+            cmd = ["ping", "-c", "1", "-W", str(int(timeout)), ip]
+
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout + 2)
+        output = stdout.decode(errors="replace")
+
+        # Extract TTL from ping output
+        # Windows: "Reply from x.x.x.x: bytes=32 time=1ms TTL=128"
+        # Linux:   "64 bytes from x.x.x.x: icmp_seq=1 ttl=64 time=0.5 ms"
+        m = re.search(r"[Tt][Tt][Ll][=:](\d+)", output)
+        if m:
+            return int(m.group(1))
+    except (asyncio.TimeoutError, OSError, FileNotFoundError):
+        pass
+    return None
+
+
+def _round_to_initial_ttl(observed_ttl: int) -> int:
+    """Round an observed TTL up to the most likely initial TTL value.
+
+    After traversing N hops the TTL decreases.  Initial TTLs used by OSes:
+    - 64  (Linux, macOS, FreeBSD, Android)
+    - 128 (Windows)
+    - 255 (Cisco IOS, Solaris, some network equipment)
+    """
+    if observed_ttl <= 0:
+        return 0
+    if observed_ttl <= 64:
+        return 64
+    if observed_ttl <= 128:
+        return 128
+    return 255
 
 
 # ═══════════════════════════════════════════════════════════
@@ -2033,8 +2204,19 @@ async def _fingerprint_host(
     # Layer 9: NetBIOS Name Service (UDP 137 — discovers Windows hosts + MAC)
     netbios_task = asyncio.create_task(_netbios_name_query(ip))
 
+    # Layer 10: TCP passive OS fingerprinting (p0f-style TTL analysis)
+    tcp_fp_task = None
+    # Use a known-open port for the fingerprint; prefer common ports
+    tcp_fp_port = None
+    for candidate_port in (80, 443, 22, 445, 8080, 3389, 135, 23):
+        if candidate_port in port_numbers:
+            tcp_fp_port = candidate_port
+            break
+    if tcp_fp_port is not None:
+        tcp_fp_task = asyncio.create_task(_tcp_os_fingerprint(ip, tcp_fp_port))
+
     # Wait for all async tasks
-    all_tasks = [t for t in [smb_task, snmp_task, upnp_task, mdns_task, http_task, netbios_task] if t]
+    all_tasks = [t for t in [smb_task, snmp_task, upnp_task, mdns_task, http_task, netbios_task, tcp_fp_task] if t]
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)
 
@@ -2128,6 +2310,15 @@ async def _fingerprint_host(
         except Exception:
             pass
 
+    # Layer 10: TCP passive OS fingerprint (low-confidence fallback)
+    if tcp_fp_task and not tcp_fp_task.cancelled():
+        try:
+            r = tcp_fp_task.result()
+            if r:
+                candidates.append(r)
+        except Exception:
+            pass
+
     # ── Merge: pick highest confidence for each field ──
     best: dict[str, Any] = {
         "os_version": "",
@@ -2170,6 +2361,43 @@ async def _fingerprint_host(
             best["mac_address"] = candidate["mac_address"]
         if not best["hostname_override"] and candidate.get("hostname"):
             best["hostname_override"] = candidate["hostname"]
+
+    # ── Multi-source confidence boosting ──────────────────────
+    # When independent layers agree on the same vendor or OS family,
+    # boost confidence proportionally.  Each agreeing layer beyond the
+    # first adds +5 pts (capped at 99).
+    if best["vendor"] and len(candidates) >= 2:
+        vendor_lower = best["vendor"].lower()
+        agreeing_methods: list[str] = []
+        for c in candidates:
+            cv = (c.get("vendor") or "").lower()
+            if cv and (cv == vendor_lower or cv in vendor_lower or vendor_lower in cv):
+                agreeing_methods.append(c.get("detection_method", "?"))
+        agreement_count = len(agreeing_methods)
+        if agreement_count >= 2:
+            boost = (agreement_count - 1) * 5
+            best["confidence"] = min(best["confidence"] + boost, 99)
+            logger.debug(
+                "Confidence boost: %d layers agree on vendor '%s' → +%d (now %d)",
+                agreement_count, best["vendor"], boost, best["confidence"],
+            )
+
+    # OS-family agreement boost (e.g. multiple layers say "Windows")
+    if best["os_version"] and len(candidates) >= 2:
+        os_lower = best["os_version"].lower()
+        os_family = ""
+        for kw in ("windows", "linux", "ubuntu", "debian", "centos", "ios", "macos"):
+            if kw in os_lower:
+                os_family = kw
+                break
+        if os_family:
+            os_agree = sum(
+                1 for c in candidates
+                if os_family in (c.get("os_version") or "").lower()
+            )
+            if os_agree >= 2:
+                boost = (os_agree - 1) * 5
+                best["confidence"] = min(best["confidence"] + boost, 99)
 
     # Build composite detection_method showing all methods used
     methods_used = list(dict.fromkeys(

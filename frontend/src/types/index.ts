@@ -378,6 +378,9 @@ export interface DiscoveredHost {
   domain: string;
   detection_method: string;
   confidence: number;
+  first_seen?: string | null;
+  last_seen?: string | null;
+  is_new?: boolean;
 }
 
 export interface DiscoveryProgress {

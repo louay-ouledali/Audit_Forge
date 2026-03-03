@@ -1,4 +1,4 @@
-import { Monitor, Terminal, Network, Database, HelpCircle, Plus, Check, Shield, Wifi, Smartphone } from 'lucide-react';
+import { Monitor, Terminal, Network, Database, HelpCircle, Plus, Check, Shield, Wifi, Smartphone, Clock, Sparkles } from 'lucide-react';
 import type { DiscoveredHostEnriched } from '@/types';
 
 /* ── OS → icon / accent mapping ────────────────────────────── */
@@ -44,10 +44,35 @@ function formatDetectionMethod(method: string): string {
         case 'banner_mysql': return 'MySQL';
         case 'banner_smtp': return 'SMTP';
         case 'port_heuristic': return 'Ports';
+        case 'tcp_fingerprint': return 'TCP/TTL';
+        case 'arp_sweep': return 'ARP';
+        case 'netbios': return 'NetBIOS';
         default: return m;
       }
     })
     .join(' + ');
+}
+
+/* ── Relative time helper ──────────────────────────────────── */
+function formatRelativeTime(isoStr: string | null | undefined): string {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    const now = Date.now();
+    const diffMs = now - d.getTime();
+    if (diffMs < 0) return 'just now';
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days}d ago`;
+    return d.toLocaleDateString();
+  } catch {
+    return '';
+  }
 }
 
 interface Props {
@@ -63,6 +88,8 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
   const alreadyAssigned = host.already_assigned;
   const alreadyAdded = host.already_added && !alreadyAssigned;
   const detectionLabel = formatDetectionMethod(host.detection_method || '');
+  const lastSeenLabel = formatRelativeTime(host.last_seen);
+  const isNew = host.is_new === true;
 
   return (
     <div
@@ -73,9 +100,18 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
           ? 'border-emerald-500/30 bg-emerald-500/5'
           : alreadyAdded
             ? 'border-sky-500/30 bg-sky-500/5'
-            : 'border-dark-border hover:border-dark-border/80 hover:shadow-lg hover:shadow-black/20'}
+            : isNew
+              ? 'border-amber-400/40 bg-amber-400/5'
+              : 'border-dark-border hover:border-dark-border/80 hover:shadow-lg hover:shadow-black/20'}
       `}
     >
+      {/* NEW badge */}
+      {isNew && !alreadyAssigned && !alreadyAdded && (
+        <div className="absolute -right-1 -top-1 flex items-center gap-0.5 rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase text-black shadow-lg shadow-amber-500/30">
+          <Sparkles className="h-2.5 w-2.5" />
+          NEW
+        </div>
+      )}
       {/* Top row: Icon + IP + Hostname + Domain */}
       <div className="flex items-start gap-3">
         <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-${cfg.accent}/10 border border-${cfg.accent}/20`}>
@@ -149,11 +185,21 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
         </div>
       )}
 
-      {/* Detection method */}
-      {detectionLabel && (
-        <p className="mt-1.5 text-[9px] text-dark-muted/50" title={`Detected via: ${detectionLabel}`}>
-          via {detectionLabel}
-        </p>
+      {/* Detection method + Last seen */}
+      {(detectionLabel || lastSeenLabel) && (
+        <div className="mt-1.5 flex items-center justify-between">
+          {detectionLabel && (
+            <p className="text-[9px] text-dark-muted/50" title={`Detected via: ${detectionLabel}`}>
+              via {detectionLabel}
+            </p>
+          )}
+          {lastSeenLabel && (
+            <p className="flex items-center gap-0.5 text-[9px] text-dark-muted/50" title={`Last seen: ${host.last_seen || ''}`}>
+              <Clock className="h-2.5 w-2.5" />
+              {lastSeenLabel}
+            </p>
+          )}
+        </div>
       )}
 
       {/* Suggested benchmark */}

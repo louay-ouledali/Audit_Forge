@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -23,6 +24,7 @@ from backend.core.scan_executor import (
 from backend.core.script_generator import generate_script_package, preview_script_rules
 from backend.database import SessionLocal, get_db
 from backend.models.benchmark import Benchmark
+from backend.models.discovery_cache import DiscoveryCache
 from backend.models.mission_target import MissionTarget
 from backend.models.scan import Scan
 from backend.models.scan_batch import ScanBatch, ScanBatchItem
@@ -119,9 +121,105 @@ async def discover_and_return(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+    # Upsert results into discovery cache (writes first_seen / last_seen)
+    _upsert_discovery_cache(hosts, payload.subnet, db)
+
     # Enrich with existing target info and benchmark suggestions
     enriched = _enrich_discovered_hosts(hosts, payload.mission_id, db)
     return {"hosts": enriched, "total_scanned": len(enriched)}
+
+
+# ── Discovery cache upsert ───────────────────────────────────
+
+
+def _upsert_discovery_cache(
+    hosts: list[dict],
+    subnet: str,
+    db: Session,
+) -> None:
+    """Upsert discovered hosts into the discovery_cache table.
+
+    Matching priority: MAC address first, then IP address.
+    Sets first_seen on insert, updates last_seen on every scan.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Build lookup of existing cache entries for this subnet area
+    # (use all entries — a host may move between subnets)
+    existing_by_mac: dict[str, DiscoveryCache] = {}
+    existing_by_ip: dict[str, DiscoveryCache] = {}
+    cache_entries = db.query(DiscoveryCache).all()
+    for entry in cache_entries:
+        if entry.mac_address:
+            existing_by_mac[entry.mac_address.upper()] = entry
+        if entry.ip_address:
+            existing_by_ip[entry.ip_address] = entry
+
+    for host in hosts:
+        ip = host.get("ip", "")
+        mac = (host.get("mac_address") or "").upper()
+
+        # Find existing cache entry (MAC-first)
+        cached: DiscoveryCache | None = None
+        if mac:
+            cached = existing_by_mac.get(mac)
+        if not cached and ip:
+            cached = existing_by_ip.get(ip)
+
+        if cached:
+            # Update existing entry
+            cached.ip_address = ip or cached.ip_address
+            if mac:
+                cached.mac_address = mac
+            cached.hostname = host.get("hostname") or cached.hostname
+            cached.os_guess = host.get("os_guess") or cached.os_guess
+            cached.os_version = host.get("os_version") or cached.os_version
+            cached.vendor = host.get("vendor") or cached.vendor
+            cached.device_model = host.get("device_model") or cached.device_model
+            cached.firmware = host.get("firmware") or cached.firmware
+            cached.domain = host.get("domain") or cached.domain
+            cached.detection_method = host.get("detection_method") or cached.detection_method
+            cached.confidence = max(host.get("confidence", 0), cached.confidence or 0)
+            cached.subnet = subnet
+            cached.last_seen = now
+            if host.get("open_ports"):
+                cached.open_ports_json = json.dumps(host["open_ports"])
+            if host.get("connection_methods"):
+                cached.connection_methods_json = json.dumps(host["connection_methods"])
+            # Inject first_seen/last_seen back into the host dict for the response
+            host["first_seen"] = cached.first_seen.isoformat() if cached.first_seen else now.isoformat()
+            host["last_seen"] = now.isoformat()
+            host["is_new"] = False
+        else:
+            # Insert new entry
+            new_entry = DiscoveryCache(
+                ip_address=ip,
+                mac_address=mac or None,
+                subnet=subnet,
+                hostname=host.get("hostname"),
+                os_guess=host.get("os_guess"),
+                os_version=host.get("os_version"),
+                vendor=host.get("vendor"),
+                device_model=host.get("device_model"),
+                firmware=host.get("firmware"),
+                domain=host.get("domain"),
+                detection_method=host.get("detection_method"),
+                confidence=host.get("confidence", 0),
+                open_ports_json=json.dumps(host.get("open_ports", [])),
+                connection_methods_json=json.dumps(host.get("connection_methods", [])),
+                first_seen=now,
+                last_seen=now,
+            )
+            db.add(new_entry)
+            host["first_seen"] = now.isoformat()
+            host["last_seen"] = now.isoformat()
+            host["is_new"] = True
+
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.warning("Failed to upsert discovery cache", exc_info=True)
 
 
 # ── Discovery enrichment helper ──────────────────────────────
