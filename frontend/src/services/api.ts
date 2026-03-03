@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -87,6 +87,11 @@ export async function verifyMissionLock(missionId: number, password: string): Pr
 }
 
 // Targets
+export async function getAllTargets(): Promise<Target[]> {
+  const { data } = await api.get('/targets');
+  return data.data;
+}
+
 export async function getTargets(missionId: number): Promise<Target[]> {
   const { data } = await api.get(`/missions/${missionId}/targets`);
   return data.data;
@@ -197,6 +202,28 @@ export async function importBenchmarkFile(benchmarkId: number, file: File): Prom
   const { data } = await api.post(`/benchmarks/${benchmarkId}/import-benchmark`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+  return data;
+}
+
+// ── Phase 3: Rule Testing, Validation, Migration Readiness ──
+
+export async function testRuleCommand(benchmarkId: number, ruleId: number, payload: RuleTestRequest): Promise<RuleTestResponse> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/rules/${ruleId}/test`, payload);
+  return data;
+}
+
+export async function validateRuleCommand(benchmarkId: number, ruleId: number, payload: RuleValidateRequest): Promise<{ message: string; validation_status: string }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/rules/${ruleId}/validate`, payload);
+  return data;
+}
+
+export async function getMigrationReadiness(benchmarkId: number): Promise<MigrationReadiness> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/migration-readiness`);
+  return data;
+}
+
+export async function compareScans(scanAId: number, scanBId: number): Promise<ScanComparison> {
+  const { data } = await api.get(`/scans/compare/${scanAId}/${scanBId}`);
   return data;
 }
 

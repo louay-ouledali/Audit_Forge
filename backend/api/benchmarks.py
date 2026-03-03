@@ -47,6 +47,12 @@ from backend.schemas.benchmark import (
     BulkGenerateRequest,
     BulkGenerateResponse,
     BenchmarkExportResponse,
+    RuleTestRequest,
+    RuleTestResponse,
+    RuleValidateRequest,
+    MigrationReadinessResponse,
+    ScanComparisonItem,
+    ScanComparisonResponse,
 )
 from backend.schemas.rule import VerificationReportResponse, VerificationResultsResponse, RuleResponse, RuleFullUpdate
 
@@ -538,6 +544,282 @@ async def import_benchmark_file(
         "rules_imported": imported,
         "commands_imported": commands_imported,
     }
+
+
+# ── Phase 3: Rule Testing, Validation, Migration Readiness ──────────────────
+
+
+@router.post("/{benchmark_id}/rules/{rule_id}/test", response_model=RuleTestResponse)
+async def test_rule_command(
+    benchmark_id: int,
+    rule_id: int,
+    req: RuleTestRequest,
+    db: Session = Depends(get_db),
+):
+    """Test a rule's audit command against a live target via the connector infrastructure."""
+    import re as _re
+
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    rule = db.query(Rule).filter(Rule.id == rule_id, Rule.benchmark_id == benchmark_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found in this benchmark")
+
+    cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule_id).first()
+    if not cmd or not cmd.audit_command:
+        raise HTTPException(status_code=400, detail="Rule has no audit command to test")
+
+    # Load target
+    from backend.models.target import Target
+    target = db.query(Target).filter(Target.id == req.target_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Target not found")
+
+    # Decrypt password if needed
+    if target.ssh_password_encrypted:
+        try:
+            from backend.utils.crypto import decrypt_value
+            target._decrypted_password = decrypt_value(target.ssh_password_encrypted)
+        except Exception:
+            target._decrypted_password = None
+
+    # Get connector and execute
+    from backend.connectors import get_connector
+    try:
+        connector = get_connector(
+            target.target_type,
+            target.connection_method,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"No connector available: {exc}")
+
+    try:
+        await connector.connect(target)
+        result = await connector.execute(cmd.audit_command, timeout=req.timeout)
+    except ConnectionError as exc:
+        raise HTTPException(status_code=502, detail=f"Connection failed: {exc}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Command execution error: {exc}")
+    finally:
+        try:
+            await connector.disconnect()
+        except Exception:
+            pass
+
+    # Compare output with expected_output_regex
+    match_result = "unknown"
+    match_details = None
+    if cmd.expected_output_regex and result.stdout:
+        try:
+            regex = cmd.expected_output_regex.strip()
+            # Handle comparison operators: ==value, >=value, <=value
+            if regex.startswith("=="):
+                expected = regex[2:].strip()
+                if result.stdout.strip() == expected:
+                    match_result = "pass"
+                    match_details = f"Exact match: '{expected}'"
+                else:
+                    match_result = "fail"
+                    match_details = f"Expected '{expected}', got '{result.stdout.strip()}'"
+            elif regex.startswith(">=") or regex.startswith("<="):
+                op = regex[:2]
+                expected_val = regex[2:].strip()
+                try:
+                    actual_num = float(result.stdout.strip())
+                    expected_num = float(expected_val)
+                    if (op == ">=" and actual_num >= expected_num) or (op == "<=" and actual_num <= expected_num):
+                        match_result = "pass"
+                    else:
+                        match_result = "fail"
+                    match_details = f"Comparison {op}: actual={actual_num}, expected={expected_num}"
+                except ValueError:
+                    match_result = "error"
+                    match_details = "Cannot compare — non-numeric values"
+            elif _re.search(regex, result.stdout, _re.IGNORECASE | _re.MULTILINE):
+                match_result = "pass"
+                match_details = f"Regex matched: {regex}"
+            else:
+                match_result = "fail"
+                match_details = f"Regex did not match: {regex}"
+        except _re.error as exc:
+            match_result = "error"
+            match_details = f"Invalid regex: {exc}"
+    elif not cmd.expected_output_regex:
+        match_result = "pass" if result.exit_code == 0 else "fail"
+        match_details = "No regex — using exit code"
+
+    # Store test timestamp on command
+    from datetime import datetime, timezone
+    cmd.verified_at = datetime.now(timezone.utc)
+    cmd.verification_notes = f"Tested against target {target.hostname or target.ip_address}: {match_result}"
+    db.commit()
+
+    return RuleTestResponse(
+        rule_id=rule_id,
+        section_number=rule.section_number,
+        audit_command=cmd.audit_command,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        exit_code=result.exit_code,
+        execution_time_ms=result.execution_time_ms,
+        expected_output_regex=cmd.expected_output_regex,
+        match_result=match_result,
+        match_details=match_details,
+    )
+
+
+@router.post("/{benchmark_id}/rules/{rule_id}/validate")
+async def validate_rule_command(
+    benchmark_id: int,
+    rule_id: int,
+    req: RuleValidateRequest,
+    db: Session = Depends(get_db),
+):
+    """Mark a rule command as validated/corrected/flagged after testing."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    rule = db.query(Rule).filter(Rule.id == rule_id, Rule.benchmark_id == benchmark_id).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found in this benchmark")
+
+    cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule_id).first()
+    if not cmd:
+        raise HTTPException(status_code=400, detail="Rule has no command to validate")
+
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+
+    if req.validation_status not in ("validated", "corrected", "flagged"):
+        raise HTTPException(status_code=400, detail="Invalid validation_status. Must be validated/corrected/flagged.")
+
+    # Apply corrections if provided
+    if req.corrected_command:
+        cmd.audit_command = req.corrected_command
+    if req.corrected_regex:
+        cmd.expected_output_regex = req.corrected_regex
+
+    cmd.validation_status = req.validation_status
+    cmd.validation_notes = req.notes
+    cmd.validated_at = now
+    cmd.validation_confidence = "high" if req.validation_status == "validated" else "medium"
+
+    if req.validation_status == "validated":
+        cmd.status = "validated"
+        cmd.verified_at = now
+    elif req.validation_status == "corrected":
+        cmd.status = "validated"
+        cmd.verified_at = now
+    elif req.validation_status == "flagged":
+        cmd.flagged_at = now
+        cmd.flag_reason = req.notes
+
+    db.commit()
+
+    # Recalculate migration readiness
+    _update_migration_readiness(benchmark_id, db)
+
+    return {
+        "message": f"Rule {rule.section_number} marked as {req.validation_status}",
+        "rule_id": rule_id,
+        "validation_status": req.validation_status,
+    }
+
+
+@router.get("/{benchmark_id}/migration-readiness", response_model=MigrationReadinessResponse)
+def get_migration_readiness(
+    benchmark_id: int,
+    db: Session = Depends(get_db),
+):
+    """Calculate migration readiness for a benchmark."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    return _compute_migration_readiness(benchmark, db)
+
+
+def _compute_migration_readiness(benchmark: Benchmark, db: Session) -> MigrationReadinessResponse:
+    """Compute migration readiness statistics."""
+    from sqlalchemy import func
+
+    total_rules = db.query(func.count(Rule.id)).filter(
+        Rule.benchmark_id == benchmark.id,
+        Rule.enabled == True,
+    ).scalar() or 0
+
+    if total_rules == 0:
+        return MigrationReadinessResponse(
+            benchmark_id=benchmark.id,
+            benchmark_name=benchmark.name,
+            total_rules=0,
+            status="not_ready",
+        )
+
+    # Rules WITH a command
+    rules_with_cmd = (
+        db.query(func.count(Rule.id))
+        .filter(Rule.benchmark_id == benchmark.id, Rule.enabled == True)
+        .join(RuleCommand, RuleCommand.rule_id == Rule.id)
+        .scalar() or 0
+    )
+
+    # Rules with VALIDATED commands
+    rules_validated = (
+        db.query(func.count(Rule.id))
+        .filter(Rule.benchmark_id == benchmark.id, Rule.enabled == True)
+        .join(RuleCommand, RuleCommand.rule_id == Rule.id)
+        .filter(RuleCommand.validation_status.in_(["validated", "corrected"]))
+        .scalar() or 0
+    )
+
+    # Rules with flagged commands
+    rules_flagged = (
+        db.query(func.count(Rule.id))
+        .filter(Rule.benchmark_id == benchmark.id, Rule.enabled == True)
+        .join(RuleCommand, RuleCommand.rule_id == Rule.id)
+        .filter(RuleCommand.validation_status == "flagged")
+        .scalar() or 0
+    )
+
+    rules_no_cmd = total_rules - rules_with_cmd
+    rules_generated = rules_with_cmd - rules_validated - rules_flagged
+
+    # Readiness = validated / total (only fully validated commands count)
+    readiness = round((rules_validated / total_rules) * 100, 1) if total_rules > 0 else 0.0
+
+    if readiness >= 95:
+        status = "ready"
+    elif readiness >= 50:
+        status = "partial"
+    else:
+        status = "not_ready"
+
+    return MigrationReadinessResponse(
+        benchmark_id=benchmark.id,
+        benchmark_name=benchmark.name,
+        total_rules=total_rules,
+        rules_with_commands=rules_with_cmd,
+        rules_validated=rules_validated,
+        rules_generated=rules_generated,
+        rules_no_command=rules_no_cmd,
+        rules_flagged=rules_flagged,
+        readiness_percentage=readiness,
+        status=status,
+    )
+
+
+def _update_migration_readiness(benchmark_id: int, db: Session):
+    """Recalculate and persist migration_readiness on the benchmark."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        return
+    stats = _compute_migration_readiness(benchmark, db)
+    benchmark.migration_readiness = stats.readiness_percentage
+    db.commit()
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkDetailEnvelope)

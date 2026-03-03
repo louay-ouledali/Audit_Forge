@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap } from 'lucide-react';
-import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse } from '@/types';
+import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3 } from 'lucide-react';
+import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse, MigrationReadiness } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
 import RuleEditor from '@/components/benchmark/RuleEditor';
+import RuleTestPanel from '@/components/benchmark/RuleTestPanel';
 
 function severityBadge(severity: string) {
   const styles: Record<string, string> = {
@@ -92,7 +93,9 @@ export default function BenchmarkDetail() {
   const benchmarkImportRef = useRef<HTMLInputElement>(null);
   const rulesImportRef = useRef<HTMLInputElement>(null);
   const commandsImportRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'validation'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'validation' | 'testing'>('overview');
+  const [migrationReadiness, setMigrationReadiness] = useState<MigrationReadiness | null>(null);
+  const [showTestPanel, setShowTestPanel] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -106,6 +109,8 @@ export default function BenchmarkDetail() {
       setEnrichStatus(es);
       setVerifyStatus(vs);
       setValidateStatus(vds);
+      // Fetch migration readiness (silently fail if not available)
+      api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => {});
     } catch {
       setError('Failed to load benchmark');
     } finally {
@@ -657,6 +662,9 @@ export default function BenchmarkDetail() {
         {benchmark.phase2_status === 'completed' && (
           <button onClick={() => { setActiveTab('validation'); if (validationResults.length === 0) fetchValidationResults(); }} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'validation' ? 'border-b-2 border-ey-yellow text-ey-yellow' : 'text-dark-secondary hover:text-white'}`}>Validation Results</button>
         )}
+        <button onClick={() => setActiveTab('testing')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'testing' ? 'border-b-2 border-sky-400 text-sky-400' : 'text-dark-secondary hover:text-white'}`}>
+          <Activity className="inline h-3.5 w-3.5 mr-1" />Testing & Readiness
+        </button>
       </div>
 
       {/* Phase Status Cards */}
@@ -1159,6 +1167,14 @@ export default function BenchmarkDetail() {
                             >
                               <ShieldOff className="h-3 w-3" /> {showReports ? 'Hide' : 'Show'} Reports
                             </button>
+                            {ruleCommand.audit_command && (
+                              <button
+                                onClick={() => setShowTestPanel(showTestPanel === rule.id ? null : rule.id)}
+                                className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-400 hover:bg-sky-500/20"
+                              >
+                                <Activity className="h-3 w-3" /> {showTestPanel === rule.id ? 'Hide' : 'Live'} Test
+                              </button>
+                            )}
                           </div>
 
                           {/* Flag Form */}
@@ -1265,6 +1281,17 @@ export default function BenchmarkDetail() {
                               )}
                             </div>
                           )}
+
+                          {/* Live Test Panel */}
+                          {showTestPanel === rule.id && (
+                            <RuleTestPanel
+                              benchmarkId={benchmarkId}
+                              ruleId={rule.id}
+                              sectionNumber={rule.section_number}
+                              hasCommand={!!ruleCommand?.audit_command}
+                              onValidated={() => { fetchData(); fetchRules(); }}
+                            />
+                          )}
                         </div>
                       )}
                       {!ruleCommand && benchmark.phase2_status !== 'completed' && (
@@ -1280,6 +1307,114 @@ export default function BenchmarkDetail() {
         </div>
       )
       }
+
+      {/* Testing & Readiness Tab */}
+      {activeTab === 'testing' && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {/* Migration Readiness Dashboard */}
+          <div className="rounded-xl border border-sky-500/30 bg-dark-card overflow-hidden">
+            <div className="border-b border-sky-500/20 bg-sky-500/5 p-4">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-sky-400" />
+                <h3 className="text-lg font-medium text-white">Migration Readiness</h3>
+                <button
+                  onClick={() => api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => {})}
+                  className="ml-auto rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-overlay hover:text-white"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+            {migrationReadiness ? (
+              <div className="p-5 space-y-4">
+                {/* Readiness bar */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-dark-secondary">Overall Readiness</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-2xl font-bold ${
+                        migrationReadiness.readiness_percentage >= 95 ? 'text-emerald-400' :
+                        migrationReadiness.readiness_percentage >= 50 ? 'text-amber-400' : 'text-red-400'
+                      }`}>
+                        {migrationReadiness.readiness_percentage.toFixed(1)}%
+                      </span>
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                        migrationReadiness.status === 'ready' ? 'bg-emerald-500/10 text-emerald-400' :
+                        migrationReadiness.status === 'partial' ? 'bg-amber-500/10 text-amber-400' :
+                        'bg-red-500/10 text-red-400'
+                      }`}>
+                        {migrationReadiness.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="h-3 w-full rounded-full bg-dark-overlay overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-700 ${
+                        migrationReadiness.readiness_percentage >= 95 ? 'bg-emerald-500' :
+                        migrationReadiness.readiness_percentage >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${Math.min(100, migrationReadiness.readiness_percentage)}%` }}
+                    />
+                  </div>
+                </div>
+
+                {/* Stats grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                    <div className="text-2xl font-bold text-white">{migrationReadiness.total_rules}</div>
+                    <div className="text-xs text-dark-secondary mt-1">Total Rules</div>
+                  </div>
+                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                    <div className="text-2xl font-bold text-sky-400">{migrationReadiness.rules_with_commands}</div>
+                    <div className="text-xs text-dark-secondary mt-1">With Commands</div>
+                  </div>
+                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                    <div className="text-2xl font-bold text-emerald-400">{migrationReadiness.rules_validated}</div>
+                    <div className="text-xs text-dark-secondary mt-1">Validated</div>
+                  </div>
+                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                    <div className="text-2xl font-bold text-purple-400">{migrationReadiness.rules_generated}</div>
+                    <div className="text-xs text-dark-secondary mt-1">AI Generated</div>
+                  </div>
+                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                    <div className="text-2xl font-bold text-dark-muted">{migrationReadiness.rules_no_command}</div>
+                    <div className="text-xs text-dark-secondary mt-1">No Command</div>
+                  </div>
+                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                    <div className="text-2xl font-bold text-red-400">{migrationReadiness.rules_flagged}</div>
+                    <div className="text-xs text-dark-secondary mt-1">Flagged</div>
+                  </div>
+                </div>
+
+                <p className="text-xs text-dark-muted">
+                  {migrationReadiness.status === 'ready'
+                    ? 'This benchmark is fully ready for production scanning. All rules have validated audit commands.'
+                    : migrationReadiness.status === 'partial'
+                    ? 'Some rules still need audit commands or validation. Run enrichment and test commands against a live target to improve readiness.'
+                    : 'Most rules lack audit commands. Run Phase 2 enrichment first, then test and validate commands.'}
+                </p>
+              </div>
+            ) : (
+              <div className="p-8 text-center text-dark-secondary">
+                <p className="text-sm">Loading readiness data{'\u2026'}</p>
+              </div>
+            )}
+          </div>
+
+          {/* How to test instructions */}
+          <div className="rounded-xl border border-dark-border bg-dark-card p-5">
+            <h3 className="text-sm font-semibold text-white mb-3">How Rule Testing Works</h3>
+            <ol className="list-decimal list-inside space-y-2 text-sm text-dark-secondary">
+              <li>Go to the <button onClick={() => setActiveTab('rules')} className="text-sky-400 hover:underline">Rules & Commands</button> tab and expand any rule.</li>
+              <li>Click the <span className="text-sky-400 font-medium">Live Test</span> button to open the test panel.</li>
+              <li>Select a target machine and click <span className="text-sky-400 font-medium">Run Test</span> to execute the audit command via WinRM/SSH.</li>
+              <li>Review the output and <span className="text-emerald-400 font-medium">Approve</span>, <span className="text-amber-400 font-medium">Correct</span>, or <span className="text-red-400 font-medium">Flag</span> the command.</li>
+              <li>Validated commands increase the migration readiness percentage above.</li>
+            </ol>
+          </div>
+        </div>
+      )}
+
     </div >
   );
 }

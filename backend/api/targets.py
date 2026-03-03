@@ -82,6 +82,14 @@ def _enrich_target_response(target: Target, db: Session) -> TargetResponse:
     return resp
 
 
+# ── List all targets (for rule testing selector) ─────────────
+@router.get("/targets", response_model=TargetListResponse)
+def list_all_targets(db: Session = Depends(get_db)) -> dict:
+    targets = db.query(Target).order_by(Target.id).all()
+    result = [_enrich_target_response(t, db) for t in targets]
+    return {"data": result, "total": len(result)}
+
+
 # ── List targets by client ───────────────────────────────────
 @router.get("/clients/{client_id}/targets", response_model=TargetListResponse)
 def list_targets_for_client(client_id: int, db: Session = Depends(get_db)) -> dict:

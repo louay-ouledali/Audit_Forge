@@ -303,6 +303,71 @@ export interface RuleFullUpdate {
   enabled?: boolean;
 }
 
+// ── Phase 3: Rule Testing, Validation, Migration Readiness ──
+
+export interface RuleTestRequest {
+  target_id: number;
+  timeout?: number;
+}
+
+export interface RuleTestResponse {
+  rule_id: number;
+  section_number: string;
+  audit_command: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+  execution_time_ms: number;
+  expected_output_regex: string | null;
+  match_result: string;
+  match_details: string | null;
+}
+
+export interface RuleValidateRequest {
+  validation_status: string;
+  notes?: string;
+  corrected_command?: string;
+  corrected_regex?: string;
+}
+
+export interface MigrationReadiness {
+  benchmark_id: number;
+  benchmark_name: string;
+  total_rules: number;
+  rules_with_commands: number;
+  rules_validated: number;
+  rules_generated: number;
+  rules_no_command: number;
+  rules_flagged: number;
+  readiness_percentage: number;
+  status: string;
+}
+
+export interface ScanComparisonItem {
+  section_number: string;
+  title: string;
+  scan_a_status: string | null;
+  scan_b_status: string | null;
+  changed: boolean;
+  severity: string | null;
+}
+
+export interface ScanComparison {
+  scan_a_id: number;
+  scan_b_id: number;
+  scan_a_benchmark: string | null;
+  scan_b_benchmark: string | null;
+  scan_a_date: string | null;
+  scan_b_date: string | null;
+  total_rules_compared: number;
+  rules_improved: number;
+  rules_regressed: number;
+  rules_unchanged: number;
+  rules_new: number;
+  rules_removed: number;
+  items: ScanComparisonItem[];
+}
+
 export interface VerifyStatus {
   status: string;
   total: number;

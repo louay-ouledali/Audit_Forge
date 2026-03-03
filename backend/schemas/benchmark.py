@@ -163,3 +163,75 @@ class BenchmarkExportResponse(BaseModel):
     total_commands: int
     export_date: str
     message: str = "success"
+
+
+# ── Phase 3: Rule Testing, Validation, Migration Readiness ──
+
+
+class RuleTestRequest(BaseModel):
+    """Request to test a rule command against a target."""
+    target_id: int
+    timeout: int = 30
+
+
+class RuleTestResponse(BaseModel):
+    """Result of testing a rule command against a target."""
+    rule_id: int
+    section_number: str
+    audit_command: str
+    stdout: str
+    stderr: str
+    exit_code: int
+    execution_time_ms: int
+    expected_output_regex: str | None = None
+    match_result: str = "unknown"  # "pass", "fail", "error"
+    match_details: str | None = None
+
+
+class RuleValidateRequest(BaseModel):
+    """Mark a rule command as validated after testing."""
+    validation_status: str = "validated"  # validated / corrected / flagged
+    notes: str | None = None
+    corrected_command: str | None = None
+    corrected_regex: str | None = None
+
+
+class MigrationReadinessResponse(BaseModel):
+    """Migration readiness stats for a benchmark."""
+    benchmark_id: int
+    benchmark_name: str
+    total_rules: int = 0
+    rules_with_commands: int = 0
+    rules_validated: int = 0
+    rules_generated: int = 0
+    rules_no_command: int = 0
+    rules_flagged: int = 0
+    readiness_percentage: float = 0.0
+    status: str = "not_ready"  # not_ready / partial / ready
+
+
+class ScanComparisonItem(BaseModel):
+    """A single rule comparison between two scans."""
+    section_number: str
+    title: str
+    scan_a_status: str | None = None
+    scan_b_status: str | None = None
+    changed: bool = False
+    severity: str | None = None
+
+
+class ScanComparisonResponse(BaseModel):
+    """Comparison of two scans for the same or overlapping benchmarks."""
+    scan_a_id: int
+    scan_b_id: int
+    scan_a_benchmark: str | None = None
+    scan_b_benchmark: str | None = None
+    scan_a_date: str | None = None
+    scan_b_date: str | None = None
+    total_rules_compared: int = 0
+    rules_improved: int = 0
+    rules_regressed: int = 0
+    rules_unchanged: int = 0
+    rules_new: int = 0
+    rules_removed: int = 0
+    items: list[ScanComparisonItem] = []

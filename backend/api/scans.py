@@ -1548,3 +1548,108 @@ def _looks_like_nessus(content: str) -> bool:
     if ImportOrchestrator._looks_like_nessus_html(content):
         return True
     return False
+
+
+# ── Phase 3: Scan Comparison ────────────────────────────────
+
+
+@router.get("/compare/{scan_a_id}/{scan_b_id}")
+def compare_scans(
+    scan_a_id: int,
+    scan_b_id: int,
+    db: Session = Depends(get_db),
+):
+    """Compare two scans — shows rule-by-rule status differences.
+
+    Works for same benchmark or overlapping benchmarks (matches by section_number).
+    """
+    from backend.models.finding import Finding
+    from backend.models.rule import Rule
+    from backend.schemas.benchmark import ScanComparisonItem, ScanComparisonResponse
+
+    scan_a = db.query(Scan).filter(Scan.id == scan_a_id).first()
+    scan_b = db.query(Scan).filter(Scan.id == scan_b_id).first()
+    if not scan_a or not scan_b:
+        raise HTTPException(status_code=404, detail="One or both scans not found")
+
+    bm_a = db.query(Benchmark).filter(Benchmark.id == scan_a.benchmark_id).first()
+    bm_b = db.query(Benchmark).filter(Benchmark.id == scan_b.benchmark_id).first()
+
+    # Build section→status maps for each scan
+    def _build_map(scan_id: int) -> dict[str, tuple[str, str, str]]:
+        """Returns {section_number: (status, severity, title)}"""
+        results = (
+            db.query(Finding.status, Rule.section_number, Rule.severity, Rule.title)
+            .join(Rule, Rule.id == Finding.rule_id)
+            .filter(Finding.scan_id == scan_id)
+            .all()
+        )
+        return {
+            r.section_number: (r.status, r.severity or "medium", r.title or "")
+            for r in results
+        }
+
+    map_a = _build_map(scan_a_id)
+    map_b = _build_map(scan_b_id)
+
+    all_sections = sorted(set(map_a.keys()) | set(map_b.keys()))
+
+    items: list[ScanComparisonItem] = []
+    improved = regressed = unchanged = new = removed = 0
+
+    _PASS_STATUSES = {"PASS", "pass", "Pass"}
+    _FAIL_STATUSES = {"FAIL", "fail", "Fail", "ERROR", "error"}
+
+    for sec in all_sections:
+        a_info = map_a.get(sec)
+        b_info = map_b.get(sec)
+
+        a_status = a_info[0] if a_info else None
+        b_status = b_info[0] if b_info else None
+        severity = (b_info or a_info or ("", "medium", ""))[1]
+        title = (b_info or a_info or ("", "", ""))[2]
+
+        changed = a_status != b_status
+
+        if a_status is None and b_status is not None:
+            new += 1
+        elif a_status is not None and b_status is None:
+            removed += 1
+        elif changed:
+            if a_status in _FAIL_STATUSES and b_status in _PASS_STATUSES:
+                improved += 1
+            elif a_status in _PASS_STATUSES and b_status in _FAIL_STATUSES:
+                regressed += 1
+            else:
+                # Other transitions (e.g. N/A → PASS)
+                if b_status in _PASS_STATUSES:
+                    improved += 1
+                elif b_status in _FAIL_STATUSES:
+                    regressed += 1
+        else:
+            unchanged += 1
+
+        items.append(ScanComparisonItem(
+            section_number=sec,
+            title=title,
+            scan_a_status=a_status,
+            scan_b_status=b_status,
+            changed=changed,
+            severity=severity,
+        ))
+
+    return ScanComparisonResponse(
+        scan_a_id=scan_a_id,
+        scan_b_id=scan_b_id,
+        scan_a_benchmark=f"{bm_a.name} v{bm_a.version}" if bm_a else None,
+        scan_b_benchmark=f"{bm_b.name} v{bm_b.version}" if bm_b else None,
+        scan_a_date=scan_a.completed_at.isoformat() if scan_a.completed_at else (scan_a.created_at.isoformat() if scan_a.created_at else None),
+        scan_b_date=scan_b.completed_at.isoformat() if scan_b.completed_at else (scan_b.created_at.isoformat() if scan_b.created_at else None),
+        total_rules_compared=len(items),
+        rules_improved=improved,
+        rules_regressed=regressed,
+        rules_unchanged=unchanged,
+        rules_new=new,
+        rules_removed=removed,
+        items=items,
+    )
