@@ -118,6 +118,7 @@ def aggregate_report_data(
     # Determine client / mission context from the first available scan
     client_name = ""
     mission_name = ""
+    is_finalized = False
     if scans:
         first_scan = scans[0]
         # Try mission from scan first (direct link)
@@ -125,6 +126,7 @@ def aggregate_report_data(
             mission_obj = db.query(Mission).filter(Mission.id == first_scan.mission_id).first()
             if mission_obj:
                 mission_name = mission_obj.name or ""
+                is_finalized = bool(mission_obj.is_locked)
                 client_obj = db.query(Client).filter(Client.id == mission_obj.client_id).first()
                 if client_obj:
                     client_name = client_obj.name or ""
@@ -291,6 +293,10 @@ def aggregate_report_data(
         elif f["status"] == "FAIL":
             by_category[cat]["failed"] += 1
 
+    # Enrich category labels with real CIS section names
+    for cat_key, info in by_category.items():
+        info["label"] = _resolve_section_name(cat_key, findings_rows)
+
     # ── Sort findings by section number for consistent ordering ──
     def _section_sort_key(f):
         """Sort by numeric section parts (e.g., 1.1.1 → (1, 1, 1))."""
@@ -319,10 +325,25 @@ def aggregate_report_data(
     # ── False-positive detection ──
     findings_rows, fp_summary = enrich_findings_with_fp(findings_rows)
 
+    # Derive a top-level benchmark_name from the first scan's benchmark
+    _first_bench = next(
+        (b for b in _bench_bulk.values()), None
+    )
+
+    # Build audit_info for the appendix (benchmark metadata)
+    audit_info = {}
+    if _first_bench:
+        audit_info = {
+            "benchmark_name": _first_bench.name or "CIS Benchmark",
+            "benchmark_version": _first_bench.version or "N/A",
+            "profile_level": _first_bench.platform or "N/A",
+        }
+
     return {
         "title": "",
         "client_name": client_name,
         "mission_name": mission_name,
+        "benchmark_name": _first_bench.name if _first_bench else "CIS Benchmark",
         "date_range": date_range,
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "targets": list(targets_map.values()),
@@ -348,8 +369,11 @@ def aggregate_report_data(
         ],
         "by_target": by_target,
         "by_category": by_category,
+        "categories_enriched": _build_enriched_categories({"by_category": by_category, "findings": findings_rows}),
         "fp_summary": fp_summary,
+        "audit_info": audit_info,
         "ai_summary": None,
+        "is_finalized": is_finalized,
     }
 
 
@@ -722,8 +746,7 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
     else:
         data["ai_summary_html"] = ""
 
-    # ── Build enriched category data with real CIS section names ──
-    data["categories_enriched"] = _build_enriched_categories(data)
+    # categories_enriched already computed in aggregate_report_data()
 
     # ── Compute overall risk score (A-F letter grade) ──
     data["risk_score"] = _compute_risk_score(data)
@@ -1026,6 +1049,7 @@ def generate_html_report(data: dict, include_passed: bool) -> str:
         group_summaries=group_summaries,
         audience=audience,
         has_builder=has_builder,
+        is_finalized=data.get("is_finalized", False),
         **charts,
     )
 
@@ -1048,7 +1072,7 @@ async def generate_ai_summary(data: dict) -> str:
     )
 
     # ---- category breakdown (top 5 worst) ----
-    cats = summary.get("by_category", {})
+    cats = data.get("by_category", {})
     worst_cats = sorted(
         cats.items(),
         key=lambda x: x[1].get("failed", 0),

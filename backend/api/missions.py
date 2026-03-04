@@ -26,6 +26,22 @@ def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 
+def check_mission_lock(mission_id: int | None, db: Session) -> None:
+    """Raise 403 if the mission is locked. Call this before any mutation
+    on data that belongs to a locked mission (findings, scans, targets).
+
+    If *mission_id* is ``None``, the check is silently skipped.
+    """
+    if mission_id is None:
+        return
+    mission = db.query(Mission).filter(Mission.id == mission_id).first()
+    if mission and mission.is_locked:
+        raise HTTPException(
+            status_code=403,
+            detail="Mission is locked. Unlock it before making changes.",
+        )
+
+
 @router.get("/missions", response_model=MissionListResponse)
 def list_all_missions(db: Session = Depends(get_db)) -> dict:
     """List all missions across all clients."""

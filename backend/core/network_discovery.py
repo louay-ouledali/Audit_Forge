@@ -62,7 +62,7 @@ PROBE_PORTS: list[tuple[int, str, str]] = [
     (5986,  "WinRM-HTTPS",  "windows"),
     # ── Linux / Unix ──
     (22,    "SSH",          "linux"),
-    (548,   "AFP",          "linux"),       # Apple Filing Protocol (macOS)
+    (548,   "AFP",          "macos"),       # Apple Filing Protocol (macOS)
     # ── Web ──
     (80,    "HTTP",         "unknown"),
     (443,   "HTTPS",        "unknown"),

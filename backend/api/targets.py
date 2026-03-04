@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from backend.api.missions import check_mission_lock
 from backend.config import settings
 from backend.connectors import get_connector
 from backend.database import get_db
@@ -124,6 +125,7 @@ def assign_target_to_mission(
     mission = db.query(Mission).filter(Mission.id == mission_id).first()
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
+    check_mission_lock(mission_id, db)
     target = db.query(Target).filter(Target.id == target_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Target not found")
@@ -146,6 +148,7 @@ def assign_target_to_mission(
 def unassign_target_from_mission(
     mission_id: int, target_id: int, db: Session = Depends(get_db)
 ) -> dict:
+    check_mission_lock(mission_id, db)
     link = (
         db.query(MissionTarget)
         .filter(MissionTarget.mission_id == mission_id, MissionTarget.target_id == target_id)

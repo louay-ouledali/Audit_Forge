@@ -15,6 +15,7 @@ interface Props {
   scanProgressMap?: Map<number, number>;
   emptyMessage?: string;
   emptyHint?: React.ReactNode;
+  isLocked?: boolean;
 }
 
 export default function TargetCardGrid({
@@ -30,6 +31,7 @@ export default function TargetCardGrid({
   scanProgressMap = new Map(),
   emptyMessage,
   emptyHint,
+  isLocked = false,
 }: Props) {
   if (targets.length === 0) {
     return (
@@ -61,6 +63,7 @@ export default function TargetCardGrid({
           onViewFindings={onViewFindings}
           isScanning={scanningTargetIds.has(target.id)}
           scanProgress={scanProgressMap.get(target.id)}
+          isLocked={isLocked}
         />
       ))}
     </div>

@@ -1,4 +1,4 @@
-import { Plus, Upload, Crosshair, Package, FileSearch } from 'lucide-react';
+import { Plus, Upload, Crosshair, Package, FileSearch, Lock } from 'lucide-react';
 import { inputClass } from '../mission/badgeHelpers';
 import type { Target } from '@/types';
 
@@ -14,6 +14,7 @@ interface Props {
   onSmartImport?: () => void;
   targetCount: number;
   hasScannable: boolean;
+  isLocked?: boolean;
 }
 
 export default function TargetActionBar({
@@ -28,12 +29,20 @@ export default function TargetActionBar({
   onSmartImport,
   targetCount,
   hasScannable,
+  isLocked = false,
 }: Props) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* Locked banner */}
+      {isLocked && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400 w-full sm:hidden">
+          <Lock className="h-3.5 w-3.5 shrink-0" /> Mission is locked — modifications disabled
+        </div>
+      )}
+
       {/* Left side: assign + import */}
       <div className="flex flex-wrap items-center gap-2">
-        {unassignedTargets.length > 0 && (
+        {unassignedTargets.length > 0 && !isLocked && (
           <div className="flex items-center gap-2">
             <select
               value={assignTargetId}
@@ -58,18 +67,20 @@ export default function TargetActionBar({
           </div>
         )}
 
-        <button
-          onClick={onBulkImportToggle}
-          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-            showImport
-              ? 'border-ey-yellow text-ey-yellow bg-ey-yellow/10'
-              : 'border-dark-border bg-dark-card text-dark-secondary hover:text-white hover:bg-dark-elevated'
-          }`}
-        >
-          <Upload className="h-3.5 w-3.5" /> Bulk Import
-        </button>
+        {!isLocked && (
+          <button
+            onClick={onBulkImportToggle}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+              showImport
+                ? 'border-ey-yellow text-ey-yellow bg-ey-yellow/10'
+                : 'border-dark-border bg-dark-card text-dark-secondary hover:text-white hover:bg-dark-elevated'
+            }`}
+          >
+            <Upload className="h-3.5 w-3.5" /> Bulk Import
+          </button>
+        )}
 
-        {onSmartImport && (
+        {onSmartImport && !isLocked && (
           <button
             onClick={onSmartImport}
             className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 hover:text-emerald-300"
@@ -78,6 +89,12 @@ export default function TargetActionBar({
             <FileSearch className="h-3.5 w-3.5" /> Smart Import
           </button>
         )}
+
+        {isLocked && (
+          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-400">
+            <Lock className="h-3.5 w-3.5" /> Locked
+          </span>
+        )}
       </div>
 
       {/* Right side: scan all + usb all */}
@@ -85,7 +102,8 @@ export default function TargetActionBar({
         <div className="flex items-center gap-2">
           <button
             onClick={onScanAll}
-            disabled={!hasScannable}
+            disabled={!hasScannable || isLocked}
+            title={isLocked ? 'Mission is locked' : undefined}
             className="inline-flex items-center gap-1.5 rounded-lg bg-ey-yellow px-4 py-2 text-xs font-bold text-black transition-colors hover:bg-ey-yellow-hover disabled:opacity-40 shadow-sm shadow-ey-yellow/10"
           >
             <Crosshair className="h-3.5 w-3.5" /> Scan All

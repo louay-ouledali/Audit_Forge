@@ -251,7 +251,7 @@ function BenchmarkRow({ benchmark, onNavigate, onDelete }: { benchmark: CatalogB
           {benchmark.source === 'nessus_reconstructed' && (
             <span className="shrink-0 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">Nessus Import</span>
           )}
-          {benchmark.source === 'imported' && !['preloaded', 'nessus_reconstructed'].includes(benchmark.source) && (
+          {benchmark.source === 'imported' && (
             <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">Imported</span>
           )}
           {benchmark.source === 'custom' && (
@@ -345,14 +345,32 @@ export default function Benchmarks() {
       .catch(() => setError('Failed to load benchmark catalog'))
       .finally(() => setLoading(false));
 
+  // Check if any benchmark is currently processing (needs polling)
+  const hasProcessing = useMemo(() => {
+    if (!catalog) return false;
+    return catalog.categories.some(c =>
+      c.vendors.some(v =>
+        v.product_lines.some(p =>
+          p.benchmarks.some(b =>
+            b.phase1_status === 'processing' || b.phase2_status === 'processing' || b.verification_status === 'processing'
+          )
+        )
+      )
+    );
+  }, [catalog]);
+
   useEffect(() => {
     fetchCatalog();
+  }, []);
+
+  // Only poll when something is actively processing
+  useEffect(() => {
+    if (!hasProcessing) return;
     const interval = setInterval(() => {
-      // Only poll when the tab is visible (avoids wasted API calls when hidden via keep-alive)
       if (!document.hidden) fetchCatalog();
     }, 8000);
     return () => clearInterval(interval);
-  }, []);
+  }, [hasProcessing]);
 
   /* Upload */
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

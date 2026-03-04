@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { BarChart3, Bot } from 'lucide-react';
 
 interface Props {
-  missionId: string;
+  missionId: number;
   missionName?: string;
 }
 
@@ -18,7 +18,7 @@ export default function MissionReports({ missionId, missionName }: Props) {
         </p>
         <div className="flex gap-3">
           <button
-            onClick={() => navigate('/reports', { state: { missionId: Number(missionId), missionName } })}
+            onClick={() => navigate('/reports', { state: { missionId, missionName } })}
             className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2.5 text-sm font-semibold text-black hover:bg-ey-yellow-hover"
           >
             <BarChart3 className="h-4 w-4" /> Open Report Builder

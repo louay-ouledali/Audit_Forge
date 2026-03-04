@@ -79,10 +79,8 @@ export default function Dashboard() {
 
     // Use all completed scans we have (or a subset)
     const now = new Date();
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(now.getDate() - 30);
 
-    const validScans = recentScans; // In a real app with more data, we'd use scansData from API
+    const validScans = recentScans;
 
     validScans.forEach(scan => {
       if (scan.completed_at && scan.compliance_percentage !== null) {

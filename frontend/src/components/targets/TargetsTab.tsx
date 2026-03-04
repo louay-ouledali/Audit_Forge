@@ -29,9 +29,10 @@ interface Props {
   clientTargets: Target[];
   onRefresh: () => Promise<void>;
   onSwitchTab?: (tab: string) => void;
+  isLocked?: boolean;
 }
 
-export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab }: Props) {
+export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab, isLocked = false }: Props) {
   const [assignTargetId, setAssignTargetId] = useState<number | ''>('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -355,11 +356,13 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       )}
 
       {/* ── 1. Discovery Bar (collapsible) ───────────────────── */}
-      <DiscoveryBar
-        clientId={clientId}
-        missionId={missionId}
-        onTargetsAdded={onRefresh}
-      />
+      {!isLocked && (
+        <DiscoveryBar
+          clientId={clientId}
+          missionId={missionId}
+          onTargetsAdded={onRefresh}
+        />
+      )}
 
       {/* ── 2. Action Bar ────────────────────────────────────── */}
       <TargetActionBar
@@ -374,6 +377,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         onSmartImport={handleSmartImport}
         targetCount={missionTargets.length}
         hasScannable={hasScannable}
+        isLocked={isLocked}
       />
 
       {/* Bulk Import Panel */}
@@ -451,13 +455,14 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         targets={missionTargets}
         onConfigure={handleConfigure}
         onDelete={handleUnassignTarget}
-        onScan={handleScan}
+        onScan={isLocked ? undefined : handleScan}
         onUsbExport={handleUsbExport}
-        onImportResults={handleImportResults}
+        onImportResults={isLocked ? undefined : handleImportResults}
         onSetupHelp={handleSetupHelp}
         onViewFindings={handleViewFindings}
         scanningTargetIds={scan.scanningTargetIds}
         scanProgressMap={scan.scanProgressMap}
+        isLocked={isLocked}
       />
 
       {/* ── 5. Scan History Panel (collapsible) ────────────── */}
@@ -477,7 +482,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         onLaunch={scan.launchBatchScan}
       />
 
-      {/* ── 6. USB Bulk Export Dialog ─────────────────────── */}
+      {/* ── 7. USB Bulk Export Dialog ─────────────────────── */}
       <UsbBulkExportDialog
         targets={missionTargets}
         open={showUsbBulk}

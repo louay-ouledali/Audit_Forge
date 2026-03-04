@@ -11,6 +11,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.api.missions import check_mission_lock
 from backend.core.network_discovery import (
     cleanup_discovery,
     discover_network,
@@ -458,6 +459,8 @@ def start_network_scan(
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
 
+    check_mission_lock(payload.mission_id, db)
+
     # Create scan record
     scan = Scan(
         target_id=payload.target_id,
@@ -657,6 +660,8 @@ async def import_with_new_scan(
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
 
+    check_mission_lock(mission_id, db)
+
     scan = Scan(
         target_id=target_id,
         benchmark_id=benchmark_id,
@@ -742,6 +747,8 @@ async def smart_import(
     import json
     import zipfile
 
+    check_mission_lock(mission_id, db)
+
     raw = await file.read()
     if len(raw) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=400, detail="File too large")
@@ -773,11 +780,10 @@ async def smart_import(
             raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             import traceback
-            tb = traceback.format_exc()
-            logger.error("Smart Import execute failed: %s\n%s", exc, tb)
+            logger.error("Smart Import execute failed: %s\n%s", exc, traceback.format_exc())
             raise HTTPException(
                 status_code=500,
-                detail={"message": f"Import failed: {exc}", "traceback": tb},
+                detail=f"Import failed: {exc}",
             )
 
         return result.to_dict()
@@ -853,6 +859,7 @@ async def smart_import(
 
     # ── Resolve or create target ─────────────────────────────
     target: Target | None = None
+    target_was_created = False
 
     # Derive client_id from mission if not provided
     if not client_id and mission_id:
@@ -911,6 +918,7 @@ async def smart_import(
             db.add(target)
             db.commit()
             db.refresh(target)
+            target_was_created = True
 
     if not target:
         raise HTTPException(
@@ -958,7 +966,7 @@ async def smart_import(
         "target_ip": target.ip_address,
         "benchmark_id": benchmark.id,
         "benchmark_name": benchmark.name,
-        "target_created": not bool(system_info and target.id),  # approximate
+        "target_created": target_was_created,
     }
 
 
@@ -1000,6 +1008,8 @@ def delete_scan(scan_id: int, db: Session = Depends(get_db)):
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
+
+    check_mission_lock(scan.mission_id, db)
 
     db.delete(scan)
     db.commit()
@@ -1072,6 +1082,8 @@ async def import_results(
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
+
+    check_mission_lock(scan.mission_id, db)
 
     content = await _extract_result_content(file)
 
@@ -1209,6 +1221,8 @@ def start_scan_batch(
     mission = db.query(Mission).filter(Mission.id == payload.mission_id).first()
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
+
+    check_mission_lock(payload.mission_id, db)
 
     # Resolve target list
     if payload.target_ids:

@@ -117,7 +117,7 @@ export default function MissionOverview({ mission, scans, missionTargets }: Prop
         <div className="rounded-xl border border-dark-border bg-dark-card p-5">
           <h3 className="mb-4 text-sm font-semibold text-white uppercase tracking-wider">Recent Scans</h3>
           {sortedScans.length === 0 ? (
-            <p className="text-sm text-dark-muted border-2 border-dashed border-dark-border rounded-lg p-6 text-center">No scans yet. Go to the Scans tab to run your first scan.</p>
+            <p className="text-sm text-dark-muted border-2 border-dashed border-dark-border rounded-lg p-6 text-center">No scans yet. Go to the Targets tab to run your first scan.</p>
           ) : (
             <div className="space-y-2">
               {[...sortedScans].reverse().slice(0, 5).map(s => (

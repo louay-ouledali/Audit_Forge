@@ -74,10 +74,16 @@ def update_finding(
 ):
     """Update auditor notes and/or override on a finding."""
     from datetime import datetime, timezone as tz
+    from backend.api.missions import check_mission_lock
 
     finding = db.query(Finding).filter(Finding.id == finding_id).first()
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
+
+    # Enforce mission lock: finding → scan → mission
+    scan = db.query(Scan).filter(Scan.id == finding.scan_id).first()
+    if scan:
+        check_mission_lock(scan.mission_id, db)
 
     if payload.auditor_notes is not None:
         finding.auditor_notes = payload.auditor_notes

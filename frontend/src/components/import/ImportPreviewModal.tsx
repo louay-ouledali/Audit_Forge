@@ -13,7 +13,7 @@ import {
   Database,
   Target,
 } from 'lucide-react';
-import type { SmartImportPreviewResponse, SmartImportResponse } from '@/services/api';
+import type { SmartImportPreviewResponse } from '@/services/api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Import Preview Modal — Phase 1 Smart Import
@@ -27,7 +27,6 @@ interface Props {
   loading: boolean;
   filename: string;
   onImport: (options: ImportOptions) => Promise<void>;
-  onResult?: (result: SmartImportResponse) => void;
 }
 
 export interface ImportOptions {

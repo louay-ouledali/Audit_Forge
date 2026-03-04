@@ -216,33 +216,62 @@ export default function MissionWorkspace() {
         </div>
       </div>
 
-      {/* Lock Dialog */}
+      {/* Lock Dialog Modal */}
       {showLockDialog && (
-        <div className="rounded-xl border border-dark-border bg-dark-card p-6">
-          <h3 className="mb-3 text-lg font-semibold text-white">{lockAction === 'lock' ? 'Lock Mission' : 'Unlock Mission'}</h3>
-          <p className="mb-4 text-sm text-dark-secondary">
-            {lockAction === 'lock'
-              ? 'Set a password to lock this mission. Locked missions cannot be modified.'
-              : 'Enter the password to unlock this mission.'}
-          </p>
-          <div className="flex items-center gap-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLockDialog(false)}>
+          <div
+            className="mx-4 w-full max-w-md rounded-xl border border-dark-border bg-dark-card p-6 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${lockAction === 'lock' ? 'bg-amber-500/10' : 'bg-emerald-500/10'}`}>
+                {lockAction === 'lock'
+                  ? <Lock className="h-5 w-5 text-amber-400" />
+                  : <Unlock className="h-5 w-5 text-emerald-400" />}
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-white">{lockAction === 'lock' ? 'Lock Mission' : 'Unlock Mission'}</h3>
+                <p className="text-xs text-dark-muted">{mission.name}</p>
+              </div>
+            </div>
+            <p className="mb-4 text-sm text-dark-secondary">
+              {lockAction === 'lock'
+                ? 'Set a password to lock this mission. Locked missions cannot be modified — no scans, imports, or target changes allowed.'
+                : 'Enter the password to unlock this mission and allow modifications.'}
+            </p>
             <input
               type="password"
               value={lockPassword}
               onChange={e => setLockPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && lockPassword && handleLock()}
               placeholder="Password"
-              className={`${inputClass} max-w-xs`}
+              autoFocus
+              className={`${inputClass} mb-4 w-full`}
             />
-            <button
-              onClick={handleLock}
-              disabled={!lockPassword || lockLoading}
-              className="rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50"
-            >
-              {lockLoading ? 'Processing…' : lockAction === 'lock' ? 'Lock' : 'Unlock'}
-            </button>
-            <button onClick={() => setShowLockDialog(false)} className="rounded-lg border border-dark-border px-4 py-2 text-sm text-dark-secondary hover:bg-dark-elevated">
-              Cancel
-            </button>
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-2.5 text-xs text-red-400">
+                {error}
+              </div>
+            )}
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => { setShowLockDialog(false); setError(''); }}
+                className="rounded-lg border border-dark-border px-4 py-2 text-sm text-dark-secondary hover:bg-dark-elevated"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLock}
+                disabled={!lockPassword || lockLoading}
+                className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
+                  lockAction === 'lock'
+                    ? 'bg-amber-500 text-black hover:bg-amber-400'
+                    : 'bg-emerald-500 text-black hover:bg-emerald-400'
+                }`}
+              >
+                {lockLoading ? 'Processing…' : lockAction === 'lock' ? 'Lock Mission' : 'Unlock Mission'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -285,15 +314,16 @@ export default function MissionWorkspace() {
           clientTargets={clientTargets}
           onRefresh={fetchData}
           onSwitchTab={(tab) => setActiveTab(tab as typeof activeTab)}
+          isLocked={!!mission.is_locked}
         />
       )}
 
       {activeTab === 'findings' && (
-        <MissionFindings scans={scans} />
+        <MissionFindings scans={scans} isLocked={!!mission.is_locked} />
       )}
 
       {activeTab === 'reports' && (
-        <MissionReports missionId={String(missionId)} missionName={mission?.name} />
+        <MissionReports missionId={missionId} missionName={mission?.name} />
       )}
     </div>
   );

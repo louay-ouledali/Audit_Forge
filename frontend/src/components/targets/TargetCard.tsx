@@ -114,6 +114,7 @@ interface Props {
   onViewFindings?: (target: Target) => void;
   isScanning?: boolean;
   scanProgress?: number;
+  isLocked?: boolean;
 }
 
 export default function TargetCard({
@@ -127,6 +128,7 @@ export default function TargetCard({
   onViewFindings,
   isScanning = false,
   scanProgress,
+  isLocked = false,
 }: Props) {
   const p = getPlatform(target);
   const Icon = p.icon;
@@ -210,16 +212,17 @@ export default function TargetCard({
         <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={() => onConfigure(target)}
-            className="rounded-md p-1.5 text-dark-muted hover:bg-ey-yellow/10 hover:text-ey-yellow transition-colors"
-            title="Configure"
+            disabled={isLocked}
+            className="rounded-md p-1.5 text-dark-muted hover:bg-ey-yellow/10 hover:text-ey-yellow transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            title={isLocked ? 'Mission is locked' : 'Configure'}
           >
             <Settings className="h-4 w-4" />
           </button>
           <button
             onClick={() => onDelete(target.id)}
-            disabled={isScanning}
-            className="rounded-md p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-30"
-            title="Remove"
+            disabled={isScanning || isLocked}
+            className="rounded-md p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            title={isLocked ? 'Mission is locked' : 'Remove'}
           >
             <Trash2 className="h-4 w-4" />
           </button>

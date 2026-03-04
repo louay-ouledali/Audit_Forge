@@ -39,6 +39,7 @@
   .cover .meta-line { font-size: 10px; color: #334155; margin: 4px 0; }
   .cover .meta-line strong { color: #0f172a; min-width: 80px; display: inline-block; }
   .cover::after { content: ''; display: block; width: 60px; height: 3px; background: #3b82f6; border-radius: 2px; margin: 40px auto 0; }
+  .finalized-badge { display: inline-block; margin-top: 18px; padding: 6px 18px; background: #059669; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; border-radius: 4px; }
 
   /* ── Headings with WeasyPrint PDF bookmarks ── */
   h2 {
@@ -202,6 +203,7 @@
     <div class="meta-line"><strong>Total Rules:</strong> {{ summary.total_rules }} &nbsp; | &nbsp; <strong>Compliance:</strong> {{ summary.overall_compliance }}%</div>
     {% if has_builder and audience %}<div class="meta-line"><strong>Audience:</strong> <span class="audience-badge audience-{{ audience }}">{{ audience }}</span></div>{% endif %}
   </div>
+  {% if is_finalized %}<div class="finalized-badge">✔ Finalized</div>{% endif %}
 </div>
 
 <!-- ═══ Table of Contents (with page numbers via WeasyPrint target-counter) ═══ -->
@@ -236,7 +238,7 @@
     {% set ns.n = ns.n + 1 %}
 
     {% if by_category or (categories_enriched is defined and categories_enriched) %}
-    <li><a href="#sec-by-category">{{ ns.n }}. Compliance by Category</a></li>
+    <li><a href="#sec-by-category">{{ ns.n }}. Rule Categories</a></li>
     {% set ns.n = ns.n + 1 %}
     {% endif %}
 
@@ -472,10 +474,10 @@
   </table>
 </div>
 
-<!-- ═══ Compliance by Category (enriched CIS section names) ═══ -->
+<!-- ═══ Rule Categories (enriched CIS section names) ═══ -->
 {% if categories_enriched is defined and categories_enriched %}
 <div class="section" id="sec-by-category">
-  <h2>Compliance by Category</h2>
+  <h2>Rule Categories</h2>
   <table>
     <thead><tr><th>Section</th><th>Category Name</th><th>Total</th><th>Passed</th><th>Failed</th><th>Compliance</th></tr></thead>
     <tbody>
@@ -499,7 +501,7 @@
 </div>
 {% elif by_category %}
 <div class="section" id="sec-by-category">
-  <h2>Compliance by Category</h2>
+  <h2>Rule Categories</h2>
   <table>
     <thead><tr><th>Category</th><th>Total</th><th>Passed</th><th>Failed</th><th>Compliance</th></tr></thead>
     <tbody>
@@ -598,7 +600,7 @@
     <br><code style="font-size: 7px; background: #f1f5f9; padding: 2px 4px; border-radius: 3px;">
     Score = Compliance% − (Critical×5 + High×3 + Medium×1 + Low×0.3) ÷ TotalRules × 10
     </code><br>
-    Grades: <strong>A</strong> (≥90), <strong>B</strong> (≥75), <strong>C</strong> (≥60), <strong>D</strong> (≥40), <strong>F</strong> (&lt;40).
+    Grades: <strong>A</strong> (≥90), <strong>B</strong> (≥80), <strong>C</strong> (≥70), <strong>D</strong> (≥50), <strong>F</strong> (&lt;50).
   </p>
 </div>
 
@@ -982,8 +984,8 @@
         </span>
       </div>
       {% if f.description %}<p><span class="field-label">Description:</span> {{ f.description }}</p>{% endif %}
-      <p><span class="field-label">Expected:</span> <code>{{ f.expected_output }}</code></p>
-      <p><span class="field-label">Actual:</span> <code>{{ f.actual_output }}</code></p>
+      <p><span class="field-label">Expected:</span> <code class="output-val">{{ f.expected_output_display|default(f.expected_output, true) }}</code>{% if f.expected_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:7.5px;"> (truncated)</span>{% endif %}</p>
+      <p><span class="field-label">Actual:</span> <code class="output-val">{{ f.actual_output_display|default(f.actual_output, true) }}</code>{% if f.actual_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:7.5px;"> ({{ f.actual_output_length }} chars{% if f.actual_output_lines_hidden %}, {{ f.actual_output_lines_hidden }} lines hidden{% endif %})</span>{% endif %}</p>
       {% if f.evaluation_explanation %}
       <div class="eval-box"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</div>
       {% endif %}
@@ -999,14 +1001,7 @@
 {% endif %}
 {% endif %}
 
-<!-- ═══ Compliance Trend (placeholder) ═══ -->
-<div class="section" id="sec-compliance-trend">
-  <h2>Compliance Trend</h2>
-  <div style="border: 1px dashed #cbd5e1; border-radius: 8px; padding: 20px; text-align: center; color: #94a3b8;">
-    <p style="font-size: 10px; font-weight: 600; margin-bottom: 4px;">Historical Trend Data Not Yet Available</p>
-    <p style="font-size: 8px;">When multiple scans of the same target are completed, a compliance trend chart will appear here showing progress over time.</p>
-  </div>
-</div>
+
 
 <!-- ═══ Appendix ═══ -->
 <div class="section" id="sec-appendix" style="page-break-before: always;">
@@ -1021,7 +1016,7 @@
       <tr><td style="font-weight:600;">Profile Level</td><td>{{ audit_info.get('profile_level', 'N/A') }}</td></tr>
       {% endif %}
       <tr><td style="font-weight:600;">Total Rules Evaluated</td><td>{{ summary.total_rules }}</td></tr>
-      <tr><td style="font-weight:600;">Report Generated</td><td>{{ now }}</td></tr>
+      <tr><td style="font-weight:600;">Report Generated</td><td>{{ generated_at }}</td></tr>
       <tr><td style="font-weight:600;">Engine</td><td>AuditForge — Automated CIS Compliance Auditing Platform</td></tr>
     </tbody>
   </table>
