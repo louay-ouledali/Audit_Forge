@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Shield } from 'lucide-react';
+import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Shield, Pencil } from 'lucide-react';
 import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse, MigrationReadiness } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
 import RuleEditor from '@/components/benchmark/RuleEditor';
 import RuleTestPanel from '@/components/benchmark/RuleTestPanel';
+import InlineEditField from '@/components/benchmark/InlineEditField';
 import FrameworkCoveragePanel from '@/components/FrameworkCoveragePanel';
 
 function severityBadge(severity: string) {
@@ -91,6 +92,7 @@ export default function BenchmarkDetail() {
   const [showUnlockForm, setShowUnlockForm] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [showAddRule, setShowAddRule] = useState(false);
+  const [editingRule, setEditingRule] = useState<Rule | null>(null);
   const benchmarkImportRef = useRef<HTMLInputElement>(null);
   const rulesImportRef = useRef<HTMLInputElement>(null);
   const commandsImportRef = useRef<HTMLInputElement>(null);
@@ -480,6 +482,17 @@ export default function BenchmarkDetail() {
       setRuleCommand(cmd);
     } catch {
       setRuleCommand(null);
+    }
+  };
+
+  const handleSaveRuleField = async (ruleId: number, field: string, value: string) => {
+    if (!benchmark) return;
+    try {
+      const updated = await api.updateRuleFull(benchmark.id, ruleId, { [field]: value || null });
+      setRules(prev => prev.map(r => r.id === ruleId ? { ...r, ...updated } : r));
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to save rule');
+      throw err; // re-throw so InlineEditField stays in editing mode
     }
   };
 
@@ -1099,11 +1112,87 @@ export default function BenchmarkDetail() {
                   </button>
                   {expandedRule === rule.id && (
                     <div className="border-t border-dark-border bg-dark-elevated px-4 py-3 space-y-3">
-                      {rule.description && (
-                        <div>
-                          <span className="text-xs font-medium text-dark-secondary">Description:</span>
-                          <p className="mt-1 text-sm text-gray-300">{rule.description}</p>
-                        </div>
+                      {/* Inline editable rule fields */}
+                      <InlineEditField
+                        label="Title"
+                        value={rule.title}
+                        onSave={v => handleSaveRuleField(rule.id, 'title', v)}
+                        editable={benchmark?.is_editable ?? false}
+                      />
+                      <InlineEditField
+                        label="Description"
+                        value={rule.description || ''}
+                        onSave={v => handleSaveRuleField(rule.id, 'description', v)}
+                        editable={benchmark?.is_editable ?? false}
+                        multiline
+                        placeholder="No description — click to add…"
+                      />
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <InlineEditField
+                          label="Severity"
+                          value={rule.severity}
+                          onSave={v => handleSaveRuleField(rule.id, 'severity', v)}
+                          editable={benchmark?.is_editable ?? false}
+                          options={[
+                            { value: 'critical', label: 'Critical' },
+                            { value: 'high', label: 'High' },
+                            { value: 'medium', label: 'Medium' },
+                            { value: 'low', label: 'Low' },
+                          ]}
+                        />
+                        <InlineEditField
+                          label="Profile Applicability"
+                          value={rule.profile_applicability || ''}
+                          onSave={v => handleSaveRuleField(rule.id, 'profile_applicability', v)}
+                          editable={benchmark?.is_editable ?? false}
+                          placeholder="e.g. Level 1"
+                        />
+                        <InlineEditField
+                          label="Assessment Type"
+                          value={rule.assessment_type || ''}
+                          onSave={v => handleSaveRuleField(rule.id, 'assessment_type', v)}
+                          editable={benchmark?.is_editable ?? false}
+                          placeholder="e.g. Automated"
+                        />
+                      </div>
+                      <InlineEditField
+                        label="Rationale"
+                        value={rule.rationale || ''}
+                        onSave={v => handleSaveRuleField(rule.id, 'rationale', v)}
+                        editable={benchmark?.is_editable ?? false}
+                        multiline
+                        placeholder="No rationale — click to add…"
+                      />
+                      <InlineEditField
+                        label="Remediation"
+                        value={rule.remediation_description_raw || ''}
+                        onSave={v => handleSaveRuleField(rule.id, 'remediation_description_raw', v)}
+                        editable={benchmark?.is_editable ?? false}
+                        multiline
+                        placeholder="No remediation text — click to add…"
+                      />
+                      {/* Full form edit button */}
+                      {benchmark?.is_editable && (
+                        editingRule?.id === rule.id ? (
+                          <RuleEditor
+                            benchmarkId={benchmarkId}
+                            editRule={rule}
+                            onRuleCreated={() => {}}
+                            onRuleUpdated={(updated) => {
+                              setRules(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
+                              setEditingRule(null);
+                              setSuccessMsg('Rule updated successfully');
+                            }}
+                            onCancel={() => setEditingRule(null)}
+                          />
+                        ) : (
+                          <button
+                            onClick={() => setEditingRule(rule)}
+                            className="inline-flex items-center gap-1.5 rounded-md border border-ey-yellow/30 bg-ey-yellow/10 px-3 py-1.5 text-xs font-medium text-ey-yellow hover:bg-ey-yellow/20 transition-colors"
+                          >
+                            <Pencil className="h-3 w-3" /> Edit Full Rule
+                          </button>
+                        )
                       )}
                       {ruleCommand && (
                         <div className="space-y-2">

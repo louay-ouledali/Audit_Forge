@@ -552,13 +552,21 @@ export async function getFinding(id: number): Promise<Finding> {
   return data;
 }
 
-export async function updateFinding(id: number, payload: { auditor_notes?: string; auditor_override?: string }): Promise<Finding> {
+export async function updateFinding(id: number, payload: {
+  auditor_notes?: string;
+  auditor_override?: string;
+  auditor_status_override?: string;
+  auditor_severity_override?: string;
+  auditor_description?: string;
+  auditor_remediation?: string;
+  override_reason?: string;
+}): Promise<Finding> {
   const { data } = await api.put(`/findings/${id}`, payload);
   return data;
 }
 
-export async function generateAIAdvice(findingId: number): Promise<{ advice: string; generated_at: string }> {
-  const { data } = await api.post(`/findings/${findingId}/ai-advice`);
+export async function generateAIAdvice(findingId: number, force = false): Promise<{ advice: string; generated_at: string }> {
+  const { data } = await api.post(`/findings/${findingId}/ai-advice`, null, { params: force ? { force: true } : undefined });
   return data;
 }
 

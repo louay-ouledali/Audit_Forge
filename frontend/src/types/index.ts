@@ -381,8 +381,13 @@ export interface Rule {
   section_number: string;
   title: string;
   description: string | null;
-  severity: string;
+  rationale: string | null;
+  profile_applicability: string | null;
   assessment_type: string | null;
+  default_value: string | null;
+  audit_description_raw: string | null;
+  remediation_description_raw: string | null;
+  severity: string;
   enabled: boolean;
   tags: RuleTag[];
   // Smart Import Phase 1 additions
@@ -590,12 +595,12 @@ export interface Finding {
   section_number: string | null;
   rule_title: string | null;
   // Override fields
-  override_status: string | null;
-  override_severity: string | null;
-  override_description: string | null;
-  override_remediation: string | null;
+  auditor_status_override: string | null;
+  auditor_severity_override: string | null;
+  auditor_description: string | null;
+  auditor_remediation: string | null;
   override_reason: string | null;
-  override_timestamp: string | null;
+  overridden_at: string | null;
 }
 
 export interface SavedReport {

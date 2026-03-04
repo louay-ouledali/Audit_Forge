@@ -126,17 +126,17 @@ def update_finding(
 
 
 @router.post("/{finding_id}/ai-advice", response_model=FindingAIAdviceResponse)
-async def generate_ai_advice(finding_id: int, db: Session = Depends(get_db)):
+async def generate_ai_advice(finding_id: int, force: bool = False, db: Session = Depends(get_db)):
     """Generate AI remediation advice for a finding (on-demand LLM call).
 
-    If advice was already generated, return the cached version.
+    If advice was already generated, return the cached version unless force=True.
     """
     finding = db.query(Finding).filter(Finding.id == finding_id).first()
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
 
-    # Return cached advice if available
-    if finding.ai_advice and finding.ai_advice_generated_at:
+    # Return cached advice if available and not forcing regeneration
+    if not force and finding.ai_advice and finding.ai_advice_generated_at:
         return FindingAIAdviceResponse(
             advice=finding.ai_advice,
             generated_at=finding.ai_advice_generated_at,

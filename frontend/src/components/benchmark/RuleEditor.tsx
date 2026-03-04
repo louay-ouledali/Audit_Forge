@@ -1,22 +1,31 @@
 import { useState } from 'react';
-import { Plus, Sparkles, Loader2 } from 'lucide-react';
-import type { AIRuleCreateRequest, AIRuleCreateResponse } from '@/types';
-import { createRuleWithAI } from '@/services/api';
+import { Plus, Sparkles, Loader2, Save } from 'lucide-react';
+import type { AIRuleCreateRequest, AIRuleCreateResponse, Rule, RuleFullUpdate } from '@/types';
+import { createRuleWithAI, updateRuleFull } from '@/services/api';
 
 interface RuleEditorProps {
   benchmarkId: number;
   onRuleCreated: (result: AIRuleCreateResponse) => void;
   onCancel: () => void;
   existingSections?: string[];
+  /** When provided, the editor operates in edit mode instead of create mode */
+  editRule?: Rule;
+  /** Called on successful rule update (edit mode) */
+  onRuleUpdated?: (updated: Rule) => void;
 }
 
-export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, existingSections = [] }: RuleEditorProps) {
-  const [sectionNumber, setSectionNumber] = useState('');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [rationale, setRationale] = useState('');
-  const [severity, setSeverity] = useState('medium');
-  const [profileApplicability, setProfileApplicability] = useState('');
+export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, existingSections = [], editRule, onRuleUpdated }: RuleEditorProps) {
+  const isEditMode = !!editRule;
+
+  const [sectionNumber, setSectionNumber] = useState(editRule?.section_number || '');
+  const [title, setTitle] = useState(editRule?.title || '');
+  const [description, setDescription] = useState(editRule?.description || '');
+  const [rationale, setRationale] = useState(editRule?.rationale || '');
+  const [severity, setSeverity] = useState(editRule?.severity || 'medium');
+  const [profileApplicability, setProfileApplicability] = useState(editRule?.profile_applicability || '');
+  const [assessmentType, setAssessmentType] = useState(editRule?.assessment_type || '');
+  const [defaultValue, setDefaultValue] = useState(editRule?.default_value || '');
+  const [remediationText, setRemediationText] = useState(editRule?.remediation_description_raw || '');
   const [generateCommands, setGenerateCommands] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -27,6 +36,33 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
       setError('Section number and title are required');
       return;
     }
+
+    if (isEditMode && editRule) {
+      // --- Edit mode ---
+      setLoading(true);
+      setError('');
+      try {
+        const payload: RuleFullUpdate = {
+          title: title.trim(),
+          description: description.trim() || undefined,
+          rationale: rationale.trim() || undefined,
+          severity,
+          profile_applicability: profileApplicability.trim() || undefined,
+          assessment_type: assessmentType.trim() || undefined,
+          default_value: defaultValue.trim() || undefined,
+          remediation_description_raw: remediationText.trim() || undefined,
+        };
+        const updated = await updateRuleFull(benchmarkId, editRule.id, payload);
+        onRuleUpdated?.(updated);
+      } catch (err: unknown) {
+        setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to update rule');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // --- Create mode ---
     if (existingSections.includes(sectionNumber.trim())) {
       setError(`Section ${sectionNumber} already exists in this benchmark`);
       return;
@@ -54,11 +90,13 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
     }
   };
 
+  const inputCls = "w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20";
+
   return (
     <form onSubmit={handleSubmit} className="rounded-xl border border-ey-yellow/30 bg-dark-card p-5 space-y-4">
       <div className="flex items-center gap-2 mb-2">
-        <Plus className="h-5 w-5 text-ey-yellow" />
-        <h3 className="text-base font-semibold text-white">Add New Rule</h3>
+        {isEditMode ? <Save className="h-5 w-5 text-ey-yellow" /> : <Plus className="h-5 w-5 text-ey-yellow" />}
+        <h3 className="text-base font-semibold text-white">{isEditMode ? `Edit Rule ${editRule?.section_number}` : 'Add New Rule'}</h3>
       </div>
 
       {error && (
@@ -76,8 +114,9 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
             value={sectionNumber}
             onChange={(e) => setSectionNumber(e.target.value)}
             placeholder="e.g. 1.1.1"
-            className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20"
+            className={inputCls}
             required
+            disabled={isEditMode}
           />
         </div>
 
@@ -87,7 +126,7 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
           <select
             value={severity}
             onChange={(e) => setSeverity(e.target.value)}
-            className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20"
+            className={inputCls}
           >
             <option value="critical">Critical</option>
             <option value="high">High</option>
@@ -104,7 +143,7 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
             value={profileApplicability}
             onChange={(e) => setProfileApplicability(e.target.value)}
             placeholder="e.g. Level 1"
-            className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20"
+            className={inputCls}
           />
         </div>
       </div>
@@ -117,7 +156,7 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Ensure 'Enforce password history' is set to '24 or more password(s)'"
-          className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20"
+          className={inputCls}
           required
         />
       </div>
@@ -130,7 +169,7 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What does this rule check? The AI will use this to generate audit commands."
           rows={3}
-          className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20 resize-none"
+          className={`${inputCls} resize-none`}
         />
       </div>
 
@@ -142,23 +181,63 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
           onChange={(e) => setRationale(e.target.value)}
           placeholder="Why is this rule important? (optional)"
           rows={2}
-          className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20 resize-none"
+          className={`${inputCls} resize-none`}
         />
       </div>
 
-      {/* Generate Commands Toggle */}
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={generateCommands}
-          onChange={(e) => setGenerateCommands(e.target.checked)}
-          className="rounded border-dark-border bg-dark-elevated text-ey-yellow focus:ring-ey-yellow/20"
+      {/* Extra fields for edit mode + advanced create */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-dark-secondary mb-1">Assessment Type</label>
+          <select
+            value={assessmentType}
+            onChange={(e) => setAssessmentType(e.target.value)}
+            className={inputCls}
+          >
+            <option value="">Not set</option>
+            <option value="Automated">Automated</option>
+            <option value="Manual">Manual</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-dark-secondary mb-1">Default Value</label>
+          <input
+            type="text"
+            value={defaultValue}
+            onChange={(e) => setDefaultValue(e.target.value)}
+            placeholder="e.g. Not Configured"
+            className={inputCls}
+          />
+        </div>
+      </div>
+
+      {/* Remediation */}
+      <div>
+        <label className="block text-xs text-dark-secondary mb-1">Remediation Text</label>
+        <textarea
+          value={remediationText}
+          onChange={(e) => setRemediationText(e.target.value)}
+          placeholder="Step-by-step remediation instructions…"
+          rows={3}
+          className={`${inputCls} resize-y`}
         />
-        <Sparkles className="h-4 w-4 text-ey-yellow" />
-        <span className="text-sm text-dark-secondary">
-          Auto-generate audit &amp; remediation commands with AI
-        </span>
-      </label>
+      </div>
+
+      {/* Generate Commands Toggle — only in create mode */}
+      {!isEditMode && (
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={generateCommands}
+            onChange={(e) => setGenerateCommands(e.target.checked)}
+            className="rounded border-dark-border bg-dark-elevated text-ey-yellow focus:ring-ey-yellow/20"
+          />
+          <Sparkles className="h-4 w-4 text-ey-yellow" />
+          <span className="text-sm text-dark-secondary">
+            Auto-generate audit &amp; remediation commands with AI
+          </span>
+        </label>
+      )}
 
       {/* Actions */}
       <div className="flex items-center gap-3 pt-2">
@@ -170,11 +249,12 @@ export default function RuleEditor({ benchmarkId, onRuleCreated, onCancel, exist
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              {generateCommands ? 'Creating rule + generating commands...' : 'Creating rule...'}
+              {isEditMode ? 'Saving…' : generateCommands ? 'Creating rule + generating commands...' : 'Creating rule...'}
             </>
           ) : (
             <>
-              <Plus className="h-4 w-4" /> Add Rule
+              {isEditMode ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {isEditMode ? 'Save Changes' : 'Add Rule'}
             </>
           )}
         </button>
