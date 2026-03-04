@@ -223,6 +223,27 @@ async def run_phase2(benchmark_id: int) -> None:
             # Yield control so the frontend can poll updated progress
             await asyncio.sleep(0.05)
 
+        # ── AI severity classification ─────────────────────────
+        # Piggyback on Phase 2 LLM work: classify rules that still have
+        # the default "medium" severity (e.g. imported rules that didn't
+        # match any preloaded benchmark rule by section_number).
+        try:
+            from backend.importers.severity_enricher import _enrich_severity_with_ai
+            medium_rules = (
+                db.query(Rule)
+                .filter(Rule.benchmark_id == benchmark_id, Rule.severity == "medium")
+                .all()
+            )
+            if medium_rules:
+                ai_updated = _enrich_severity_with_ai(medium_rules, db)
+                logger.info(
+                    "Phase 2: AI severity classification updated %d rules for benchmark %d",
+                    ai_updated, benchmark_id,
+                )
+                db.commit()
+        except Exception as sev_exc:
+            logger.warning("AI severity classification failed (non-fatal): %s", sev_exc)
+
         # All done
         benchmark.phase2_status = "completed"
         benchmark.enrichment_stats = json.dumps({

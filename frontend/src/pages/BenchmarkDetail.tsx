@@ -97,6 +97,7 @@ export default function BenchmarkDetail() {
   const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'validation' | 'testing' | 'frameworks'>('overview');
   const [migrationReadiness, setMigrationReadiness] = useState<MigrationReadiness | null>(null);
   const [showTestPanel, setShowTestPanel] = useState<number | null>(null);
+  const [mediumRuleCount, setMediumRuleCount] = useState(0);
 
   const fetchData = useCallback(async () => {
     try {
@@ -110,6 +111,8 @@ export default function BenchmarkDetail() {
       setEnrichStatus(es);
       setVerifyStatus(vs);
       setValidateStatus(vds);
+      // Fetch severity status (medium rule count)
+      api.getSeverityEnrichStatus(benchmarkId).then(s => setMediumRuleCount(s.medium_count)).catch(() => {});
       // Fetch migration readiness (silently fail if not available)
       api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => {});
     } catch {
@@ -170,6 +173,24 @@ export default function BenchmarkDetail() {
       await fetchData();
     } catch (err: unknown) {
       setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to pause enrichment');
+    }
+  };
+
+  const [sevLoading, setSevLoading] = useState(false);
+  const handleClassifySeverities = async () => {
+    setSevLoading(true);
+    try {
+      const res = await api.startSeverityEnrichment(benchmarkId);
+      if (res.rules_to_classify === 0) {
+        setSuccessMsg('All rules already have classified severities');
+      } else {
+        setSuccessMsg(`AI severity classification started for ${res.rules_to_classify} rules`);
+      }
+      await fetchData();
+    } catch (err: unknown) {
+      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start severity classification');
+    } finally {
+      setSevLoading(false);
     }
   };
 
@@ -735,6 +756,16 @@ export default function BenchmarkDetail() {
                 </label>
               )}
             </div>
+            {mediumRuleCount > 0 && benchmark.phase1_status === 'completed' && benchmark.phase2_status !== 'processing' && (
+              <button
+                onClick={handleClassifySeverities}
+                disabled={sevLoading}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs text-dark-secondary hover:text-ey-yellow transition-colors disabled:opacity-50"
+              >
+                <Sparkles className="h-3 w-3" />
+                {sevLoading ? 'Classifying…' : `${mediumRuleCount} rules with default severity — Classify with AI`}
+              </button>
+            )}
           </div>
 
           {/* Verification */}

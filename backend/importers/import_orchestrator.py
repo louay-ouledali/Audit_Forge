@@ -413,11 +413,13 @@ class ImportOrchestrator:
         result.compliance_percentage = round(result.passed / total_checked * 100, 1) if total_checked > 0 else 0.0
 
         # ── Step 6b: Enrich severity from preloaded benchmarks ───
+        # Phase 1 only (instant cross-benchmark matching, no LLM).
+        # AI severity classification runs later via Phase 2 or manual trigger.
         enrichment = enrich_imported_benchmark(
             benchmark.id,
             self.db,
             scan_id=scan.id,
-            use_ai_fallback=True,
+            use_ai_fallback=False,
         )
         result.enrichment_source = enrichment.preloaded_benchmark_name
         result.enrichment_source_id = enrichment.preloaded_benchmark_id

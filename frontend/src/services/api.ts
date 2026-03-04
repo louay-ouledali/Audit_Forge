@@ -273,6 +273,31 @@ export async function getEnrichmentStatus(benchmarkId: number): Promise<EnrichSt
   return data;
 }
 
+// AI Severity Classification
+export interface SeverityEnrichResult {
+  message: string;
+  benchmark_id: number;
+  rules_to_classify: number;
+}
+
+export interface SeverityEnrichStatus {
+  benchmark_id: number;
+  total_rules: number;
+  medium_count: number;
+  classified: number;
+  severity_distribution: Record<string, number>;
+}
+
+export async function startSeverityEnrichment(benchmarkId: number): Promise<SeverityEnrichResult> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/enrich-severities`);
+  return data;
+}
+
+export async function getSeverityEnrichStatus(benchmarkId: number): Promise<SeverityEnrichStatus> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/enrich-severities/status`);
+  return data;
+}
+
 // Verification
 export async function startVerification(benchmarkId: number): Promise<void> {
   await api.post(`/benchmarks/${benchmarkId}/verify`);

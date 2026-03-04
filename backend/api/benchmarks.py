@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.config import PROJECT_ROOT
@@ -1277,6 +1278,117 @@ def get_enrichment_status(benchmark_id: int, db: Session = Depends(get_db)):
         llm_generated=stats.get("llm_generated", 0),
         status=benchmark.phase2_status or "pending",
     )
+
+
+# ── AI Severity Classification (manual trigger) ──
+
+@router.post("/{benchmark_id}/enrich-severities")
+async def enrich_severities(
+    benchmark_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Manually trigger AI severity classification for rules still at 'medium'."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    medium_count = (
+        db.query(func.count(Rule.id))
+        .filter(Rule.benchmark_id == benchmark_id, Rule.severity == "medium")
+        .scalar()
+    )
+    if not medium_count:
+        return {
+            "message": "No rules with default severity to classify",
+            "benchmark_id": benchmark_id,
+            "rules_to_classify": 0,
+        }
+
+    background_tasks.add_task(_run_severity_enrichment, benchmark_id)
+    return {
+        "message": "AI severity classification started",
+        "benchmark_id": benchmark_id,
+        "rules_to_classify": medium_count,
+    }
+
+
+@router.get("/{benchmark_id}/enrich-severities/status")
+def get_severity_enrichment_status(
+    benchmark_id: int,
+    db: Session = Depends(get_db),
+):
+    """Check how many rules still have default 'medium' severity."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    total_rules = (
+        db.query(func.count(Rule.id))
+        .filter(Rule.benchmark_id == benchmark_id)
+        .scalar()
+    )
+    medium_count = (
+        db.query(func.count(Rule.id))
+        .filter(Rule.benchmark_id == benchmark_id, Rule.severity == "medium")
+        .scalar()
+    )
+    severity_dist = dict(
+        db.query(Rule.severity, func.count(Rule.id))
+        .filter(Rule.benchmark_id == benchmark_id)
+        .group_by(Rule.severity)
+        .all()
+    )
+    return {
+        "benchmark_id": benchmark_id,
+        "total_rules": total_rules,
+        "medium_count": medium_count,
+        "classified": total_rules - medium_count,
+        "severity_distribution": severity_dist,
+    }
+
+
+def _run_severity_enrichment(benchmark_id: int):
+    """Background task: run AI severity classification + sync findings."""
+    from backend.database import SessionLocal
+    from backend.importers.severity_enricher import (
+        _enrich_severity_with_ai,
+        _sync_finding_severities,
+    )
+
+    db = SessionLocal()
+    try:
+        medium_rules = (
+            db.query(Rule)
+            .filter(Rule.benchmark_id == benchmark_id, Rule.severity == "medium")
+            .all()
+        )
+        if not medium_rules:
+            return
+
+        updated = _enrich_severity_with_ai(medium_rules, db)
+        db.commit()
+        logger.info(
+            "Manual AI severity classification updated %d rules for benchmark %d",
+            updated, benchmark_id,
+        )
+
+        # Also sync finding severities for any related scans
+        from backend.models.finding import Finding
+        scan_ids = (
+            db.query(Finding.scan_id)
+            .filter(Finding.rule_id.in_([r.id for r in medium_rules]))
+            .distinct()
+            .all()
+        )
+        for (scan_id,) in scan_ids:
+            _sync_finding_severities(scan_id, benchmark_id, db)
+        db.commit()
+    except Exception as exc:
+        logger.error("Manual AI severity classification failed: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
 
 
 # ── Verification ──
