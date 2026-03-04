@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Loader2,
@@ -10,6 +10,8 @@ import {
   FileText,
   RefreshCw,
   Pencil,
+  ChevronRight,
+  ChevronLeft as NavLeft,
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import type { Finding } from '@/types';
@@ -49,9 +51,13 @@ function severityBadge(severity: string | null) {
 export default function FindingDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [finding, setFinding] = useState<Finding | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Sibling finding IDs for keyboard/button navigation
+  const [siblingIds, setSiblingIds] = useState<number[]>([]);
 
   // AI advice
   const [aiLoading, setAiLoading] = useState(false);
@@ -65,6 +71,9 @@ export default function FindingDetail() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Extract location state for breadcrumbs & navigation context
+  const locState = location.state as { fromFindings?: boolean; scanId?: number } | null;
+
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -76,10 +85,36 @@ export default function FindingDetail() {
         setOverride(f.auditor_override || '');
         setAuditorDesc(f.auditor_description || '');
         setAuditorRemediation(f.auditor_remediation || '');
+
+        // Load sibling findings for prev/next navigation
+        const scanId = locState?.scanId || f.scan_id;
+        if (scanId) {
+          api.getScanFindings(scanId).then(res => {
+            setSiblingIds(res.data.map((s: Finding) => s.id));
+          }).catch(() => {});
+        }
       })
       .catch(() => setError('Failed to load finding'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  /* ── Prev/Next navigation ────────────────────────────────── */
+  const currentIdx = finding ? siblingIds.indexOf(finding.id) : -1;
+  const prevId = currentIdx > 0 ? siblingIds[currentIdx - 1] : null;
+  const nextId = currentIdx >= 0 && currentIdx < siblingIds.length - 1 ? siblingIds[currentIdx + 1] : null;
+
+  const goToFinding = (fid: number) => navigate(`/findings/${fid}`, { state: locState });
+
+  /* ── Keyboard nav (← →) ──────────────────────────────────── */
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.key === 'ArrowLeft' && prevId) { e.preventDefault(); goToFinding(prevId); }
+      if (e.key === 'ArrowRight' && nextId) { e.preventDefault(); goToFinding(nextId); }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [prevId, nextId]);
 
   async function handleGetAIAdvice(force = false) {
     if (!finding) return;
@@ -145,11 +180,44 @@ export default function FindingDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Breadcrumbs */}
+      <nav className="flex items-center gap-1.5 text-xs text-dark-muted">
+        <Link to="/clients" className="hover:text-white transition-colors">Clients</Link>
+        <ChevronRight className="h-3 w-3" />
+        <span className="text-dark-secondary">Scan #{finding.scan_id}</span>
+        <ChevronRight className="h-3 w-3" />
+        <span className="text-ey-yellow">{finding.section_number || `Finding #${finding.id}`}</span>
+      </nav>
+
+      {/* Header bar: back + title + prev/next */}
       <div>
-        <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1 text-sm text-ey-yellow hover:text-ey-yellow-hover">
-          <ArrowLeft className="h-4 w-4" /> Back
-        </button>
+        <div className="flex items-center justify-between">
+          <button onClick={() => navigate(-1)} className="inline-flex items-center gap-1 text-sm text-ey-yellow hover:text-ey-yellow-hover">
+            <ArrowLeft className="h-4 w-4" /> Back to Findings
+          </button>
+          {/* Prev / Next buttons */}
+          {siblingIds.length > 1 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => prevId && goToFinding(prevId)}
+                disabled={!prevId}
+                className="inline-flex items-center gap-1 rounded-lg border border-dark-border bg-dark-elevated px-2.5 py-1.5 text-xs text-dark-secondary hover:text-white disabled:opacity-30 transition-colors"
+                title="Previous finding (←)"
+              >
+                <NavLeft className="h-3.5 w-3.5" /> Prev
+              </button>
+              <span className="text-xs text-dark-muted">{currentIdx + 1}/{siblingIds.length}</span>
+              <button
+                onClick={() => nextId && goToFinding(nextId)}
+                disabled={!nextId}
+                className="inline-flex items-center gap-1 rounded-lg border border-dark-border bg-dark-elevated px-2.5 py-1.5 text-xs text-dark-secondary hover:text-white disabled:opacity-30 transition-colors"
+                title="Next finding (→)"
+              >
+                Next <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
         <div className="mt-3 flex items-center gap-3">
           <h1 className="text-2xl font-bold text-white">
             {finding.section_number || 'Finding'} {' - '} {finding.rule_title || `Finding #${finding.id}`}

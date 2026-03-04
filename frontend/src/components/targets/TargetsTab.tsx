@@ -29,10 +29,12 @@ interface Props {
   clientTargets: Target[];
   onRefresh: () => Promise<void>;
   onSwitchTab?: (tab: string) => void;
+  /** Navigate to the findings tab with an optional pre-selected scan */
+  onSwitchToFindings?: (scanId?: number) => void;
   isLocked?: boolean;
 }
 
-export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab, isLocked = false }: Props) {
+export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab, onSwitchToFindings, isLocked = false }: Props) {
   const [assignTargetId, setAssignTargetId] = useState<number | ''>('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -148,11 +150,15 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   };
 
   const handleViewFindings = (_target: Target) => {
-    onSwitchTab?.('findings');
+    // Switch to findings tab — "All Scans" so user sees all findings for this target
+    if (onSwitchToFindings) onSwitchToFindings();
+    else onSwitchTab?.('findings');
   };
 
-  const handleViewScanFindings = (_scanId: number) => {
-    onSwitchTab?.('findings');
+  const handleViewScanFindings = (scanId: number) => {
+    // Switch to findings tab with specific scan pre-selected
+    if (onSwitchToFindings) onSwitchToFindings(scanId);
+    else onSwitchTab?.('findings');
   };
 
   const handleImportResults = (target: Target) => {

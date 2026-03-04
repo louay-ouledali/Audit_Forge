@@ -19,6 +19,8 @@ import { STATUS_STYLES, STATUS_LABELS, inputClass } from '@/components/mission/b
 /* ── Tab-level components ──────────────────────────────────── */
 import MissionOverview from '@/components/mission/MissionOverview';
 import MissionFindings from '@/components/mission/MissionFindings';
+import { DEFAULT_FILTER_STATE } from '@/components/mission/MissionFindings';
+import type { FindingsFilterState } from '@/components/mission/MissionFindings';
 import MissionReports from '@/components/mission/MissionReports';
 import TargetsTab from '@/components/targets/TargetsTab';
 
@@ -41,6 +43,10 @@ export default function MissionWorkspace() {
 
   /* ── Tab state ───────────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState<MissionTab>('overview');
+
+  /* ── Findings filter state (persisted across tab switches) ─ */
+  const [findingsFilter, setFindingsFilter] = useState<FindingsFilterState>(DEFAULT_FILTER_STATE);
+  const [findingsCount, setFindingsCount] = useState(0);
 
   /* ── Lock state ──────────────────────────────────────────── */
   const [lockPassword, setLockPassword] = useState('');
@@ -283,7 +289,7 @@ export default function MissionWorkspace() {
         {([
           { key: 'overview' as const, label: 'Overview', icon: Activity },
           { key: 'targets' as const, label: 'Targets', icon: Server, count: missionTargets.length },
-          { key: 'findings' as const, label: 'Findings', icon: AlertTriangle },
+          { key: 'findings' as const, label: 'Findings', icon: AlertTriangle, count: findingsCount || undefined },
           { key: 'reports' as const, label: 'Reports', icon: BarChart3 },
         ]).map(tab => (
           <button
@@ -314,12 +320,22 @@ export default function MissionWorkspace() {
           clientTargets={clientTargets}
           onRefresh={fetchData}
           onSwitchTab={(tab) => setActiveTab(tab as typeof activeTab)}
+          onSwitchToFindings={(scanId) => {
+            setFindingsFilter({ ...DEFAULT_FILTER_STATE, selectedScanId: scanId ?? 'all' });
+            setActiveTab('findings');
+          }}
           isLocked={!!mission.is_locked}
         />
       )}
 
       {activeTab === 'findings' && (
-        <MissionFindings scans={scans} isLocked={!!mission.is_locked} />
+        <MissionFindings
+          scans={scans}
+          isLocked={!!mission.is_locked}
+          filterState={findingsFilter}
+          onFilterChange={setFindingsFilter}
+          onTotalCount={setFindingsCount}
+        />
       )}
 
       {activeTab === 'reports' && (
