@@ -122,6 +122,14 @@ class ImportResult:
     fp_suspects: int = 0
     migration_readiness: float = 0.0    # Percentage of rules with validated commands
 
+    # Severity enrichment stats
+    enrichment_source: str = ""             # Name of preloaded benchmark used for enrichment
+    enrichment_source_id: int | None = None # ID of preloaded benchmark used
+    rules_enriched: int = 0                 # Total rules enriched (preloaded + AI)
+    commands_inherited: int = 0             # Commands copied from preloaded benchmark
+    severity_distribution: dict[str, int] = field(default_factory=dict)
+    findings_severity_updated: int = 0      # Findings whose severity was synced
+
     import_record_id: int | None = None
 
     platform_info: PlatformInfo = field(default_factory=PlatformInfo)
@@ -148,6 +156,12 @@ class ImportResult:
             "compliance_percentage": self.compliance_percentage,
             "fp_suspects": self.fp_suspects,
             "migration_readiness": self.migration_readiness,
+            "enrichment_source": self.enrichment_source,
+            "enrichment_source_id": self.enrichment_source_id,
+            "rules_enriched": self.rules_enriched,
+            "commands_inherited": self.commands_inherited,
+            "severity_distribution": self.severity_distribution,
+            "findings_severity_updated": self.findings_severity_updated,
             "import_record_id": self.import_record_id,
             "warnings": self.warnings,
         }

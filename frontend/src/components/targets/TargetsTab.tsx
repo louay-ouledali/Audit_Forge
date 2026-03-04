@@ -275,6 +275,9 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       const parts: string[] = [`Smart Import complete!`];
       parts.push(`${res.findings_created} findings imported`);
       if (res.benchmark_reconstructed) parts.push(`Benchmark reconstructed: ${res.benchmark_name}`);
+      if (res.enrichment_source) parts.push(`Severity enriched from: ${res.enrichment_source}`);
+      if (res.rules_enriched && res.rules_enriched > 0) parts.push(`${res.rules_enriched} rules enriched`);
+      if (res.commands_inherited && res.commands_inherited > 0) parts.push(`${res.commands_inherited} commands inherited`);
       if (res.fp_suspects && res.fp_suspects > 0) parts.push(`${res.fp_suspects} potential false positives flagged`);
       if (res.warnings && res.warnings.length > 0) parts.push(`Warnings: ${res.warnings.length}`);
       setSuccessMsg(parts.join(' | '));

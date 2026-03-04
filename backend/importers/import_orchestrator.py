@@ -42,6 +42,7 @@ from backend.importers.qualys_parser import (
 from backend.importers.openvas_parser import detect_openvas_xml, parse_openvas_xml
 from backend.importers.benchmark_resolver import resolve_benchmark
 from backend.importers.platform_detector import enrich_platform_info
+from backend.importers.severity_enricher import enrich_imported_benchmark
 from backend.models.benchmark import Benchmark
 from backend.models.finding import Finding
 from backend.models.rule import Rule
@@ -410,6 +411,29 @@ class ImportOrchestrator:
         result.not_applicable = stats["not_applicable"]
         total_checked = result.passed + result.failed + result.errors + result.not_applicable
         result.compliance_percentage = round(result.passed / total_checked * 100, 1) if total_checked > 0 else 0.0
+
+        # ── Step 6b: Enrich severity from preloaded benchmarks ───
+        enrichment = enrich_imported_benchmark(
+            benchmark.id,
+            self.db,
+            scan_id=scan.id,
+            use_ai_fallback=True,
+        )
+        result.enrichment_source = enrichment.preloaded_benchmark_name
+        result.enrichment_source_id = enrichment.preloaded_benchmark_id
+        result.rules_enriched = enrichment.rules_enriched_from_preloaded + enrichment.rules_enriched_by_ai
+        result.commands_inherited = enrichment.commands_copied
+        result.severity_distribution = enrichment.severity_distribution
+        result.findings_severity_updated = enrichment.findings_updated
+
+        if enrichment.preloaded_benchmark_name:
+            logger.info(
+                "Severity enrichment: %d rules enriched from '%s', %d by AI, %d commands inherited",
+                enrichment.rules_enriched_from_preloaded,
+                enrichment.preloaded_benchmark_name,
+                enrichment.rules_enriched_by_ai,
+                enrichment.commands_copied,
+            )
 
         # Finalize scan
         scan.status = "completed"

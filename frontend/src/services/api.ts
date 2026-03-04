@@ -576,6 +576,13 @@ export interface SmartImportResponse extends ImportResultsResponse {
   import_record_id?: number | null;
   not_applicable?: number;
   warnings?: string[];
+  // Severity enrichment
+  enrichment_source?: string;
+  enrichment_source_id?: number | null;
+  rules_enriched?: number;
+  commands_inherited?: number;
+  severity_distribution?: Record<string, number>;
+  findings_severity_updated?: number;
 }
 
 export interface SmartImportPreviewResponse {
