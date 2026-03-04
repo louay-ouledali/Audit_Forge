@@ -47,6 +47,10 @@ VALID_SETTING_KEYS = {
     "llm_task_verification_model",
     "llm_task_reports_model",
     "llm_task_analysis_model",
+    # White-labeling
+    "company_name",
+    "company_logo_base64",
+    "auditor_name",
 }
 
 

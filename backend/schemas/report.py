@@ -26,8 +26,9 @@ class ReportGenerateRequest(BaseModel):
 
 
 class AISummaryRequest(BaseModel):
-    scope: str  # "scan", "target", "mission"
-    scope_id: int
+    scope: str  # "scan", "target", "mission", "custom"
+    scope_id: int | None = None
+    scan_ids: list[int] | None = None
 
 
 class AISummaryResponse(BaseModel):

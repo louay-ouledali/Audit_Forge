@@ -714,6 +714,18 @@ def _build_per_target_findings(data: dict) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# White-label settings loader
+# ---------------------------------------------------------------------------
+
+def _load_whitelabel_settings(db: Session) -> dict[str, str]:
+    """Load company_name, company_logo_base64, and auditor_name from AppSettings."""
+    from backend.models.app_settings import AppSettings
+    keys = ("company_name", "company_logo_base64", "auditor_name")
+    rows = db.query(AppSettings).filter(AppSettings.key.in_(keys)).all()
+    return {row.key: (row.value or "") for row in rows}
+
+
+# ---------------------------------------------------------------------------
 # PDF generation
 # ---------------------------------------------------------------------------
 
@@ -726,6 +738,12 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
 
     if not include_passed:
         data = {**data, "findings": [f for f in data["findings"] if f["status"] != "PASS"]}
+
+    # ── White-label settings ──
+    _wl = _load_whitelabel_settings(db)
+    data["company_name"] = _wl.get("company_name", "AuditForge")
+    data["company_logo_base64"] = _wl.get("company_logo_base64", "")
+    data["auditor_name"] = _wl.get("auditor_name", "")
 
     # Phase 2: grouped findings & builder metadata for template
     grouped_findings = _build_grouped_findings(data, data["findings"])
@@ -785,6 +803,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     ws1.title = "Executive Summary"
     summary = data["summary"]
     header_font = Font(bold=True, size=14)
+    sub_header_font = Font(bold=True, size=11)
     label_font = Font(bold=True)
 
     ws1.append(["Audit Report - Executive Summary"])
@@ -792,12 +811,19 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     ws1.append([])
     ws1.append(["Client", data.get("client_name", "")])
     ws1.append(["Mission", data.get("mission_name", "")])
+    ws1.append(["Benchmark", data.get("benchmark_name", "CIS Benchmark")])
+    _ai = data.get("audit_info", {})
+    if _ai.get("benchmark_version"):
+        ws1.append(["Benchmark Version", _ai["benchmark_version"]])
+    if _ai.get("profile_level"):
+        ws1.append(["Platform / Profile", _ai["profile_level"]])
     ws1.append(["Date Range", data.get("date_range", "")])
     ws1.append(["Generated", data.get("generated_at", "")])
     ws1.append([])
     ws1.append(["Metric", "Value"])
-    ws1["A8"].font = label_font
-    ws1["B8"].font = label_font
+    _metric_row = ws1.max_row
+    ws1.cell(row=_metric_row, column=1).font = label_font
+    ws1.cell(row=_metric_row, column=2).font = label_font
     ws1.append(["Overall Compliance", f"{summary['overall_compliance']}%"])
     ws1.append(["Total Rules", summary["total_rules"]])
     ws1.append(["Passed", summary["passed"]])
@@ -805,10 +831,9 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     ws1.append(["Errors", summary["errors"]])
     ws1.append([])
     ws1.append(["Severity", "Total", "Passed", "Failed"])
-    ws1["A15"].font = label_font
-    ws1["B15"].font = label_font
-    ws1["C15"].font = label_font
-    ws1["D15"].font = label_font
+    _sev_header_row = ws1.max_row
+    for _ci in range(1, 5):
+        ws1.cell(row=_sev_header_row, column=_ci).font = label_font
     for sev in ("critical", "high", "medium", "low", "informational"):
         info = summary["by_severity"].get(sev, {"total": 0, "passed": 0, "failed": 0})
         row_idx = ws1.max_row + 1
@@ -898,19 +923,34 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     ws4.append(["Category", "Total", "Passed", "Failed", "Compliance %"])
     for col_idx in range(1, 6):
         ws4.cell(row=1, column=col_idx).font = label_font
+
+    # Conditional formatting fills for compliance %
+    _FILL_COMP_GREEN = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    _FILL_COMP_YELLOW = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+    _FILL_COMP_RED = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+
     by_category = data.get("by_category", {})
     for cat_key in sorted(by_category.keys(), key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else 0, x)):
         info = by_category[cat_key]
         comp = round((info["passed"] / info["total"]) * 100, 1) if info["total"] > 0 else 0.0
+        row_idx = ws4.max_row + 1
         ws4.append([info.get("label", f"Section {cat_key}"), info["total"], info["passed"], info["failed"], comp])
+        # Conditional fill on compliance cell
+        comp_cell = ws4.cell(row=row_idx, column=5)
+        if comp >= 80:
+            comp_cell.fill = _FILL_COMP_GREEN
+        elif comp >= 60:
+            comp_cell.fill = _FILL_COMP_YELLOW
+        else:
+            comp_cell.fill = _FILL_COMP_RED
     for col_idx in range(1, 6):
-        ws4.column_dimensions[get_column_letter(col_idx)].width = 22
+        ws4.column_dimensions[get_column_letter(col_idx)].width = 30
 
     # ── Sheet 5: Groups (when builder groups are present) ──
     builder_groups = data.get("builder_groups")
     if builder_groups:
         ws5 = wb.create_sheet("Groups")
-        group_cols = ["Group", "Rule Section", "Rule Title", "Severity", "Status"]
+        group_cols = ["Group", "Compliance %", "Passed", "Failed", "Total", "Rule Section", "Rule Title", "Description", "Severity", "Status"]
         ws5.append(group_cols)
         for col_idx in range(1, len(group_cols) + 1):
             ws5.cell(row=1, column=col_idx).font = label_font
@@ -922,28 +962,49 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
                 findings_by_rule[f["_rule_id"]] = f
 
         for bg in builder_groups:
-            for rid in bg["rule_ids"]:
+            # Compute group-level compliance
+            g_pass = sum(1 for rid in bg["rule_ids"] if findings_by_rule.get(rid, {}).get("status") == "PASS")
+            g_fail = sum(1 for rid in bg["rule_ids"] if findings_by_rule.get(rid, {}).get("status") == "FAIL")
+            g_total = len(bg["rule_ids"])
+            g_comp = round((g_pass / g_total) * 100, 1) if g_total > 0 else 0.0
+
+            for i, rid in enumerate(bg["rule_ids"]):
                 fdata = findings_by_rule.get(rid, {})
                 row_idx = ws5.max_row + 1
                 ws5.append([
-                    bg["name"],
+                    bg["name"] if i == 0 else "",  # Show group name only on first row
+                    g_comp if i == 0 else "",
+                    g_pass if i == 0 else "",
+                    g_fail if i == 0 else "",
+                    g_total if i == 0 else "",
                     fdata.get("section_number", ""),
                     _clean(fdata.get("rule_title", f"Rule #{rid}")),
+                    _clean(fdata.get("description", "")[:200]),
                     fdata.get("severity", ""),
                     fdata.get("status", ""),
                 ])
                 sev_fill = SEVERITY_FILLS.get(fdata.get("severity", ""))
                 if sev_fill:
-                    ws5.cell(row=row_idx, column=4).fill = sev_fill
+                    ws5.cell(row=row_idx, column=9).fill = sev_fill
                 if fdata.get("status") == "PASS":
-                    ws5.cell(row=row_idx, column=5).fill = FILL_PASS
+                    ws5.cell(row=row_idx, column=10).fill = FILL_PASS
                 elif fdata.get("status") == "FAIL":
-                    ws5.cell(row=row_idx, column=5).fill = FILL_FAIL
+                    ws5.cell(row=row_idx, column=10).fill = FILL_FAIL
+                # Compliance conditional fill on first row of each group
+                if i == 0:
+                    comp_cell = ws5.cell(row=row_idx, column=2)
+                    if g_comp >= 80:
+                        comp_cell.fill = _FILL_COMP_GREEN
+                    elif g_comp >= 60:
+                        comp_cell.fill = _FILL_COMP_YELLOW
+                    else:
+                        comp_cell.fill = _FILL_COMP_RED
 
         if ws5.max_row > 1:
             ws5.auto_filter.ref = f"A1:{get_column_letter(len(group_cols))}{ws5.max_row}"
         for col_idx in range(1, len(group_cols) + 1):
             ws5.column_dimensions[get_column_letter(col_idx)].width = 22
+        ws5.column_dimensions["H"].width = 40  # Description
 
     # ── Apply text wrapping and column widths to Findings ──
     wrap_align = Alignment(wrap_text=True, vertical="top")
@@ -1008,11 +1069,17 @@ def generate_csv_report(data: dict, include_passed: bool = True) -> str:
 # HTML generation
 # ---------------------------------------------------------------------------
 
-def generate_html_report(data: dict, include_passed: bool) -> str:
+def generate_html_report(data: dict, include_passed: bool, db: Session | None = None) -> str:
     """Self-contained interactive HTML dashboard — pure inline SVG charts, zero external deps."""
     findings = data["findings"]
     if not include_passed:
         findings = [f for f in findings if f["status"] != "PASS"]
+
+    # ── White-label settings ──
+    _wl = _load_whitelabel_settings(db) if db else {}
+    company_name = _wl.get("company_name", "AuditForge")
+    company_logo_base64 = _wl.get("company_logo_base64", "")
+    auditor_name = _wl.get("auditor_name", "")
 
     # ── Phase 2: grouped findings & builder metadata ──
     grouped_findings = _build_grouped_findings(data, findings)
@@ -1023,6 +1090,15 @@ def generate_html_report(data: dict, include_passed: bool) -> str:
 
     # ── Generate all SVG charts (shared logic) ──
     charts = _generate_all_charts(data, grouped_findings)
+
+    # ── Compute risk score (parity with PDF) ──
+    risk_score = _compute_risk_score(data)
+
+    # ── Per-target findings breakdown (parity with PDF) ──
+    per_target_findings = _build_per_target_findings(data)
+
+    # ── Convert AI summary from Markdown to HTML ──
+    ai_summary_html = _md_to_html(data.get("ai_summary", ""))
 
     # ── Findings JSON for JS filtering/sorting engine ──
     findings_json = json.dumps(findings, default=str).replace("</", "<\\/")
@@ -1035,13 +1111,23 @@ def generate_html_report(data: dict, include_passed: bool) -> str:
     return template.render(
         title=data.get("title") or f"Audit Report - {data.get('mission_name', '')}",
         client_name=data.get("client_name", ""),
+        mission_name=data.get("mission_name", ""),
+        benchmark_name=data.get("benchmark_name", "CIS Benchmark"),
+        company_name=company_name,
+        company_logo_base64=company_logo_base64,
+        auditor_name=auditor_name,
         date_range=data.get("date_range", ""),
         generated_at=data.get("generated_at", ""),
         ai_summary=data.get("ai_summary", ""),
-        ai_summary_html=_md_to_html(data.get("ai_summary", "")),
+        ai_summary_html=ai_summary_html,
         summary=data["summary"],
         targets=data.get("targets", []),
         findings=findings,
+        by_category=data.get("by_category", {}),
+        by_target=data.get("by_target", []),
+        categories_enriched=data.get("categories_enriched", []),
+        risk_score=risk_score,
+        per_target_findings=per_target_findings,
         fp_summary=fp_summary,
         findings_json=findings_json,
         grouped_findings=grouped_findings,
@@ -1050,6 +1136,8 @@ def generate_html_report(data: dict, include_passed: bool) -> str:
         audience=audience,
         has_builder=has_builder,
         is_finalized=data.get("is_finalized", False),
+        audit_info=data.get("audit_info", {}),
+        include_passed=include_passed,
         **charts,
     )
 

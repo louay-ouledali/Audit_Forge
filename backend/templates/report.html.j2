@@ -15,7 +15,7 @@
       text-transform: uppercase;
     }
     @bottom-center {
-      content: "AuditForge — Page " counter(page) " of " counter(pages);
+      content: "{{ company_name | default('AuditForge') }} — Page " counter(page) " of " counter(pages);
       font-size: 7.5px;
       color: #94a3b8;
     }
@@ -193,17 +193,33 @@
 
 <!-- ═══ Cover ═══ -->
 <div class="cover">
-  <div class="brand">AuditForge</div>
+  <div class="brand">{{ company_name | default('AuditForge') }}</div>
+  {% if company_logo_base64 %}
+  <div style="margin-bottom: 16px;"><img src="data:image/png;base64,{{ company_logo_base64 }}" alt="Logo" style="max-height: 60px; max-width: 200px;" /></div>
+  {% endif %}
   <h1 style="bookmark-level: none;">{{ title or "Configuration Audit Report" }}</h1>
   <div class="subtitle">{{ mission_name }}</div>
+
+  {# ── Benchmark info block ── #}
+  {% if audit_info %}
+  <div style="margin: 12px auto; display: inline-block; text-align: left; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 16px;">
+    <div style="font-size: 10px; font-weight: 700; color: #1e40af; margin-bottom: 4px;">Benchmark Details</div>
+    <div style="font-size: 9px; color: #334155; margin: 2px 0;"><strong>Name:</strong> {{ audit_info.benchmark_name }}</div>
+    {% if audit_info.benchmark_version %}<div style="font-size: 9px; color: #334155; margin: 2px 0;"><strong>Version:</strong> {{ audit_info.benchmark_version }}</div>{% endif %}
+    {% if audit_info.profile_level %}<div style="font-size: 9px; color: #334155; margin: 2px 0;"><strong>Platform / Profile:</strong> {{ audit_info.profile_level }}</div>{% endif %}
+  </div>
+  {% endif %}
+
   <div class="meta-block">
     <div class="meta-line"><strong>Client:</strong> {{ client_name }}</div>
+    {% if auditor_name %}<div class="meta-line"><strong>Auditor:</strong> {{ auditor_name }}</div>{% endif %}
     <div class="meta-line"><strong>Date Range:</strong> {{ date_range }}</div>
     <div class="meta-line"><strong>Generated:</strong> {{ generated_at }}</div>
     <div class="meta-line"><strong>Total Rules:</strong> {{ summary.total_rules }} &nbsp; | &nbsp; <strong>Compliance:</strong> {{ summary.overall_compliance }}%</div>
     {% if has_builder and audience %}<div class="meta-line"><strong>Audience:</strong> <span class="audience-badge audience-{{ audience }}">{{ audience }}</span></div>{% endif %}
   </div>
   {% if is_finalized %}<div class="finalized-badge">✔ Finalized</div>{% endif %}
+  <div style="margin-top: 24px; font-size: 8px; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase;">Confidential — For Authorized Recipients Only</div>
 </div>
 
 <!-- ═══ Table of Contents (with page numbers via WeasyPrint target-counter) ═══ -->
@@ -444,6 +460,49 @@
   </table>
   {% endif %}
 </div>
+{% endif %}
+
+<!-- ═══ Key Findings Summary (for Executive audience when detail is off) ═══ -->
+{% if audience == "executive" and section_toggles and not section_toggles.get('findings_detail', true) %}
+{% set key_findings = namespace(items=[]) %}
+{% for f in findings if f.status == "FAIL" %}
+  {% if key_findings.items | length < 15 %}
+    {% set key_findings.items = key_findings.items + [f] %}
+  {% endif %}
+{% endfor %}
+{% if key_findings.items %}
+<div class="section" id="sec-key-findings-summary">
+  <h2>Key Findings Summary</h2>
+  <p style="font-size: 8.5px; color: #475569; margin-bottom: 8px;">
+    Condensed view of the {{ key_findings.items | length }} highest-priority failures requiring remediation.
+    Full technical details are available in the Technical report variant.
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:5%">#</th>
+        <th style="width:8%">Section</th>
+        <th style="width:25%">Rule</th>
+        <th style="width:8%">Severity</th>
+        <th style="width:12%">Target</th>
+        <th style="width:42%">Recommended Remediation</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in key_findings.items %}
+      <tr>
+        <td style="font-weight:600; text-align:center;">{{ loop.index }}</td>
+        <td>{{ f.section_number }}</td>
+        <td>{{ f.rule_title }}</td>
+        <td><span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span></td>
+        <td>{{ f.target_hostname }}</td>
+        <td style="font-size: 7.5px;">{{ f.remediation[:200] }}{% if f.remediation | length > 200 %}…{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endif %}
 
 <!-- ═══ Audit Scope ═══ -->

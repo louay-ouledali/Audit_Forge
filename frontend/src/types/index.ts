@@ -634,8 +634,9 @@ export interface ReportGenerateRequest {
 }
 
 export interface AISummaryRequest {
-  scope: 'scan' | 'target' | 'mission';
-  scope_id: number;
+  scope: 'scan' | 'target' | 'mission' | 'custom';
+  scope_id?: number;
+  scan_ids?: number[];
 }
 
 export interface AISummaryResponse {

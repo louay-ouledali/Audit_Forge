@@ -135,7 +135,7 @@ async def generate_report(payload: ReportGenerateRequest, db: Session = Depends(
         )
 
     # html
-    content = generate_html_report(data, payload.include_passed_rules)
+    content = generate_html_report(data, payload.include_passed_rules, db=db)
     return StreamingResponse(
         io.StringIO(content),
         media_type="text/html",
@@ -146,10 +146,17 @@ async def generate_report(payload: ReportGenerateRequest, db: Session = Depends(
 @router.post("/ai-summary", response_model=AISummaryResponse)
 async def generate_ai_summary_endpoint(payload: AISummaryRequest, db: Session = Depends(get_db)):
     """Generate AI executive summary only (preview)."""
-    if payload.scope not in ("scan", "target", "mission"):
-        raise HTTPException(status_code=400, detail="Scope must be scan, target, or mission")
+    if payload.scope not in ("scan", "target", "mission", "custom"):
+        raise HTTPException(status_code=400, detail="Scope must be scan, target, mission, or custom")
 
-    data = aggregate_report_data(payload.scope, payload.scope_id, None, db)
+    if payload.scope == "custom":
+        if not payload.scan_ids:
+            raise HTTPException(status_code=400, detail="scan_ids required for custom scope")
+        data = aggregate_report_data("custom", None, payload.scan_ids, db)
+    else:
+        if payload.scope_id is None:
+            raise HTTPException(status_code=400, detail="scope_id required for non-custom scopes")
+        data = aggregate_report_data(payload.scope, payload.scope_id, None, db)
 
     if not data or not data.get("scans"):
         raise HTTPException(status_code=404, detail="No scans found for the given scope")
@@ -240,7 +247,7 @@ def builder_preview(payload: BuilderPreviewRequest, db: Session = Depends(get_db
     # Inject Phase 2 builder data (groups, audience, sections, summaries)
     _inject_builder_data(data, payload)
 
-    html_content = generate_html_report(data, payload.include_passed_rules)
+    html_content = generate_html_report(data, payload.include_passed_rules, db=db)
     return StreamingResponse(
         io.StringIO(html_content),
         media_type="text/html",

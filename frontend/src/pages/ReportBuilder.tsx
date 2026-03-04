@@ -17,7 +17,6 @@ import {
   ListX,
   RotateCcw,
   Sparkles,
-  GripVertical,
   FolderPlus,
   Trash2,
   Pencil,
@@ -27,7 +26,6 @@ import {
   ChevronDown,
   ChevronUp,
   Plus,
-  X,
   LayoutGrid,
   List,
   CheckCircle2,
@@ -40,6 +38,7 @@ import {
 } from 'lucide-react';
 import type { ScanDetail, BuilderFinding, ReportGenerateRequest, RuleGroup } from '@/types';
 import * as api from '@/services/api';
+import RulePill from '@/components/report/RulePill';
 
 interface ReportBuilderProps {
   missionId?: number;
@@ -87,13 +86,13 @@ const MIME: Record<string, string> = {
 const AUDIENCES = [
   { value: 'executive', label: 'Executive', icon: '📊', desc: 'High-level risk overview', secs: { executive_summary: true, charts: true, findings_detail: false, recommendations: true } },
   { value: 'technical', label: 'Technical', icon: '🔧', desc: 'Full technical detail', secs: { executive_summary: true, charts: true, findings_detail: true, recommendations: true } },
-  { value: 'compliance', label: 'Compliance', icon: '📋', desc: 'Control mapping focus', secs: { executive_summary: true, charts: true, findings_detail: true, recommendations: false } },
+  { value: 'compliance', label: 'Compliance', icon: '📋', desc: 'Control mapping focus', secs: { executive_summary: true, charts: true, findings_detail: true, recommendations: true } },
 ] as const;
 
 const REPORT_PRESETS = [
   { id: 'exec', label: 'Executive Board', icon: '👔', audience: 'executive', format: 'pdf', includePassed: false, aiSummary: true },
   { id: 'tech', label: 'Technical Deep-Dive', icon: '💻', audience: 'technical', format: 'html', includePassed: true, aiSummary: false },
-  { id: 'comp', label: 'Compliance Audit', icon: '📋', audience: 'compliance', format: 'excel', includePassed: true, aiSummary: false },
+  { id: 'comp', label: 'Compliance Audit', icon: '📋', audience: 'compliance', format: 'pdf', includePassed: true, aiSummary: true },
 ] as const;
 
 const SEC_LABELS: Record<string, string> = {
@@ -373,7 +372,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
     if (selectedScanIds.length === 0) return;
     setPreviewingSummary(true); setError('');
     try {
-      const result = await api.generateAISummary({ scope: 'scan', scope_id: selectedScanIds[0] });
+      const result = await api.generateAISummary({ scope: 'custom', scan_ids: selectedScanIds });
       setAiSummaryPreview(result.summary);
     } catch { setError('Failed to generate AI summary. Check LLM configuration.'); } finally { setPreviewingSummary(false); }
   }
@@ -442,30 +441,6 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
       document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       setSuccess(`Report exported as ${filename}`);
     } catch { setError('Export failed'); } finally { setExporting(false); }
-  }
-
-  /* ── RulePill sub-component ───────────────────────────────── */
-  function RulePill({ ruleId, groupIdx }: { ruleId: number; groupIdx: number }) {
-    const rule = ruleMap.get(ruleId);
-    if (!rule) return null;
-    const sev = SEV_COLORS[rule.severity] || SEV_COLORS.medium;
-    return (
-      <div
-        draggable
-        onDragStart={() => handleDragStart(ruleId, groupIdx)}
-        className="flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-2.5 py-1.5 cursor-grab active:cursor-grabbing transition-all hover:border-dark-secondary group"
-      >
-        <GripVertical className="h-3.5 w-3.5 text-dark-muted group-hover:text-dark-secondary flex-shrink-0" />
-        <span className="text-xs font-mono text-dark-muted flex-shrink-0">{rule.section_number}</span>
-        <span className="text-xs text-white truncate flex-1">{rule.rule_title || `Rule #${ruleId}`}</span>
-        <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${sev} flex-shrink-0`}>{rule.severity}</span>
-        {groupIdx >= 0 && (
-          <button onClick={e => { e.stopPropagation(); removeRuleFromGroup(ruleId, groupIdx); }} className="text-dark-muted hover:text-red-400 transition-colors flex-shrink-0" title="Remove">
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </div>
-    );
   }
 
   /* ═══════════════════════════════════════════════════════════════ */
@@ -964,7 +939,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                                     <div className="p-3 space-y-1.5 min-h-[40px]">
                                       {group.rule_ids.length === 0 ? (
                                         <p className="text-xs text-dark-muted text-center py-3">Drag rules here or use auto-group</p>
-                                      ) : group.rule_ids.map(rid => <RulePill key={rid} ruleId={rid} groupIdx={gIdx} />)}
+                                      ) : group.rule_ids.map(rid => <RulePill key={rid} ruleId={rid} groupIdx={gIdx} rule={ruleMap.get(rid)} onDragStart={handleDragStart} onRemove={removeRuleFromGroup} />)}
                                     </div>
                                   )}
                                 </div>
@@ -979,7 +954,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                                     <span className="rounded-full bg-dark-elevated px-2 py-0.5 text-xs text-dark-muted">{ungroupedRuleIds.length}</span>
                                   </div>
                                   <div className="p-3 space-y-1.5 max-h-[300px] overflow-y-auto">
-                                    {ungroupedRuleIds.map(rid => <RulePill key={rid} ruleId={rid} groupIdx={-1} />)}
+                                    {ungroupedRuleIds.map(rid => <RulePill key={rid} ruleId={rid} groupIdx={-1} rule={ruleMap.get(rid)} onDragStart={handleDragStart} onRemove={removeRuleFromGroup} />)}
                                   </div>
                                 </div>
                               )}
@@ -1092,7 +1067,12 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                                     </div>
                                     {groupSummaries[group.name] ? (
                                       <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
-                                        <p className="text-xs text-gray-300 whitespace-pre-wrap leading-relaxed">{groupSummaries[group.name]}</p>
+                                        <textarea
+                                          className="w-full bg-transparent text-xs text-gray-300 leading-relaxed resize-y min-h-[60px] max-h-[200px] border-none focus:outline-none focus:ring-0 p-0"
+                                          value={groupSummaries[group.name]}
+                                          onChange={e => setGroupSummaries(prev => ({ ...prev, [group.name]: e.target.value }))}
+                                          rows={3}
+                                        />
                                         <button onClick={() => setGroupSummaries(prev => { const n = { ...prev }; delete n[group.name]; return n; })}
                                           className="mt-2 text-xs text-dark-muted hover:text-red-400 transition-colors">Remove summary</button>
                                       </div>
@@ -1131,18 +1111,6 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                           onChange={e => setCustomTitle(e.target.value)}
                         />
                       </div>
-                      <div>
-                        <label className="block text-xs font-medium text-dark-secondary mb-1.5">Audience</label>
-                        <div className="flex rounded-lg border border-dark-border overflow-hidden">
-                          {AUDIENCES.map(a => (
-                            <button key={a.value} onClick={() => applyAudience(a)}
-                              className={`px-3 py-2 text-xs font-medium transition-colors whitespace-nowrap ${audience === a.value ? 'bg-ey-yellow/15 text-ey-yellow' : 'bg-dark-elevated text-dark-secondary hover:text-white'
-                                }`}>
-                              {a.icon} {a.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
                       <div className="flex items-center gap-4 pb-0.5">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input type="checkbox" className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow accent-ey-yellow"
@@ -1154,6 +1122,9 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                             checked={includeAiSummary} onChange={e => setIncludeAiSummary(e.target.checked)} />
                           <span className="text-xs text-gray-300 whitespace-nowrap">AI Summary</span>
                         </label>
+                        <span className="text-[11px] text-dark-muted border-l border-dark-border pl-3">
+                          {AUDIENCES.find(a => a.value === audience)?.icon} {audience}
+                        </span>
                       </div>
                     </div>
 
@@ -1193,10 +1164,12 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                         )}
                       </p>
                     </div>
-                    {/* End Left Pane container */}
+                    {/* End Export Bar */}
                   </div>
+                </div>
+                {/* End Left Pane */}
 
-                  {/* Right Pane: Live Preview */}
+                {/* Right Pane: Live Preview */}
                   <div className="flex-1 w-full xl:w-7/12 flex flex-col border border-dark-border bg-dark-card rounded-xl overflow-hidden sticky top-6 shadow-xl" style={{ height: 'calc(100vh - 150px)' }}>
                     <div className="flex items-center justify-between p-4 border-b border-dark-border bg-dark-elevated shrink-0">
                       <div className="flex items-center gap-3">
@@ -1233,7 +1206,6 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                   </div>
 
                 </div>
-              </div>
               {/* End Split Pane Layout */}
             </>
           )}
