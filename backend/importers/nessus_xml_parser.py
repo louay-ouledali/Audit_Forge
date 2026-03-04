@@ -181,9 +181,19 @@ def _parse_host_properties(host_elem: ET.Element) -> dict[str, str]:
     return props
 
 
+_CM_NS = "{http://www.nessus.org/cm}"
+
+
 def _get_text(elem: ET.Element, tag: str) -> str:
-    """Get text content of a child element, or empty string."""
+    """Get text content of a child element, or empty string.
+
+    Handles the ``cm:`` namespace prefix used by real Nessus exports
+    (``xmlns:cm="http://www.nessus.org/cm"``).  Tries plain tag first,
+    then namespaced.
+    """
     child = elem.find(tag)
+    if child is None:
+        child = elem.find(f"{_CM_NS}{tag}")
     return (child.text or "").strip() if child is not None else ""
 
 

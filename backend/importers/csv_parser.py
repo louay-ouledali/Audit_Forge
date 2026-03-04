@@ -73,8 +73,8 @@ def detect_nessus_csv(content: str) -> bool:
     """
     if not content:
         return False
-    # Check first 2000 chars for the header
-    head = content[:2000]
+    # Check first 2000 chars for the header (strip BOM)
+    head = content.lstrip("\ufeff\ufffe")[:2000]
     # Nessus CSV always starts with "Plugin ID" column
     return bool(
         re.search(r"Plugin\s*ID", head, re.IGNORECASE)
@@ -105,6 +105,9 @@ def parse_nessus_csv(
     """
     if not content or not content.strip():
         raise ValueError("Empty CSV content")
+
+    # Strip BOM (UTF-8-BOM, UTF-16 LE/BE) if present
+    content = content.lstrip("\ufeff\ufffe")
 
     reader = csv.DictReader(io.StringIO(content))
 

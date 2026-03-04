@@ -700,7 +700,7 @@ async def smart_import_preview(
     if len(raw) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=400, detail="File too large")
 
-    content = raw.decode("utf-8", errors="replace")
+    content = raw.decode("utf-8", errors="replace").lstrip("\ufeff\ufffe")
     filename = file.filename or ""
 
     from backend.importers.import_orchestrator import ImportOrchestrator
@@ -749,9 +749,9 @@ async def smart_import(
     filename = file.filename or ""
 
     # ── Nessus file detection → delegate to ImportOrchestrator ──
-    content_str = raw.decode("utf-8", errors="replace")
+    content_str = raw.decode("utf-8", errors="replace").lstrip("\ufeff\ufffe")
     is_nessus = (
-        filename.lower().endswith((".csv", ".html", ".htm"))
+        filename.lower().endswith((".csv", ".html", ".htm", ".nessus", ".xml"))
         or _looks_like_nessus(content_str)
     )
 
@@ -1539,13 +1539,24 @@ def cancel_batch(batch_id: int, db: Session = Depends(get_db)):
 
 
 def _looks_like_nessus(content: str) -> bool:
-    """Quick heuristic to detect Nessus CSV or HTML content."""
+    """Quick heuristic to detect Nessus CSV, HTML, or XML content."""
     from backend.importers.csv_parser import detect_nessus_csv
-    from backend.importers.import_orchestrator import ImportOrchestrator
+    from backend.importers.html_parser import detect_nessus_html
+    from backend.importers.nessus_xml_parser import detect_nessus_xml
+    from backend.importers.qualys_parser import detect_qualys_csv, detect_qualys_xml
+    from backend.importers.openvas_parser import detect_openvas_xml
 
     if detect_nessus_csv(content):
         return True
-    if ImportOrchestrator._looks_like_nessus_html(content):
+    if detect_nessus_html(content):
+        return True
+    if detect_nessus_xml(content):
+        return True
+    if detect_qualys_csv(content):
+        return True
+    if detect_qualys_xml(content):
+        return True
+    if detect_openvas_xml(content):
         return True
     return False
 

@@ -33,6 +33,7 @@ interface Props {
 export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh }: Props) {
   const [assignTargetId, setAssignTargetId] = useState<number | ''>('');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   // Bulk Import State
   const [showImport, setShowImport] = useState(false);
@@ -200,12 +201,12 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       if (!files || files.length === 0) return;
       setError('');
 
-      // Check if any file is a Nessus-type file (CSV/HTML) — show preview for first one
+      // Show preview for supported scanner formats (single file)
       const firstFile = files[0];
       const ext = firstFile.name.split('.').pop()?.toLowerCase();
-      const isNessusType = ext === 'csv' || ext === 'html' || ext === 'htm';
+      const isScannerFormat = ['csv', 'html', 'htm', 'nessus', 'xml'].includes(ext || '');
 
-      if (isNessusType && files.length === 1) {
+      if (isScannerFormat && files.length === 1) {
         // Show preview modal for Nessus-type files
         setPendingImportFile(firstFile);
         setPreviewFilename(firstFile.name);
@@ -250,7 +251,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         scan.setError(''); // clear any scan errors
         setError('');
         await handleRefreshAll();
-        alert(`Smart Import complete!\n\n${fileCount} file(s) imported\n${totalFindings} findings created\nAvg compliance: ${avgCompliance}%${errors.length ? '\n\nErrors:\n' + errors.join('\n') : ''}`);
+        setSuccessMsg(`Smart Import complete! ${fileCount} file(s) imported, ${totalFindings} findings created, avg compliance: ${avgCompliance}%${errors.length ? ' (' + errors.length + ' errors)' : ''}`);
       } else {
         setError(errors.join('; '));
       }
@@ -275,8 +276,8 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       parts.push(`${res.findings_created} findings imported`);
       if (res.benchmark_reconstructed) parts.push(`Benchmark reconstructed: ${res.benchmark_name}`);
       if (res.fp_suspects && res.fp_suspects > 0) parts.push(`${res.fp_suspects} potential false positives flagged`);
-      if (res.warnings && res.warnings.length > 0) parts.push(`\nWarnings:\n${res.warnings.join('\n')}`);
-      alert(parts.join('\n'));
+      if (res.warnings && res.warnings.length > 0) parts.push(`Warnings: ${res.warnings.length}`);
+      setSuccessMsg(parts.join(' | '));
     } catch (err) {
       throw err; // Let the modal handle the error display
     }
@@ -339,6 +340,15 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
           {error || scan.error}
           <button onClick={() => { setError(''); scan.setError(''); }} className="ml-2 text-red-300 hover:text-white transition-colors">×</button>
+        </div>
+      )}
+
+      {/* Success banner */}
+      {successMsg && (
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400 flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span className="flex-1">{successMsg}</span>
+          <button onClick={() => setSuccessMsg('')} className="ml-2 text-emerald-300 hover:text-white transition-colors shrink-0">×</button>
         </div>
       )}
 
