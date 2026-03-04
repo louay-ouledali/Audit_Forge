@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   FileSearch,
@@ -82,9 +83,20 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
     ? PLATFORM_ICONS[preview.platform.toLowerCase()] ?? Shield
     : Shield;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="relative w-full max-w-lg rounded-2xl border border-dark-border bg-dark-bg shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+  return createPortal(
+    <>
+      {/* Backdrop — portaled to body to escape any containing-block issues */}
+      <div
+        className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      {/* Centering wrapper */}
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
+        <div
+          className="pointer-events-auto relative w-full max-w-lg rounded-2xl border border-dark-border bg-dark-card shadow-2xl shadow-black/50"
+          onClick={e => e.stopPropagation()}
+        >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-dark-border px-6 py-4">
           <div className="flex items-center gap-3">
@@ -101,8 +113,8 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
           </button>
         </div>
 
-        {/* Body */}
-        <div className="px-6 py-5 space-y-5">
+        {/* Body — scrollable when content is taller than viewport */}
+        <div className="max-h-[65vh] overflow-y-auto px-6 py-5 space-y-5 scrollbar-thin">
           {loading ? (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="h-8 w-8 text-ey-yellow animate-spin" />
@@ -124,10 +136,23 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-base font-semibold text-white">
-                      {preview.platform_family || preview.platform || 'Unknown'}
+                      {(() => {
+                        const plat = preview.platform || preview.platform_family || 'Unknown';
+                        const ver = preview.os_version || '';
+                        // Avoid "Windows Server Server 2012 R2" — strip redundant prefix
+                        if (ver && plat.toLowerCase().includes('server') && ver.toLowerCase().startsWith('server')) {
+                          return <>{plat} <span className="font-normal text-dark-secondary">{ver.replace(/^server\s*/i, '')}</span></>;
+                        }
+                        if (ver) {
+                          return <>{plat} <span className="font-normal text-dark-secondary">{ver}</span></>;
+                        }
+                        return plat;
+                      })()}
                     </div>
                     <div className="text-xs text-dark-secondary space-x-2">
-                      {preview.os_version && <span>{preview.os_version}</span>}
+                      {preview.platform_family && preview.platform_family !== preview.platform && (
+                        <span>{preview.platform_family}</span>
+                      )}
                       {preview.profile_level && (
                         <span className="inline-flex rounded bg-violet-500/10 px-1.5 py-0.5 text-[10px] text-violet-400">
                           {preview.profile_level}
@@ -262,6 +287,8 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </>,
+    document.body,
   );
 }

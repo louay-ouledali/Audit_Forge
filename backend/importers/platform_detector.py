@@ -339,9 +339,18 @@ def _detect_os(text: str, info: PlatformInfo) -> None:
         lower,
     )
     if win_match:
-        info.platform = "Windows"
+        version_str = win_match.group(1).strip().title()
+        if version_str.lower().startswith("server"):
+            info.platform = "Windows Server"
+        else:
+            info.platform = "Windows"
         info.platform_family = "Windows"
-        info.os_version = win_match.group(1).strip().title()
+        info.os_version = version_str
+        return
+
+    if "windows server" in lower:
+        info.platform = "Windows Server"
+        info.platform_family = "Windows"
         return
 
     if "windows" in lower:
@@ -503,13 +512,24 @@ def detect_platform_from_findings(findings: "list[ParsedFinding]") -> PlatformIn
             info.platform_family = family
             break
 
-    # Try to detect specific OS version from the full corpus
+    # Refine: if winner is Windows, check whether it's Windows Server
+    if info.platform == "Windows":
+        server_signals = len(re.findall(
+            r"\bwindows\s+server\b|\bserver\s+\d{4}\b|\bmember\s+server\b|\bdomain\s+controller\b",
+            corpus, re.IGNORECASE,
+        ))
+        if server_signals >= 2:
+            info.platform = "Windows Server"
+
+    # Try to detect specific OS version from the corpus
     if info.platform and not info.os_version:
-        _detect_os(corpus, PlatformInfo())  # just to get os_version
         temp = PlatformInfo()
         _detect_os(corpus, temp)
         if temp.os_version:
             info.os_version = temp.os_version
+        # Also promote platform to Server when os_version says so
+        if temp.platform and "Server" in temp.platform and "Server" not in info.platform:
+            info.platform = temp.platform
 
     return info
 
