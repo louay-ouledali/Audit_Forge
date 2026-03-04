@@ -771,6 +771,14 @@ async def smart_import(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        except Exception as exc:
+            import traceback
+            tb = traceback.format_exc()
+            logger.error("Smart Import execute failed: %s\n%s", exc, tb)
+            raise HTTPException(
+                status_code=500,
+                detail={"message": f"Import failed: {exc}", "traceback": tb},
+            )
 
         return result.to_dict()
 

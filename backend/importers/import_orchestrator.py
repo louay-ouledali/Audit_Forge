@@ -516,11 +516,13 @@ class ImportOrchestrator:
         """Create Finding records from parsed findings.
 
         Tries to match each finding to an existing Rule by section_number.
-        If no Rule is found (benchmark was reconstructed), creates a mapping
-        to the newly-created rule.
+        If no Rule is found, a stub rule is created on-the-fly so that NO
+        finding is ever silently dropped — every imported result must appear
+        in the findings list.
         """
         passed = failed = errors = not_applicable = 0
         findings_created = 0
+        rules_auto_created = 0
 
         # Preload rule lookup for this benchmark
         rules = (
@@ -528,16 +530,27 @@ class ImportOrchestrator:
             .filter(Rule.benchmark_id == benchmark_id)
             .all()
         )
-        rule_map = {r.section_number: r for r in rules}
+        rule_map: dict[str, Rule] = {r.section_number: r for r in rules if r.section_number}
 
         for pf in parsed_findings:
-            rule = rule_map.get(pf.section_number)
+            rule = rule_map.get(pf.section_number) if pf.section_number else None
+
             if not rule:
-                logger.debug(
-                    "No rule for section %s in benchmark %d, skipping finding",
-                    pf.section_number, benchmark_id,
+                # Auto-create a stub rule so the finding is never dropped
+                rule = Rule(
+                    benchmark_id=benchmark_id,
+                    section_number=pf.section_number or f"_auto_{findings_created}",
+                    title=pf.title or "Imported finding",
+                    description=pf.description or "",
+                    severity=pf.severity or "medium",
+                    source=f"{source_tool}_import_auto",
                 )
-                continue
+                self.db.add(rule)
+                self.db.flush()
+                # Cache so duplicates reuse the same rule
+                if pf.section_number:
+                    rule_map[pf.section_number] = rule
+                rules_auto_created += 1
 
             # Build actual_output from Nessus values
             actual_output = pf.actual_value
@@ -576,6 +589,17 @@ class ImportOrchestrator:
                 errors += 1
 
         self.db.flush()
+
+        # Update benchmark rule count if rules were auto-created
+        if rules_auto_created:
+            benchmark = self.db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+            if benchmark:
+                actual_count = self.db.query(Rule).filter(Rule.benchmark_id == benchmark_id).count()
+                benchmark.total_rules = actual_count
+            logger.info(
+                "Auto-created %d stub rules for benchmark %d to avoid dropping findings",
+                rules_auto_created, benchmark_id,
+            )
 
         return {
             "findings_created": findings_created,

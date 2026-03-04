@@ -152,9 +152,10 @@ def _refine_from_name(name: str, info: PlatformInfo) -> None:
         _detect_os(product, info)
         return
 
-    # CIS without explicit "Benchmark" word
+    # CIS without explicit "Benchmark" word — require v-prefix on version to
+    # avoid matching year numbers like "2012" in product names
     cis_short = re.search(
-        r"CIS\s+((?:Microsoft|Red\s+Hat|Ubuntu|Debian|SUSE|Oracle|Cisco|Docker|Kubernetes|Amazon)\s+.*?)\s+v?([\d.]+)",
+        r"CIS\s+((?:Microsoft|Red\s+Hat|Ubuntu|Debian|SUSE|Oracle|Cisco|Docker|Kubernetes|Amazon)\s+.*?)\s+v([\d.]+)",
         name,
         re.IGNORECASE,
     )
@@ -173,6 +174,22 @@ def _refine_from_name(name: str, info: PlatformInfo) -> None:
         info.benchmark_version = stig_match.group(2)
         info.scheme = "STIG"
         _detect_os(stig_match.group(1), info)
+        return
+
+    # Audit filename pattern: CIS_MS_SERVER_2012_R2_Level_1_v2.6.0.audit
+    # Already normalised by callers but handle common underscore format too
+    audit_match = re.search(
+        r"CIS\s+(?:Microsoft\s+)?((?:Windows\s+)?(?:Server\s+)?(?:\d{4}(?:\s+R2)?|[\w]+(?:\s+\w+)*))"
+        r"\s+(?:Level\s+\d+\s+)?v([\d.]+)",
+        name,
+        re.IGNORECASE,
+    )
+    if audit_match:
+        product = audit_match.group(1).strip()
+        info.benchmark_name = f"CIS Microsoft {product} Benchmark"
+        info.benchmark_version = audit_match.group(2)
+        info.scheme = "CIS"
+        _detect_os(product, info)
         return
 
     # Generic platform detection from text

@@ -135,20 +135,16 @@ def _try_exact_match(info: PlatformInfo, db: Session) -> Benchmark | None:
 
 
 def _try_fuzzy_match(info: PlatformInfo, db: Session) -> Benchmark | None:
-    """Try fuzzy matching: same name family, closest version."""
+    """Try fuzzy matching: same name family, closest version.
+
+    When no benchmark_name is available, skip fuzzy matching entirely —
+    a platform-only search is too coarse and pulls in unrelated benchmarks
+    whose rules don't match the import findings at all.
+    """
     if not info.benchmark_name:
-        if not info.platform:
-            return None
-        # Try by platform only
-        return (
-            db.query(Benchmark)
-            .filter(
-                Benchmark.platform.ilike(f"%{info.platform}%"),
-                Benchmark.status != "deleted",
-            )
-            .order_by(Benchmark.import_date.desc())
-            .first()
-        )
+        # Never fuzzy-match by platform alone; prefer reconstruction so that
+        # every imported finding gets a corresponding rule.
+        return None
 
     # Extract the core product name (e.g., "Windows Server 2012 R2" from
     # "CIS Microsoft Windows Server 2012 R2 Benchmark")
