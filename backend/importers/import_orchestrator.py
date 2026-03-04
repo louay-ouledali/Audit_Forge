@@ -41,6 +41,7 @@ from backend.importers.qualys_parser import (
 )
 from backend.importers.openvas_parser import detect_openvas_xml, parse_openvas_xml
 from backend.importers.benchmark_resolver import resolve_benchmark
+from backend.importers.platform_detector import enrich_platform_info
 from backend.models.benchmark import Benchmark
 from backend.models.finding import Finding
 from backend.models.rule import Rule
@@ -124,6 +125,9 @@ class ImportOrchestrator:
             findings, platform_info = parse_nessus_csv(content)
             extracted_rules = extract_rules_from_findings(findings)
 
+            # Enrich platform from content if audit filename detection was weak
+            platform_info = enrich_platform_info(platform_info, findings, use_ai=False)
+
             # Count statuses
             counts = _count_statuses(findings)
 
@@ -164,6 +168,9 @@ class ImportOrchestrator:
         if fmt == "nessus_html":
             findings, platform_info = parse_nessus_html(content)
             extracted_rules = extract_rules_from_findings(findings)
+
+            # Enrich platform from content if audit filename detection was weak
+            platform_info = enrich_platform_info(platform_info, findings, use_ai=False)
 
             counts = _count_statuses(findings)
 
@@ -214,6 +221,9 @@ class ImportOrchestrator:
             else:  # openvas_xml
                 findings, platform_info = parse_openvas_xml(content)
                 extracted_rules = []
+
+            # Enrich platform from content if detection was weak
+            platform_info = enrich_platform_info(platform_info, findings, use_ai=False)
 
             counts = _count_statuses(findings)
 
@@ -326,6 +336,10 @@ class ImportOrchestrator:
                 f"Unsupported format: '{fmt}'. Smart Import accepts "
                 "Nessus CSV/HTML/XML, Qualys CSV/XML, and OpenVAS XML exports."
             )
+
+        # ── Step 1b: Enrich platform detection from content ──
+        # Three-layer detection: parser info → content heuristics → AI fallback
+        platform_info = enrich_platform_info(platform_info, findings, use_ai=True)
 
         result.platform_info = platform_info
 
