@@ -345,7 +345,14 @@ export default function Benchmarks() {
       .catch(() => setError('Failed to load benchmark catalog'))
       .finally(() => setLoading(false));
 
-  useEffect(() => { fetchCatalog(); const interval = setInterval(fetchCatalog, 8000); return () => clearInterval(interval); }, []);
+  useEffect(() => {
+    fetchCatalog();
+    const interval = setInterval(() => {
+      // Only poll when the tab is visible (avoids wasted API calls when hidden via keep-alive)
+      if (!document.hidden) fetchCatalog();
+    }, 8000);
+    return () => clearInterval(interval);
+  }, []);
 
   /* Upload */
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -81,14 +81,6 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> d
     return {"data": data, "message": "Settings updated"}
 
 
-@router.get("/{key}", response_model=SingleSettingResponse)
-def get_setting(key: str, db: Session = Depends(get_db)) -> dict:
-    row = db.query(AppSettings).filter(AppSettings.key == key).first()
-    if not row:
-        raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
-    return {"data": {row.key: row.value}, "message": "success"}
-
-
 # ── Database Backup & Restore ─────────────────────────────────
 
 
@@ -100,7 +92,7 @@ def _get_db_path() -> Path:
     return Path(url.replace("sqlite:///", ""))
 
 
-@router.post("/backup", response_model=BackupResponse)
+@router.post("/backup")
 def create_backup(db: Session = Depends(get_db)):
     """Create a database backup and return it as a downloadable file."""
     db_path = _get_db_path()
@@ -205,8 +197,8 @@ async def restore_backup(
             shutil.copy2(str(db_path), str(safety_backup))
 
         # Remove WAL/SHM files that could conflict with the restored database
-        for suffix in (".db-wal", ".db-shm"):
-            wal_path = db_path.with_name(db_path.name + suffix.replace(".db", ""))
+        for suffix in ("-wal", "-shm"):
+            wal_path = Path(str(db_path) + suffix)
             if wal_path.exists():
                 wal_path.unlink(missing_ok=True)
 
@@ -344,3 +336,14 @@ def restore_auto_backup(filename: str, db: Session = Depends(get_db)):
         "message": f"Restored from {filename}.{migration_note}",
         "size_mb": round(len(content) / 1024 / 1024, 2),
     }
+
+
+# ── Single-key setting (MUST be LAST — catches /{key} patterns) ─────
+
+
+@router.get("/{key}", response_model=SingleSettingResponse)
+def get_setting(key: str, db: Session = Depends(get_db)) -> dict:
+    row = db.query(AppSettings).filter(AppSettings.key == key).first()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Setting '{key}' not found")
+    return {"data": {row.key: row.value}, "message": "success"}

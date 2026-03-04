@@ -38,7 +38,7 @@ export default function Navbar() {
 
     return (
         <div className="fixed top-0 left-0 right-0 z-50 flex justify-center p-4 py-6 pointer-events-none">
-            <nav className="pointer-events-auto flex items-center gap-6 rounded-full border border-dark-border/50 bg-dark-surface/60 px-6 py-2.5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all hover:border-dark-border hover:bg-dark-surface/80 hover:shadow-[0_8px_32px_rgba(255,230,0,0.1)]">
+            <nav aria-label="Main navigation" className="pointer-events-auto flex items-center gap-6 rounded-full border border-dark-border/50 bg-dark-surface/60 px-6 py-2.5 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all hover:border-dark-border hover:bg-dark-surface/80 hover:shadow-[0_8px_32px_rgba(255,230,0,0.1)]">
 
                 {/* Logo and Context */}
                 <div className="flex items-center gap-3 pr-6 border-r border-dark-border/50">

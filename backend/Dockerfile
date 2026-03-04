@@ -2,11 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# WeasyPrint system dependencies (Pango, GObject, fonts)
+# WeasyPrint system dependencies + network tools for discovery
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 libpangocairo-1.0-0 libpangoft2-1.0-0 \
     libgdk-pixbuf-2.0-0 libffi-dev libcairo2 \
     fonts-dejavu-core \
+    iputils-ping net-tools iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /app/backend/requirements.txt

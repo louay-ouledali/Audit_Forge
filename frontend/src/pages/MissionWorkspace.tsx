@@ -284,6 +284,7 @@ export default function MissionWorkspace() {
           missionTargets={missionTargets}
           clientTargets={clientTargets}
           onRefresh={fetchData}
+          onSwitchTab={(tab) => setActiveTab(tab as typeof activeTab)}
         />
       )}
 

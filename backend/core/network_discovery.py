@@ -2687,6 +2687,16 @@ async def discover_network(
     logger.info("Starting discovery of %d hosts on %s", total, subnet)
     start_time = time.monotonic()
 
+    # Check Docker networking mode — some discovery layers need host networking
+    import os
+    docker_mode = os.environ.get("DOCKER_HOST_MODE", "")
+    is_bridge_mode = docker_mode == "bridge" or os.path.exists("/.dockerenv")
+    if is_bridge_mode:
+        logger.warning(
+            "Running in Docker bridge mode — ARP/MAC, mDNS, SSDP, NetBIOS layers "
+            "will be limited. TCP-based detection (SMB, SSH, HTTP, banners) still works."
+        )
+
     # Layer 0: ARP sweep — pre-populate ARP cache for MAC addresses
     # This pings all IPs in parallel then reads the ARP table once
     logger.info("Running ARP sweep for %d hosts...", total)

@@ -28,9 +28,10 @@ interface Props {
   missionTargets: Target[];
   clientTargets: Target[];
   onRefresh: () => Promise<void>;
+  onSwitchTab?: (tab: string) => void;
 }
 
-export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh }: Props) {
+export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab }: Props) {
   const [assignTargetId, setAssignTargetId] = useState<number | ''>('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -145,14 +146,12 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
     }
   };
 
-  const handleViewFindings = (target: Target) => {
-    // Will switch to Findings tab filtered to this target
-    console.log('View findings for target:', target.id);
+  const handleViewFindings = (_target: Target) => {
+    onSwitchTab?.('findings');
   };
 
-  const handleViewScanFindings = (scanId: number) => {
-    // Will switch to Findings tab with this specific scan selected
-    console.log('View findings for scan:', scanId);
+  const handleViewScanFindings = (_scanId: number) => {
+    onSwitchTab?.('findings');
   };
 
   const handleImportResults = (target: Target) => {

@@ -89,13 +89,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         from backend.database import SessionLocal
         from backend.models.benchmark import Benchmark
+        from backend.models.scan import Scan
         db = SessionLocal()
         try:
             stale = db.query(Benchmark).filter(Benchmark.phase2_status == "processing").all()
             for b in stale:
                 logger.info("Resetting stale phase2_status for benchmark %d", b.id)
                 b.phase2_status = "pending"
-            if stale:
+
+            # Also reset orphaned scans stuck in "running" from a previous crash
+            orphaned = db.query(Scan).filter(Scan.status == "running").all()
+            for s in orphaned:
+                logger.info("Resetting orphaned running scan %d to failed", s.id)
+                s.status = "failed"
+                s.error_message = "Interrupted by backend restart"
+
+            if stale or orphaned:
                 db.commit()
         finally:
             db.close()
@@ -124,7 +133,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="AditForge API",
+    title="AuditForge API",
     version="0.1.0",
     description="Automated Configuration Review Platform",
     lifespan=lifespan,

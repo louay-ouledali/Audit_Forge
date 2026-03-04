@@ -317,23 +317,23 @@ async def builder_group_summary(payload: GroupSummaryRequest, db: Session = Depe
     """Generate an AI summary for a specific rule group."""
     from backend.models.finding import Finding
     from backend.models.rule import Rule
-    from backend.ai.llm_manager import LLMManager
 
     if not payload.rule_ids:
         raise HTTPException(status_code=400, detail="rule_ids is required")
 
-    # Gather rule details
+    # Gather rule details — batch-load to avoid N+1
+    rules_by_id = {r.id: r for r in db.query(Rule).filter(Rule.id.in_(payload.rule_ids)).all()}
+    findings_by_rule: dict[int, Finding] = {}
+    if payload.scan_ids:
+        for f in db.query(Finding).filter(Finding.rule_id.in_(payload.rule_ids), Finding.scan_id.in_(payload.scan_ids)).all():
+            findings_by_rule.setdefault(f.rule_id, f)
+
     rules_info = []
     for rid in payload.rule_ids:
-        rule = db.query(Rule).filter(Rule.id == rid).first()
+        rule = rules_by_id.get(rid)
         if not rule:
             continue
-        # Get finding status for this rule
-        finding = (
-            db.query(Finding)
-            .filter(Finding.rule_id == rid, Finding.scan_id.in_(payload.scan_ids))
-            .first()
-        )
+        finding = findings_by_rule.get(rid)
         rules_info.append({
             "title": rule.title or f"Rule #{rid}",
             "section": rule.section_number or "",
@@ -366,8 +366,8 @@ async def builder_group_summary(payload: GroupSummaryRequest, db: Session = Depe
     )
 
     try:
-        llm = LLMManager()
-        summary = await llm.invoke(prompt, task="reports", timeout=60.0)
+        from backend.ai.llm_manager import llm_manager
+        summary = await llm_manager.invoke(prompt, task="reports", timeout=60.0)
         return GroupSummaryResponse(summary=summary.strip())
     except Exception as exc:
         logger.warning("Group summary generation failed: %s", exc)

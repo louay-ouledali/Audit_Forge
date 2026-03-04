@@ -101,10 +101,11 @@ def generate_saved_report(report_id: int, db: Session = Depends(get_db)) -> dict
             excluded_rule_ids=config.get("excluded_rule_ids"),
         )
 
+        include_passed = config.get("include_passed_rules", True)
         if report.format == "pdf":
-            blob = generate_pdf_report(data)
+            blob = generate_pdf_report(data, include_passed, db)
         else:
-            blob = generate_html_report(data).encode("utf-8")
+            blob = generate_html_report(data, include_passed).encode("utf-8")
 
         report.generated_blob = blob
         report.file_size_kb = round(len(blob) / 1024, 2)

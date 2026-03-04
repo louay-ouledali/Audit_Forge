@@ -107,7 +107,7 @@ export default function Dashboard() {
       // Minor random fluctuation around the real average if real data is missing for that day
       const val = dailyScores[dateStr]
         ? Math.round(dailyScores[dateStr].total / dailyScores[dateStr].count)
-        : Math.round(averageCompliance > 0 ? averageCompliance - (Math.random() * 10 - 5) : 0);
+        : Math.round(averageCompliance > 0 ? averageCompliance : 0);
 
       data.push({
         date: dateStr,
@@ -120,7 +120,7 @@ export default function Dashboard() {
 
   const cards = [
     { label: 'Clients', value: stats.clients, icon: Building2, accent: 'text-ey-yellow', bg: 'bg-ey-yellow/10', link: '/clients', progress: 100 },
-    { label: 'Active Missions', value: stats.active_missions, icon: Crosshair, accent: 'text-emerald-400', bg: 'bg-emerald-400/10', link: '/missions', progress: totalMissions > 0 ? Math.round((stats.active_missions / totalMissions) * 100) : 0 },
+    { label: 'Active Missions', value: stats.active_missions, icon: Crosshair, accent: 'text-emerald-400', bg: 'bg-emerald-400/10', link: '/clients', progress: totalMissions > 0 ? Math.round((stats.active_missions / totalMissions) * 100) : 0 },
     { label: 'Benchmarks', value: stats.benchmarks, icon: FileText, accent: 'text-purple-400', bg: 'bg-purple-400/10', link: '/benchmarks', progress: 100 },
     { label: 'Total Scans', value: stats.scans, icon: Play, accent: 'text-sky-400', bg: 'bg-sky-400/10', link: '/clients', progress: 100 },
   ];
