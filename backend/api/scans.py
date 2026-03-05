@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.api.missions import check_mission_lock
 from backend.core.network_discovery import (
+    cancel_discovery,
     cleanup_discovery,
     discover_network,
     get_discovery_progress,
@@ -93,18 +94,24 @@ async def get_discovery_status(discovery_id: str):
     return progress
 
 
+@router.post("/discover/{discovery_id}/cancel")
+async def cancel_discovery_scan(discovery_id: str):
+    """Request cancellation of a running discovery scan."""
+    if cancel_discovery(discovery_id):
+        return {"status": "cancel_requested", "discovery_id": discovery_id}
+    raise HTTPException(status_code=404, detail="Discovery not found or not running")
+
+
 @router.get("/discover/{discovery_id}/results")
 async def get_discovery_results(discovery_id: str):
     """Return the full list of discovered hosts."""
     progress = get_discovery_progress(discovery_id)
     if not progress:
         raise HTTPException(status_code=404, detail="Discovery not found")
-    if progress.get("status") != "completed":
+    if progress.get("status") not in ("completed", "cancelled"):
         return {"status": progress.get("status"), "hosts": []}
 
-    # Re-run to get results (they're returned, not stored separately)
-    # For simplicity, store results in progress dict
-    return {"status": "completed", "hosts": progress.get("hosts", [])}
+    return {"status": progress.get("status"), "hosts": progress.get("hosts", [])}
 
 
 @router.post("/discover/scan")

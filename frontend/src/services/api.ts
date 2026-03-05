@@ -508,6 +508,11 @@ export async function getDiscoveryStatus(discoveryId: string): Promise<Discovery
   return data;
 }
 
+export async function cancelDiscovery(discoveryId: string): Promise<{ status: string }> {
+  const { data } = await api.post(`/scans/discover/${discoveryId}/cancel`);
+  return data;
+}
+
 // Network Scans
 export async function startNetworkScan(payload: NetworkScanRequest): Promise<NetworkScanResponse> {
   const { data } = await api.post('/scans/network', payload);

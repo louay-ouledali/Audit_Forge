@@ -1,13 +1,36 @@
-import { Monitor, Terminal, Network, Database, HelpCircle, Plus, Check, Shield, Wifi, Smartphone, Clock, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { Monitor, Terminal, Network, Database, HelpCircle, Plus, Check, Shield, Wifi, Smartphone, Clock, Sparkles, Server, ChevronDown, ChevronUp } from 'lucide-react';
 import type { DiscoveredHostEnriched } from '@/types';
 
+/* ── Static Tailwind class maps (avoids purging of dynamic classes) ── */
+const ACCENT_CLASSES = {
+  'sky-400':     { bg: 'bg-sky-400/10',     text: 'text-sky-400',     border: 'border-sky-400/20' },
+  'emerald-400': { bg: 'bg-emerald-400/10', text: 'text-emerald-400', border: 'border-emerald-400/20' },
+  'purple-400':  { bg: 'bg-purple-400/10',  text: 'text-purple-400',  border: 'border-purple-400/20' },
+  'orange-400':  { bg: 'bg-orange-400/10',  text: 'text-orange-400',  border: 'border-orange-400/20' },
+  'pink-400':    { bg: 'bg-pink-400/10',    text: 'text-pink-400',    border: 'border-pink-400/20' },
+  'gray-400':    { bg: 'bg-gray-400/10',    text: 'text-gray-400',    border: 'border-gray-400/20' },
+  'amber-400':   { bg: 'bg-amber-400/10',   text: 'text-amber-400',   border: 'border-amber-400/20' },
+} as const;
+
+type AccentKey = keyof typeof ACCENT_CLASSES;
+
 /* ── OS → icon / accent mapping ────────────────────────────── */
-const OS_CONFIG: Record<string, { icon: typeof Monitor; accent: string; label: string }> = {
+const OS_CONFIG: Record<string, { icon: typeof Monitor; accent: AccentKey; label: string }> = {
   windows: { icon: Monitor,      accent: 'sky-400',     label: 'Windows' },
   linux:   { icon: Terminal,     accent: 'emerald-400', label: 'Linux' },
-  network: { icon: Network,      accent: 'purple-400',  label: 'Network' },
-  database:{ icon: Database,     accent: 'orange-400',  label: 'Database' },
-  mobile:  { icon: Smartphone,   accent: 'pink-400',    label: 'Mobile' },
+  macos:   { icon: Monitor,     accent: 'gray-400',    label: 'macOS' },
+};
+
+/* ── Device role → badge label ─────────────────────────────── */
+const ROLE_CONFIG: Record<string, { icon: typeof Server; accent: AccentKey; label: string }> = {
+  domain_controller: { icon: Shield,   accent: 'amber-400',  label: 'Domain Controller' },
+  server:            { icon: Server,   accent: 'purple-400', label: 'Server' },
+  workstation:       { icon: Monitor,  accent: 'sky-400',    label: 'Workstation' },
+  network_device:    { icon: Network,  accent: 'purple-400', label: 'Network' },
+  database_server:   { icon: Database, accent: 'orange-400', label: 'Database' },
+  printer:           { icon: Wifi,     accent: 'gray-400',   label: 'Printer' },
+  mobile:            { icon: Smartphone, accent: 'pink-400', label: 'Mobile' },
 };
 
 function getOsConfig(os: string) {
@@ -15,7 +38,11 @@ function getOsConfig(os: string) {
   for (const [k, v] of Object.entries(OS_CONFIG)) {
     if (key.includes(k)) return v;
   }
-  return { icon: HelpCircle, accent: 'gray-400', label: os || 'Unknown' };
+  return { icon: HelpCircle, accent: 'gray-400' as AccentKey, label: os || 'Unknown' };
+}
+
+function getRoleConfig(role: string) {
+  return ROLE_CONFIG[(role || '').toLowerCase()] || null;
 }
 
 /* ── Detection method → friendly label ─────────────────────── */
@@ -84,12 +111,19 @@ interface Props {
 
 export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
   const cfg = getOsConfig(host.os_guess);
+  const accentCls = ACCENT_CLASSES[cfg.accent];
   const Icon = cfg.icon;
+  const roleCfg = getRoleConfig(host.device_role);
   const alreadyAssigned = host.already_assigned;
   const alreadyAdded = host.already_added && !alreadyAssigned;
   const detectionLabel = formatDetectionMethod(host.detection_method || '');
   const lastSeenLabel = formatRelativeTime(host.last_seen);
   const isNew = host.is_new === true;
+  const [portsExpanded, setPortsExpanded] = useState(false);
+
+  const PORTS_COLLAPSED_LIMIT = 6;
+  const showExpandButton = (host.open_ports?.length ?? 0) > PORTS_COLLAPSED_LIMIT;
+  const visiblePorts = portsExpanded ? host.open_ports : host.open_ports?.slice(0, PORTS_COLLAPSED_LIMIT);
 
   return (
     <div
@@ -114,8 +148,8 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
       )}
       {/* Top row: Icon + IP + Hostname + Domain */}
       <div className="flex items-start gap-3">
-        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-${cfg.accent}/10 border border-${cfg.accent}/20`}>
-          <Icon className={`h-4 w-4 text-${cfg.accent}`} />
+        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${accentCls.bg} ${accentCls.border}`}>
+          <Icon className={`h-4 w-4 ${accentCls.text}`} />
         </div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold text-white">{host.ip}</p>
@@ -128,9 +162,18 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
 
       {/* OS label + version + vendor + model */}
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        <span className={`inline-flex items-center rounded-full bg-${cfg.accent}/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-${cfg.accent}`}>
+        <span className={`inline-flex items-center rounded-full ${accentCls.bg} px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${accentCls.text}`}>
           {cfg.label}
         </span>
+        {roleCfg && (() => {
+          const roleAccent = ACCENT_CLASSES[roleCfg.accent];
+          return (
+            <span className={`inline-flex items-center gap-0.5 rounded-full ${roleAccent.bg} px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${roleAccent.text}`}>
+              <roleCfg.icon className="h-2.5 w-2.5" />
+              {roleCfg.label}
+            </span>
+          );
+        })()}
         {host.os_version && (
           <span className="truncate text-[10px] text-dark-secondary" title={host.os_version}>
             {host.os_version}
@@ -171,17 +214,41 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
       {/* Open ports */}
       {host.open_ports && host.open_ports.length > 0 && (
         <div className="mt-2">
-          <p className="text-[10px] text-dark-muted mb-1">Ports:</p>
+          <p className="text-[10px] text-dark-muted mb-1">
+            Ports ({host.open_ports.length}):
+          </p>
           <div className="flex flex-wrap gap-1">
-            {host.open_ports.slice(0, 5).map(p => (
-              <span key={p.port} className="rounded bg-dark-elevated px-1.5 py-0.5 text-[10px] text-dark-secondary font-mono">
+            {(visiblePorts || []).map(p => (
+              <span
+                key={p.port}
+                className="rounded bg-dark-elevated px-1.5 py-0.5 text-[10px] text-dark-secondary font-mono"
+                title={p.banner_snippet || `${p.port}/${p.service || ''}`}
+              >
                 {p.port}{p.service ? `/${p.service}` : ''}
+                {p.product && p.version
+                  ? ` (${p.product} ${p.version})`
+                  : p.product
+                    ? ` (${p.product})`
+                    : ''}
               </span>
             ))}
-            {host.open_ports.length > 5 && (
-              <span className="text-[10px] text-dark-muted">+{host.open_ports.length - 5}</span>
-            )}
           </div>
+          {showExpandButton && (
+            <button
+              onClick={() => setPortsExpanded(prev => !prev)}
+              className="mt-1 flex items-center gap-0.5 text-[10px] text-dark-muted hover:text-dark-secondary transition-colors"
+            >
+              {portsExpanded ? (
+                <>
+                  <ChevronUp className="h-3 w-3" /> Show less
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3 w-3" /> Show all {host.open_ports.length} ports
+                </>
+              )}
+            </button>
+          )}
         </div>
       )}
 

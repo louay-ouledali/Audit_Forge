@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Radar, ChevronUp, ChevronDown, Plus, Wifi } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Radar, ChevronUp, ChevronDown, Plus, Wifi, XCircle } from 'lucide-react';
 import type { DiscoveredHostEnriched } from '@/types';
 import * as api from '@/services/api';
 import { inputClass } from '../mission/badgeHelpers';
@@ -47,26 +47,91 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
   const [addingIp, setAddingIp] = useState<string | null>(null);
   const [addingAll, setAddingAll] = useState(false);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState<{ scanned: number; total: number; found: number } | null>(null);
+  const discoveryIdRef = useRef<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Persist subnet preference
   useEffect(() => { if (subnet) saveSubnet(clientId, subnet); }, [subnet, clientId]);
 
   /* ── Discover ────────────────────────────────────────────── */
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => () => stopPolling(), []);
+
   const handleDiscover = async () => {
     if (!subnet.trim()) return;
     setDiscovering(true);
     setError('');
     setDiscoveredHosts([]);
+    setProgress(null);
+
     try {
-      const result = await api.discoverNetworkEnhanced(subnet.trim(), missionId);
-      setDiscoveredHosts(result.hosts || []);
-      if (!result.hosts || result.hosts.length === 0) {
-        setError(`No devices found on ${subnet}. Check that the subnet is reachable.`);
-      }
+      // Start async discovery
+      const { discovery_id } = await api.startDiscoveryAsync(subnet.trim());
+      discoveryIdRef.current = discovery_id;
+
+      // Poll for progress every 1.5 seconds
+      pollRef.current = setInterval(async () => {
+        try {
+          const status = await api.getDiscoveryStatus(discovery_id);
+          setProgress({ scanned: status.scanned, total: status.total, found: status.found });
+
+          if (status.status === 'completed' || status.status === 'cancelled') {
+            stopPolling();
+            discoveryIdRef.current = null;
+
+            // Fetch enriched results
+            const result = await api.discoverNetworkEnhanced(subnet.trim(), missionId);
+            setDiscoveredHosts(result.hosts || []);
+            if (!result.hosts || result.hosts.length === 0) {
+              setError(status.status === 'cancelled'
+                ? 'Discovery was cancelled.'
+                : `No devices found on ${subnet}. Check that the subnet is reachable.`);
+            }
+            setDiscovering(false);
+            setProgress(null);
+          } else if (status.status === 'failed') {
+            stopPolling();
+            discoveryIdRef.current = null;
+            setError(status.error || 'Discovery failed.');
+            setDiscovering(false);
+            setProgress(null);
+          }
+        } catch {
+          // Ignore transient poll errors
+        }
+      }, 1500);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Discovery failed. Check subnet format and network connectivity.');
-    } finally {
+      // Fallback: if async endpoint fails, use synchronous discover
+      try {
+        const result = await api.discoverNetworkEnhanced(subnet.trim(), missionId);
+        setDiscoveredHosts(result.hosts || []);
+        if (!result.hosts || result.hosts.length === 0) {
+          setError(`No devices found on ${subnet}. Check that the subnet is reachable.`);
+        }
+      } catch (err2: any) {
+        setError(err2?.response?.data?.detail || 'Discovery failed. Check subnet format and network connectivity.');
+      }
       setDiscovering(false);
+      setProgress(null);
+    }
+  };
+
+  const handleCancel = async () => {
+    const id = discoveryIdRef.current;
+    if (id) {
+      try {
+        await api.cancelDiscovery(id);
+      } catch {
+        // Ignore — the cancel is best-effort
+      }
     }
   };
 
@@ -75,10 +140,12 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
     setAddingIp(host.ip);
     try {
       const osGuess = (host.os_guess || 'linux').toLowerCase();
-      const targetType = osGuess.includes('windows') ? 'windows'
-        : osGuess.includes('network') || osGuess.includes('cisco') || osGuess.includes('juniper') ? 'network'
-        : osGuess.includes('database') || osGuess.includes('postgres') || osGuess.includes('mssql') ? 'database'
-        : osGuess.includes('mobile') ? 'mobile'
+      const role = (host.device_role || '').toLowerCase();
+      const targetType = role === 'network_device' ? 'network'
+        : role === 'database_server' ? 'database'
+        : role === 'mobile' ? 'mobile'
+        : osGuess.includes('windows') ? 'windows'
+        : osGuess.includes('macos') ? 'macos'
         : 'linux';
 
       const connMethod = guessConnection(host);
@@ -223,16 +290,49 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
           )}
         </div>
 
-        {/* Discovery animation */}
+        {/* Discovery progress */}
         {discovering && (
-          <div className="flex items-center justify-center py-8">
-            <div className="relative">
-              <div className="h-16 w-16 animate-ping rounded-full bg-ey-yellow/20" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Radar className="h-8 w-8 text-ey-yellow animate-pulse" />
+          <div className="space-y-3 rounded-lg border border-dark-border bg-dark-elevated p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="h-10 w-10 animate-ping rounded-full bg-ey-yellow/20 absolute" />
+                  <div className="h-10 w-10 flex items-center justify-center relative">
+                    <Radar className="h-5 w-5 text-ey-yellow animate-pulse" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-white">Scanning network…</p>
+                  {progress ? (
+                    <p className="text-xs text-dark-muted">
+                      {progress.scanned}/{progress.total} hosts scanned • {progress.found} found
+                    </p>
+                  ) : (
+                    <p className="text-xs text-dark-muted">Initializing…</p>
+                  )}
+                </div>
               </div>
+              <button
+                onClick={handleCancel}
+                className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+                Cancel
+              </button>
             </div>
-            <p className="ml-4 text-sm text-dark-secondary">Scanning network…</p>
+            {progress && progress.total > 0 && (
+              <div className="space-y-1">
+                <div className="h-2 w-full rounded-full bg-dark-border overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-ey-yellow transition-all duration-500"
+                    style={{ width: `${Math.round((progress.scanned / progress.total) * 100)}%` }}
+                  />
+                </div>
+                <p className="text-right text-[10px] text-dark-muted">
+                  {Math.round((progress.scanned / progress.total) * 100)}%
+                </p>
+              </div>
+            )}
           </div>
         )}
 

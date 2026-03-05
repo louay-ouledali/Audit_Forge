@@ -40,6 +40,7 @@ import ipaddress
 import logging
 import re
 import socket
+import ssl
 import struct
 import subprocess
 import sys
@@ -60,9 +61,16 @@ PROBE_PORTS: list[tuple[int, str, str]] = [
     (3389,  "RDP",          "windows"),
     (5985,  "WinRM-HTTP",   "windows"),
     (5986,  "WinRM-HTTPS",  "windows"),
+    # ── Active Directory / Enterprise ──
+    (88,    "Kerberos",     "windows"),     # AD Domain Controller
+    (389,   "LDAP",         "windows"),     # AD LDAP
+    (636,   "LDAPS",        "windows"),     # AD LDAP over TLS
+    (3268,  "GC",           "windows"),     # AD Global Catalog
+    (3269,  "GC-SSL",       "windows"),     # AD Global Catalog over TLS
     # ── Linux / Unix ──
     (22,    "SSH",          "linux"),
     (548,   "AFP",          "macos"),       # Apple Filing Protocol (macOS)
+    (2049,  "NFS",          "linux"),       # Network File System
     # ── Web ──
     (80,    "HTTP",         "unknown"),
     (443,   "HTTPS",        "unknown"),
@@ -76,6 +84,7 @@ PROBE_PORTS: list[tuple[int, str, str]] = [
     (830,   "NETCONF",      "network"),
     (53,    "DNS",          "network"),
     (514,   "Syslog",       "network"),
+    (8291,  "WinBox",       "network"),     # MikroTik RouterOS
     # ── Databases ──
     (1433,  "MSSQL",        "database"),
     (5432,  "PostgreSQL",   "database"),
@@ -83,6 +92,7 @@ PROBE_PORTS: list[tuple[int, str, str]] = [
     (3306,  "MySQL",        "database"),
     (6379,  "Redis",        "database"),
     (27017, "MongoDB",      "database"),
+    (9200,  "Elasticsearch","database"),    # Elasticsearch REST API
     # ── IoT / Media / VoIP ──
     (631,   "IPP",          "unknown"),     # Printers (Internet Printing Protocol)
     (5060,  "SIP",          "unknown"),     # VoIP
@@ -123,6 +133,8 @@ BANNER_PORTS_PASSIVE = {22, 21, 23, 25, 110, 143, 5900}  # SSH, FTP, Telnet, SMT
 BANNER_PORTS_HTTP = {80, 443, 8080, 8443, 8000, 8888, 9090, 631, 9100}
 # Database ports that send a banner or respond to a probe
 BANNER_PORTS_DB = {3306, 5432, 6379, 27017}  # MySQL, PostgreSQL, Redis, MongoDB
+# HTTPS / TLS ports — wrap with SSL before reading
+SSL_PORTS = {443, 8443, 5986, 636, 993, 995, 465}
 
 
 @dataclass
@@ -131,8 +143,9 @@ class DiscoveredHost:
     ip: str
     hostname: str = ""
     open_ports: list[dict[str, Any]] = field(default_factory=list)
-    os_guess: str = "unknown"  # windows | linux | network | database | unknown
+    os_guess: str = "unknown"  # windows | linux | macos | unknown
     os_version: str = ""       # e.g. "Windows 11 Pro 23H2 (Build 22631)"
+    device_role: str = ""      # domain_controller | server | workstation | network_device | database_server | printer | mobile | unknown
     vendor: str = ""           # e.g. "Microsoft", "TP-Link", "Cisco"
     device_model: str = ""     # e.g. "Archer AX73", "EdgeRouter X"
     firmware: str = ""         # e.g. "3.10.0", "IOS 15.7(3)M5"
@@ -150,6 +163,7 @@ class DiscoveredHost:
             "open_ports": self.open_ports,
             "os_guess": self.os_guess,
             "os_version": self.os_version,
+            "device_role": self.device_role,
             "vendor": self.vendor,
             "device_model": self.device_model,
             "firmware": self.firmware,
@@ -735,12 +749,22 @@ async def _grab_banner(ip: str, port: int) -> str:
     For MySQL (3306) we read the greeting packet.
     Returns the raw banner string (up to BANNER_MAX_BYTES), or "".
     """
+    use_ssl = port in SSL_PORTS
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, port),
-            timeout=TCP_CONNECT_TIMEOUT,
-        )
-    except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+        if use_ssl:
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip, port, ssl=ssl_ctx),
+                timeout=TCP_CONNECT_TIMEOUT + 1.0,  # extra second for TLS handshake
+            )
+        else:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip, port),
+                timeout=TCP_CONNECT_TIMEOUT,
+            )
+    except (asyncio.TimeoutError, ConnectionRefusedError, OSError, ssl.SSLError):
         return ""
 
     banner = ""
@@ -805,6 +829,85 @@ async def _grab_banners(ip: str, open_ports: list[dict[str, Any]]) -> dict[int, 
         except Exception:
             pass
     return banners
+
+
+def _enrich_ports_from_banners(
+    open_ports: list[dict[str, Any]], banners: dict[int, str]
+) -> None:
+    """Enrich open_ports entries in-place with product/version from banners.
+
+    Parses common banner formats to extract software name and version:
+      - SSH-2.0-OpenSSH_8.9p1 → product="OpenSSH", version="8.9p1"
+      - Server: Apache/2.4.52 → product="Apache", version="2.4.52"
+      - MySQL 5.0.x greeting  → product="MySQL", version from greeting
+    """
+    _BANNER_PARSE_RULES: list[tuple[str, re.Pattern[str], str]] = [
+        # SSH banners: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3"
+        ("ssh", re.compile(r"SSH-[\d.]+-(\S+?)(?:[_/])([\d][\w.p-]*)"), ""),
+        # HTTP Server header: "Server: Apache/2.4.52" or "Server: nginx/1.22.1"
+        ("http", re.compile(r"Server:\s*([A-Za-z][\w.-]*?)(?:[/ ])([\d][\w.]*)", re.IGNORECASE), ""),
+        # FTP banner: "220 (vsFTPd 3.0.5)" or "220-FileZilla Server 1.7.0"
+        ("ftp", re.compile(r"220[- ].*?(\w+FTP\w*|FileZilla\s*Server|ProFTPD|PureFTPd)\s*[\s/]?([\d][\w.]*)"), ""),
+        # MySQL greeting: version in first bytes after protocol byte
+        ("mysql", re.compile(r"([\d]+\.[\d]+\.[\d]+[\w.-]*)"), "MySQL"),
+        # Redis: "+PONG" or "-ERR" with version in INFO
+        ("redis", re.compile(r"redis_version:(\S+)", re.IGNORECASE), "Redis"),
+        # SMTP: "220 mail.example.com ESMTP Postfix"
+        ("smtp", re.compile(r"220\s+\S+\s+(?:E?SMTP\s+)?(\w+)(?:[\s/]([\d][\w.]*))?"), ""),
+        # PostgreSQL: check for version-like patterns
+        ("postgres", re.compile(r"([\d]+\.[\d]+[\w.]*)"), "PostgreSQL"),
+        # Microsoft-IIS/10.0
+        ("iis", re.compile(r"Microsoft-IIS/([\d.]+)", re.IGNORECASE), "Microsoft IIS"),
+        # Telnet: various device banners
+        ("telnet", re.compile(r"([\w.-]+)\s+(?:Version|v)\s*([\d][\w.]*)", re.IGNORECASE), ""),
+    ]
+
+    for port_entry in open_ports:
+        port = port_entry["port"]
+        banner = banners.get(port, "")
+        if not banner:
+            continue
+
+        # Store a snippet of the raw banner (first 120 chars, single line)
+        snippet = banner.replace("\r", "").replace("\n", " ").strip()[:120]
+        port_entry["banner_snippet"] = snippet
+
+        service = (port_entry.get("service") or "").lower()
+
+        # Try to extract product + version
+        for rule_key, pattern, default_product in _BANNER_PARSE_RULES:
+            # Match rule to the right service type
+            if rule_key == "ssh" and port not in (22,):
+                continue
+            if rule_key == "http" and port not in BANNER_PORTS_HTTP:
+                continue
+            if rule_key == "ftp" and port not in (21,):
+                continue
+            if rule_key == "mysql" and port not in (3306,):
+                continue
+            if rule_key == "redis" and port not in (6379,):
+                continue
+            if rule_key == "smtp" and port not in (25, 465, 587):
+                continue
+            if rule_key == "postgres" and port not in (5432,):
+                continue
+            if rule_key == "iis" and port not in BANNER_PORTS_HTTP:
+                continue
+            if rule_key == "telnet" and port not in (23,):
+                continue
+
+            m = pattern.search(banner)
+            if m:
+                groups = m.groups()
+                if default_product:
+                    port_entry["product"] = default_product
+                    port_entry["version"] = groups[0] if groups else ""
+                elif len(groups) >= 2:
+                    port_entry["product"] = groups[0]
+                    port_entry["version"] = groups[1] or ""
+                elif len(groups) == 1:
+                    port_entry["product"] = groups[0]
+                break
 
 
 # ── OS Version & Vendor Detection (from banners) ────────────
@@ -1624,32 +1727,39 @@ async def _snmp_sysdescr(
 # Layer 3: MAC OUI vendor lookup (via ARP table)
 # ═══════════════════════════════════════════════════════════
 
-def _get_mac_from_arp(ip: str) -> str:
-    """Get MAC address for an IP — prefers the ARP sweep cache, falls back to live lookup."""
+async def _get_mac_from_arp(ip: str) -> str:
+    """Get MAC address for an IP — prefers the ARP sweep cache, falls back to async live lookup."""
     # Fast path: use pre-populated ARP cache from Layer 0 sweep
     cached = _arp_cache.get(ip)
     if cached:
         return cached
 
-    # Fallback: live ARP table lookup (for single-IP scans where sweep wasn't run)
+    # Fallback: async live ARP table lookup (for single-IP scans where sweep wasn't run)
     try:
         if sys.platform == "win32":
-            output = subprocess.check_output(
-                ["arp", "-a", ip], timeout=5, text=True, stderr=subprocess.DEVNULL
+            proc = await asyncio.create_subprocess_exec(
+                "arp", "-a", ip,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
             )
-            # Windows ARP output: "  192.168.1.1  aa-bb-cc-dd-ee-ff  dynamic"
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            output = stdout.decode("utf-8", errors="replace")
             mac_m = re.search(r"([\da-fA-F]{2}[:-]){5}[\da-fA-F]{2}", output)
             if mac_m:
                 return mac_m.group(0).upper().replace("-", ":")
         else:
             # Linux / macOS
-            output = subprocess.check_output(
-                ["arp", "-n", ip], timeout=5, text=True, stderr=subprocess.DEVNULL
+            proc = await asyncio.create_subprocess_exec(
+                "arp", "-n", ip,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
             )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            output = stdout.decode("utf-8", errors="replace")
             mac_m = re.search(r"([\da-fA-F]{2}:){5}[\da-fA-F]{2}", output)
             if mac_m:
                 return mac_m.group(0).upper()
-            # Fallback: /proc/net/arp
+            # Fallback: /proc/net/arp (async file read would be overkill — small file)
             try:
                 with open("/proc/net/arp", "r") as f:
                     for line in f:
@@ -1659,7 +1769,7 @@ def _get_mac_from_arp(ip: str) -> str:
                                 return mac_m2.group(0).upper()
             except FileNotFoundError:
                 pass
-    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+    except (asyncio.TimeoutError, FileNotFoundError, OSError):
         pass
     return ""
 
@@ -1955,11 +2065,20 @@ async def _http_deep_inspect(
     detection_method, confidence.
     """
     result: dict[str, Any] = {}
+    use_ssl = port in SSL_PORTS
 
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, port), timeout=timeout
-        )
+        if use_ssl:
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip, port, ssl=ssl_ctx), timeout=timeout + 1.0
+            )
+        else:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(ip, port), timeout=timeout
+            )
     except Exception:
         return result
 
@@ -2160,6 +2279,174 @@ def _detect_from_banners(
 
 
 # ═══════════════════════════════════════════════════════════
+# Layer 11: RDP fingerprinting (X.224 / CredSSP / NLA)
+# ═══════════════════════════════════════════════════════════
+
+async def _rdp_fingerprint(ip: str, port: int = 3389) -> dict[str, Any]:
+    """Send an X.224 Connection Request to RDP and read the response.
+
+    The server's X.224 response reveals protocol negotiation (NLA / CredSSP),
+    and sometimes the TLS certificate contains the host's FQDN and OS hints.
+    Returns: os_version, vendor, detection_method, confidence.
+    """
+    result: dict[str, Any] = {}
+
+    # X.224 Connection Request (simplified — just enough to get a response)
+    # TPKT header (4 bytes) + X.224 CR (variable)
+    cookie = b"Cookie: mstshash=auditfrg\r\n"
+    x224_cr_body = (
+        b"\xe0"             # CR TPDU code
+        b"\x00\x00"         # DST-REF
+        b"\x00\x00"         # SRC-REF
+        b"\x00"             # Class 0
+    ) + cookie + (
+        # RDP Negotiation Request: TYPE_RDP_NEG_REQ
+        b"\x01"             # type = NEGOTIATION_REQUEST
+        b"\x00"             # flags
+        b"\x08\x00"         # length = 8
+        b"\x03\x00\x00\x00" # requestedProtocols = PROTOCOL_SSL | PROTOCOL_HYBRID
+    )
+    x224_len = len(x224_cr_body) + 1  # +1 for length byte itself
+    tpkt = struct.pack("!BBH", 3, 0, 4 + x224_len) + bytes([x224_len]) + x224_cr_body
+
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port), timeout=TCP_CONNECT_TIMEOUT,
+        )
+    except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+        return result
+
+    try:
+        writer.write(tpkt)
+        await writer.drain()
+        data = await asyncio.wait_for(reader.read(1024), timeout=3.0)
+
+        if data and len(data) >= 11:
+            result["vendor"] = "Microsoft"
+            result["detection_method"] = "rdp_fingerprint"
+            result["confidence"] = 60
+
+            # Check CredSSP / NLA support from negotiation response
+            # Byte 11 (0-indexed): negotiation type. 0x02 = RESPONSE, 0x03 = FAILURE
+            resp_type = data[11] if len(data) > 11 else 0
+            if resp_type == 0x02 and len(data) > 15:
+                selected_proto = struct.unpack_from("<I", data, 12)[0]
+                if selected_proto & 0x02:  # PROTOCOL_HYBRID (NLA/CredSSP)
+                    result["os_version"] = "Windows (NLA/CredSSP enabled)"
+                    result["confidence"] = 65
+                elif selected_proto & 0x01:  # PROTOCOL_SSL
+                    result["os_version"] = "Windows (TLS-only RDP)"
+                    result["confidence"] = 60
+
+            # Try TLS upgrade to read certificate CN for FQDN
+            if resp_type == 0x02:
+                try:
+                    ssl_ctx = ssl.create_default_context()
+                    ssl_ctx.check_hostname = False
+                    ssl_ctx.verify_mode = ssl.CERT_NONE
+                    transport = writer.transport
+                    # Get the raw socket from the asyncio transport
+                    raw_sock = transport.get_extra_info("socket")
+                    if raw_sock:
+                        ssl_sock = ssl_ctx.wrap_socket(raw_sock, server_hostname=ip)
+                        cert = ssl_sock.getpeercert(binary_form=True)
+                        if cert:
+                            # Try to extract CN from DER cert — very basic parse
+                            cert_text = cert.decode("latin-1", errors="replace")
+                            cn_m = re.search(r"CN=([^\x00-\x1f,]+)", cert_text)
+                            if cn_m:
+                                result["hostname_hint"] = cn_m.group(1)
+                except Exception:
+                    pass  # TLS upgrade is best-effort
+
+    except (asyncio.TimeoutError, ConnectionError, OSError):
+        pass
+    finally:
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except OSError:
+            pass
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════
+# Layer 12: WinRM detection (HTTP on 5985 / HTTPS on 5986)
+# ═══════════════════════════════════════════════════════════
+
+async def _winrm_detect(ip: str) -> dict[str, Any]:
+    """Probe WinRM HTTP (5985) and HTTPS (5986) endpoints.
+
+    A running WinRM service returns specific headers that confirm Windows.
+    Returns: os_version, vendor, detection_method, confidence.
+    """
+    result: dict[str, Any] = {}
+
+    for port, use_ssl in [(5985, False), (5986, True)]:
+        try:
+            if use_ssl:
+                ssl_ctx = ssl.create_default_context()
+                ssl_ctx.check_hostname = False
+                ssl_ctx.verify_mode = ssl.CERT_NONE
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(ip, port, ssl=ssl_ctx),
+                    timeout=TCP_CONNECT_TIMEOUT + 1.0,
+                )
+            else:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(ip, port),
+                    timeout=TCP_CONNECT_TIMEOUT,
+                )
+        except (asyncio.TimeoutError, ConnectionRefusedError, OSError, ssl.SSLError):
+            continue
+
+        try:
+            req = (
+                f"POST /wsman HTTP/1.1\r\n"
+                f"Host: {ip}:{port}\r\n"
+                "Content-Type: application/soap+xml;charset=UTF-8\r\n"
+                "Content-Length: 0\r\n"
+                "Connection: close\r\n\r\n"
+            ).encode()
+            writer.write(req)
+            await writer.drain()
+            data = await asyncio.wait_for(reader.read(2048), timeout=3.0)
+            resp_text = data.decode("utf-8", errors="replace")
+
+            if "HTTP/" in resp_text:
+                # WinRM typically returns 401/403 with specific headers
+                result["vendor"] = "Microsoft"
+                result["detection_method"] = "winrm"
+                result["confidence"] = 70
+
+                if "Microsoft-HTTPAPI" in resp_text or "wsman" in resp_text.lower():
+                    result["confidence"] = 80
+                    result["os_version"] = "Windows (WinRM enabled)"
+
+                # Check for server header with version info
+                server_m = re.search(r"Server:\s*([^\r\n]+)", resp_text, re.IGNORECASE)
+                if server_m:
+                    server_val = server_m.group(1).strip()
+                    if "Microsoft" in server_val:
+                        result["os_version"] = f"Windows ({server_val})"
+                        result["confidence"] = 85
+
+                break  # Got a valid response, no need to try other port
+
+        except (asyncio.TimeoutError, ConnectionError, OSError):
+            pass
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except OSError:
+                pass
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════
 # Orchestrator: multi-layer fingerprinting with confidence
 # ═══════════════════════════════════════════════════════════
 
@@ -2215,8 +2502,18 @@ async def _fingerprint_host(
     if tcp_fp_port is not None:
         tcp_fp_task = asyncio.create_task(_tcp_os_fingerprint(ip, tcp_fp_port))
 
+    # Layer 11: RDP fingerprinting (only if port 3389 is open)
+    rdp_task = None
+    if 3389 in port_numbers:
+        rdp_task = asyncio.create_task(_rdp_fingerprint(ip))
+
+    # Layer 12: WinRM detection (only if port 5985 or 5986 is open)
+    winrm_task = None
+    if port_numbers & {5985, 5986}:
+        winrm_task = asyncio.create_task(_winrm_detect(ip))
+
     # Wait for all async tasks
-    all_tasks = [t for t in [smb_task, snmp_task, upnp_task, mdns_task, http_task, netbios_task, tcp_fp_task] if t]
+    all_tasks = [t for t in [smb_task, snmp_task, upnp_task, mdns_task, http_task, netbios_task, tcp_fp_task, rdp_task, winrm_task] if t]
     if all_tasks:
         await asyncio.gather(*all_tasks, return_exceptions=True)
 
@@ -2241,8 +2538,8 @@ async def _fingerprint_host(
         except Exception:
             pass
 
-    # Layer 3: MAC OUI (synchronous)
-    mac = _get_mac_from_arp(ip)
+    # Layer 3: MAC OUI (async subprocess)
+    mac = await _get_mac_from_arp(ip)
     if mac:
         oui_vendor = _lookup_oui_vendor(mac)
         if oui_vendor:
@@ -2314,6 +2611,24 @@ async def _fingerprint_host(
     if tcp_fp_task and not tcp_fp_task.cancelled():
         try:
             r = tcp_fp_task.result()
+            if r:
+                candidates.append(r)
+        except Exception:
+            pass
+
+    # Layer 11: RDP fingerprinting
+    if rdp_task and not rdp_task.cancelled():
+        try:
+            r = rdp_task.result()
+            if r:
+                candidates.append(r)
+        except Exception:
+            pass
+
+    # Layer 12: WinRM detection
+    if winrm_task and not winrm_task.cancelled():
+        try:
+            r = winrm_task.result()
             if r:
                 candidates.append(r)
         except Exception:
@@ -2414,31 +2729,77 @@ def _guess_os(open_ports: list[dict[str, Any]]) -> str:
     port_numbers = {p["port"] for p in open_ports}
 
     # Strong Windows indicators
-    windows_ports = {135, 139, 445, 3389, 5985, 5986}
+    windows_ports = {135, 139, 445, 3389, 5985, 5986, 88, 389, 636, 3268, 3269}
     if port_numbers & windows_ports:
         return "windows"
 
     # Apple / iOS device
     if 62078 in port_numbers or 548 in port_numbers:
-        return "mobile"
+        return "macos"
 
     # Strong Linux indicator
     if 22 in port_numbers and not (port_numbers & windows_ports):
         return "linux"
 
-    # Database
-    db_ports = {1433, 5432, 1521, 3306, 6379, 27017}
+    # Database ports
+    db_ports = {1433, 5432, 1521, 3306, 6379, 27017, 9200}
     if port_numbers & db_ports and not (port_numbers & windows_ports) and 22 not in port_numbers:
-        return "database"
+        return "unknown"
 
     # Printer indicators
     if port_numbers & {631, 9100}:
-        return "unknown"  # printers don't fit neatly into a category
+        return "unknown"
 
     # Network device indicators
-    network_ports = {23, 161, 830}
+    network_ports = {23, 161, 830, 8291}
     if port_numbers & network_ports and not (port_numbers & windows_ports):
-        return "network"
+        return "unknown"
+
+    return "unknown"
+
+
+def _guess_device_role(open_ports: list[dict[str, Any]], os_guess: str) -> str:
+    """Guess the device role based on open ports and OS guess.
+
+    Returns one of: domain_controller, server, workstation, network_device,
+    database_server, printer, mobile, unknown.
+    """
+    port_numbers = {p["port"] for p in open_ports}
+
+    # Active Directory Domain Controller (Kerberos + LDAP + SMB)
+    ad_ports = {88, 389, 636, 3268, 3269}
+    if len(port_numbers & ad_ports) >= 2 and 445 in port_numbers:
+        return "domain_controller"
+
+    # Mobile device
+    if 62078 in port_numbers:
+        return "mobile"
+
+    # Printer
+    if port_numbers & {631, 9100} and len(port_numbers) <= 4:
+        return "printer"
+
+    # Network device (telnet, SNMP, NETCONF, WinBox — no SSH-only)
+    network_ports = {23, 161, 830, 8291}
+    if port_numbers & network_ports and not (port_numbers & {135, 445, 3389}):
+        return "network_device"
+
+    # Database server
+    db_ports = {1433, 5432, 1521, 3306, 6379, 27017, 9200}
+    if port_numbers & db_ports:
+        return "database_server"
+
+    # Windows server (has server-ish ports)
+    if os_guess == "windows" and (port_numbers & {80, 443, 3389, 5985, 5986}):
+        return "server"
+
+    # Linux server (SSH + web or other service ports)
+    if os_guess == "linux" and len(port_numbers) >= 2:
+        return "server"
+
+    # Workstation (minimal ports)
+    if os_guess in ("windows", "linux", "macos") and len(port_numbers) <= 3:
+        return "workstation"
 
     return "unknown"
 
@@ -2524,6 +2885,9 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
             if open_ports:
                 banners = await _grab_banners(ip, open_ports)
 
+                # Enrich open_ports with version/product extracted from banners
+                _enrich_ports_from_banners(open_ports, banners)
+
         # Phase 3: UDP port probing (lightweight — always run)
         udp_ports = await _udp_probe_host(ip)
         for up in udp_ports:
@@ -2554,18 +2918,22 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
                 os_guess = "linux"
             elif any(kw in vendor_lower for kw in ("samsung", "google", "oneplus",
                      "xiaomi", "huawei", "oppo", "realme", "motorola", "sony",
-                     "lg", "nokia", "honor", "amazon", "apple")):
-                os_guess = "mobile"
+                     "lg", "nokia", "honor", "amazon")):
+                os_guess = "macos" if "apple" in vendor_lower else "unknown"
             elif any(kw in vendor_lower for kw in ("tp-link", "netgear", "asus",
                      "d-link", "linksys", "cisco", "juniper", "mikrotik",
                      "ubiquiti", "fortinet", "arista", "meraki", "sonicwall")):
-                os_guess = "network"
+                os_guess = "unknown"  # network devices — OS determined elsewhere
+
+        # Determine device role from ports + OS
+        device_role = _guess_device_role(open_ports, os_guess)
 
         return DiscoveredHost(
             ip=ip,
             hostname=hostname,
             open_ports=open_ports,
             os_guess=os_guess,
+            device_role=device_role,
             connection_methods=conn_methods,
             os_version=fp.get("os_version", ""),
             vendor=fp.get("vendor", ""),
@@ -2655,6 +3023,15 @@ def get_discovery_progress(discovery_id: str) -> dict[str, Any] | None:
     return _discovery_progress.get(discovery_id)
 
 
+def cancel_discovery(discovery_id: str) -> bool:
+    """Request cancellation of an active discovery. Returns True if found."""
+    prog = _discovery_progress.get(discovery_id)
+    if prog and prog.get("status") == "running":
+        prog["cancel_requested"] = True
+        return True
+    return False
+
+
 async def discover_network(
     subnet: str,
     discovery_id: str | None = None,
@@ -2712,7 +3089,14 @@ async def discover_network(
 
     # Process in batches for progress tracking
     batch_size = MAX_CONCURRENT_HOSTS
+    cancelled = False
     for batch_start in range(0, total, batch_size):
+        # Check for cancellation between batches
+        if discovery_id and _discovery_progress.get(discovery_id, {}).get("cancel_requested"):
+            cancelled = True
+            logger.info("Discovery %s cancelled by user at batch %d/%d", discovery_id, batch_start, total)
+            break
+
         batch = hosts_to_scan[batch_start:batch_start + batch_size]
         tasks = [_scan_host(ip, sem) for ip in batch]
         results = await asyncio.gather(*tasks)
@@ -2731,34 +3115,40 @@ async def discover_network(
         mac = arp_results.get(arp_ip, "")
         vendor = _lookup_oui_vendor(mac) if mac else ""
         os_guess = "unknown"
+        device_role = "unknown"
         if vendor:
             vendor_lower = vendor.lower()
             if any(kw in vendor_lower for kw in ("samsung", "google", "oneplus",
                    "xiaomi", "huawei", "oppo", "realme", "motorola", "sony",
-                   "lg", "nokia", "honor", "amazon", "apple")):
-                os_guess = "mobile"
+                   "lg", "nokia", "honor", "amazon")):
+                device_role = "mobile"
+            elif "apple" in vendor_lower:
+                os_guess = "macos"
+                device_role = "mobile"
             elif any(kw in vendor_lower for kw in ("tp-link", "netgear", "asus",
                      "d-link", "linksys", "cisco", "juniper", "mikrotik",
                      "ubiquiti", "fortinet", "arista", "meraki", "sonicwall")):
-                os_guess = "network"
+                device_role = "network_device"
         discovered.append(DiscoveredHost(
             ip=arp_ip,
             mac_address=mac,
             vendor=vendor,
             os_guess=os_guess,
+            device_role=device_role,
             detection_method="arp_sweep",
             confidence=25 if vendor else 10,
         ))
 
     elapsed = time.monotonic() - start_time
+    final_status = "cancelled" if cancelled else "completed"
     logger.info(
-        "Discovery completed: %d hosts found out of %d scanned in %.1fs",
-        len(discovered), total, elapsed,
+        "Discovery %s: %d hosts found out of %d scanned in %.1fs",
+        final_status, len(discovered), total, elapsed,
     )
 
     if discovery_id and discovery_id in _discovery_progress:
-        _discovery_progress[discovery_id]["status"] = "completed"
-        _discovery_progress[discovery_id]["scanned"] = total
+        _discovery_progress[discovery_id]["status"] = final_status
+        _discovery_progress[discovery_id]["scanned"] = total if not cancelled else _discovery_progress[discovery_id].get("scanned", 0)
         _discovery_progress[discovery_id]["found"] = len(discovered)
         _discovery_progress[discovery_id]["hosts"] = [h.to_dict() for h in discovered]
 
