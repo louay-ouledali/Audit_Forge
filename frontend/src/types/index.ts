@@ -7,6 +7,13 @@ export interface Client {
   notes: string | null;
   created_at: string;
   mission_count: number;
+  // Active Directory fields
+  ad_domain: string | null;
+  ad_dc_host: string | null;
+  ad_username: string | null;
+  ad_use_ssl: boolean | null;
+  ad_base_ou: string | null;
+  ad_configured: boolean;
 }
 
 export interface Mission {
@@ -797,6 +804,61 @@ export interface FrameworkRulesResponse {
   framework_name: string;
   rules: FrameworkRuleItem[];
   total: number;
+}
+
+// ── Active Directory Discovery ─────────────────────────────────
+
+export interface ADConnectionTestResult {
+  success: boolean;
+  domain_name?: string;
+  domain_dn?: string;
+  dc_hostname?: string;
+  forest_name?: string;
+  computer_count?: number;
+  error?: string;
+}
+
+export interface ADComputer {
+  cn: string;
+  dns_hostname: string | null;
+  ip_address: string | null;
+  operating_system: string | null;
+  os_version: string | null;
+  distinguished_name: string | null;
+  when_created: string | null;
+  last_logon: string | null;
+  enabled: boolean;
+  ou_path: string | null;
+  target_type: string | null;
+  platform_subtype: string | null;
+  os_confidence: string | null;
+  matched_benchmark_id: number | null;
+  matched_benchmark_name: string | null;
+}
+
+export interface ADDiscoverResponse {
+  success: boolean;
+  computers: ADComputer[];
+  total: number;
+  error?: string;
+}
+
+export interface ADWinRMCheckResult {
+  host: string;
+  winrm_http: boolean;
+  winrm_https: boolean;
+  winrm_available: boolean;
+  recommended_port?: number | null;
+  error?: string;
+}
+
+export interface ADBulkCreateResult {
+  created: { target_id: number; hostname: string; ip_address: string | null; target_type: string; benchmark_id: number | null; benchmark_name: string | null }[];
+  skipped: { hostname: string; reason: string; target_id: number }[];
+  errors: { hostname: string; error: string }[];
+  total_created: number;
+  total_skipped: number;
+  total_errors: number;
 }
 
 export interface BackupInfo {

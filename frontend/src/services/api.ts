@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo, ADConnectionTestResult, ADDiscoverResponse, ADWinRMCheckResult, ADBulkCreateResult } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -842,4 +842,66 @@ export async function createSavedReport(payload: { mission_id: number; title: st
 
 export async function deleteSavedReport(id: number): Promise<void> {
   await api.delete(`/saved-reports/${id}`);
+}
+
+// ── AD Discovery ─────────────────────────────────────────────
+
+export async function adTestConnection(payload: {
+  client_id: number;
+  dc_host?: string;
+  domain?: string;
+  username?: string;
+  password?: string;
+  use_ssl?: boolean;
+}): Promise<ADConnectionTestResult> {
+  const { data } = await api.post('/ad/test-connection', payload);
+  return data;
+}
+
+export async function adDiscover(payload: {
+  client_id: number;
+  dc_host?: string;
+  domain?: string;
+  username?: string;
+  password?: string;
+  use_ssl?: boolean;
+  ou_filter?: string;
+  resolve_dns?: boolean;
+}): Promise<ADDiscoverResponse> {
+  const { data } = await api.post('/ad/discover', payload);
+  return data;
+}
+
+export async function adCheckWinRM(hosts: string[], timeout?: number): Promise<{
+  results: ADWinRMCheckResult[];
+  total: number;
+  available: number;
+}> {
+  const { data } = await api.post('/ad/check-winrm', { hosts, timeout });
+  return data;
+}
+
+export async function adEnableWinRM(clientId: number, targetHosts: string[]): Promise<{
+  results: { host: string; success: boolean; method: string; error?: string; script?: string }[];
+  total: number;
+  successes: number;
+  fallback_script: string | null;
+}> {
+  const { data } = await api.post('/ad/enable-winrm', { client_id: clientId, target_hosts: targetHosts });
+  return data;
+}
+
+export async function adBulkCreateTargets(payload: {
+  client_id: number;
+  mission_id: number;
+  computers: Record<string, unknown>[];
+  auto_scan?: boolean;
+}): Promise<ADBulkCreateResult> {
+  const { data } = await api.post('/ad/bulk-create-targets', payload);
+  return data;
+}
+
+export async function adGenerateWinRMScript(clientId: number, targetHosts: string[]): Promise<{ script: string }> {
+  const { data } = await api.post('/ad/generate-winrm-script', { client_id: clientId, target_hosts: targetHosts });
+  return data;
 }

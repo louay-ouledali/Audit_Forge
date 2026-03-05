@@ -334,6 +334,8 @@ export default function MissionWorkspace() {
             setActiveTab('findings');
           }}
           isLocked={!!mission.is_locked}
+          clientAdConfigured={client?.ad_configured ?? false}
+          clientAdDomain={client?.ad_domain}
         />
       )}
 

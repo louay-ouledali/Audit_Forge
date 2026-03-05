@@ -19,6 +19,7 @@ import ActiveScansPanel from './scan/ActiveScansPanel';
 import UsbBulkExportDialog from './scan/UsbBulkExportDialog';
 import PrerequisiteGuideModal from './PrerequisiteGuideModal';
 import ScanHistoryPanel from './ScanHistoryPanel';
+import ADDiscovery from './ADDiscovery';
 import ImportPreviewModal from '../import/ImportPreviewModal';
 import type { ImportOptions } from '../import/ImportPreviewModal';
 import ConfirmDialog from '../common/ConfirmDialog';
@@ -35,9 +36,12 @@ interface Props {
   /** Navigate to the findings tab with an optional pre-selected scan */
   onSwitchToFindings?: (scanId?: number) => void;
   isLocked?: boolean;
+  /** AD credential info from client */
+  clientAdConfigured?: boolean;
+  clientAdDomain?: string | null;
 }
 
-export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab, onSwitchToFindings, isLocked = false }: Props) {
+export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab, onSwitchToFindings, isLocked = false, clientAdConfigured = false, clientAdDomain }: Props) {
   const toast = useToast();
   const [assignTargetId, setAssignTargetId] = useState<number | ''>('');
   const [error, setError] = useState('');
@@ -388,6 +392,16 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
           onTargetsAdded={onRefresh}
         />
       )}
+
+      {/* ── 1b. AD Discovery (collapsible) ─────────────────── */}
+      <ADDiscovery
+        clientId={clientId}
+        missionId={missionId}
+        clientAdConfigured={clientAdConfigured}
+        clientAdDomain={clientAdDomain}
+        onTargetsCreated={onRefresh}
+        isLocked={isLocked}
+      />
 
       {/* ── 2. Action Bar ────────────────────────────────────── */}
       <TargetActionBar

@@ -11,6 +11,13 @@ class ClientCreate(BaseModel):
     contact_name: str | None = None
     contact_email: str | None = None
     notes: str | None = None
+    # AD credential fields (optional at creation)
+    ad_domain: str | None = None
+    ad_dc_host: str | None = None
+    ad_username: str | None = None
+    ad_password: str | None = None        # plaintext → encrypted on save
+    ad_use_ssl: bool | None = True
+    ad_base_ou: str | None = None
 
 
 class ClientUpdate(BaseModel):
@@ -19,6 +26,12 @@ class ClientUpdate(BaseModel):
     contact_name: str | None = None
     contact_email: str | None = None
     notes: str | None = None
+    ad_domain: str | None = None
+    ad_dc_host: str | None = None
+    ad_username: str | None = None
+    ad_password: str | None = None        # plaintext → encrypted on save
+    ad_use_ssl: bool | None = None
+    ad_base_ou: str | None = None
 
 
 class ClientResponse(BaseModel):
@@ -32,6 +45,13 @@ class ClientResponse(BaseModel):
     notes: str | None = None
     created_at: datetime | None = None
     mission_count: int = 0
+    # AD fields (password is NEVER returned)
+    ad_domain: str | None = None
+    ad_dc_host: str | None = None
+    ad_username: str | None = None
+    ad_use_ssl: bool | None = None
+    ad_base_ou: str | None = None
+    ad_configured: bool = False       # convenience flag
 
 
 class ClientDetailEnvelope(BaseModel):

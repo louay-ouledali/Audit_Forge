@@ -22,6 +22,7 @@ from backend.api.reports import router as reports_router
 from backend.api.saved_reports import router as saved_reports_router
 from backend.api.targets import router as targets_router
 from backend.api.analyses import router as analyses_router
+from backend.api.ad_discovery import router as ad_discovery_router
 from backend.config import settings
 from backend.core.exceptions import (
     AuditForgeError,
@@ -161,6 +162,7 @@ app.include_router(llm_router, prefix="/api")
 app.include_router(reports_router, prefix="/api")
 app.include_router(saved_reports_router, prefix="/api")
 app.include_router(analyses_router, prefix="/api")
+app.include_router(ad_discovery_router, prefix="/api")
 
 
 @app.exception_handler(AuditForgeError)

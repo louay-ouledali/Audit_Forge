@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from backend.config import settings
 from backend.database import get_db
 from backend.models.client import Client
 from backend.models.mission import Mission
@@ -14,6 +15,7 @@ from backend.schemas.client import (
     ClientResponse,
     ClientUpdate,
 )
+from backend.utils.encryption import encrypt_value
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -21,6 +23,15 @@ router = APIRouter(prefix="/clients", tags=["clients"])
 def _client_mission_count(db: Session, client_id: int) -> int:
     """Efficient mission count without loading the full relationship."""
     return db.query(func.count(Mission.id)).filter(Mission.client_id == client_id).scalar() or 0
+
+
+def _build_response(client: Client, mission_count: int) -> ClientResponse:
+    """Build a ClientResponse with computed ad_configured flag."""
+    resp = ClientResponse.model_validate(client)
+    resp.mission_count = mission_count
+    resp.ad_configured = bool(client.ad_domain and client.ad_dc_host and client.ad_username and client.ad_password_encrypted)
+    resp.ad_use_ssl = bool(client.ad_use_ssl) if client.ad_use_ssl is not None else None
+    return resp
 
 
 @router.get("", response_model=ClientListResponse)
@@ -44,21 +55,25 @@ def list_clients(
 
     result = []
     for c in clients:
-        resp = ClientResponse.model_validate(c)
-        resp.mission_count = counts_map.get(c.id, 0)
+        resp = _build_response(c, counts_map.get(c.id, 0))
         result.append(resp)
     return {"data": result, "total": total}
 
 
 @router.post("", response_model=ClientDetailEnvelope, status_code=201)
 def create_client(payload: ClientCreate, db: Session = Depends(get_db)) -> dict:
-    client = Client(**payload.model_dump())
+    data = payload.model_dump(exclude={"ad_password"})
+    # Encrypt AD password if provided
+    if payload.ad_password:
+        data["ad_password_encrypted"] = encrypt_value(payload.ad_password, settings.SECRET_KEY)
+    # Store ad_use_ssl as integer in DB
+    if data.get("ad_use_ssl") is not None:
+        data["ad_use_ssl"] = 1 if data["ad_use_ssl"] else 0
+    client = Client(**data)
     db.add(client)
     db.commit()
     db.refresh(client)
-    resp = ClientResponse.model_validate(client)
-    resp.mission_count = 0
-    return {"data": resp, "message": "Client created"}
+    return {"data": _build_response(client, 0), "message": "Client created"}
 
 
 @router.get("/{client_id}", response_model=ClientDetailEnvelope)
@@ -66,9 +81,7 @@ def get_client(client_id: int, db: Session = Depends(get_db)) -> dict:
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
-    resp = ClientResponse.model_validate(client)
-    resp.mission_count = _client_mission_count(db, client_id)
-    return {"data": resp, "message": "success"}
+    return {"data": _build_response(client, _client_mission_count(db, client_id)), "message": "success"}
 
 
 @router.put("/{client_id}", response_model=ClientDetailEnvelope)
@@ -76,13 +89,21 @@ def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(g
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True, exclude={"ad_password"})
+    # Encrypt AD password if provided
+    if payload.ad_password is not None:
+        if payload.ad_password:
+            updates["ad_password_encrypted"] = encrypt_value(payload.ad_password, settings.SECRET_KEY)
+        else:
+            updates["ad_password_encrypted"] = None  # clear password
+    # Store ad_use_ssl as integer in DB
+    if "ad_use_ssl" in updates and updates["ad_use_ssl"] is not None:
+        updates["ad_use_ssl"] = 1 if updates["ad_use_ssl"] else 0
+    for field, value in updates.items():
         setattr(client, field, value)
     db.commit()
     db.refresh(client)
-    resp = ClientResponse.model_validate(client)
-    resp.mission_count = _client_mission_count(db, client_id)
-    return {"data": resp, "message": "Client updated"}
+    return {"data": _build_response(client, _client_mission_count(db, client_id)), "message": "Client updated"}
 
 
 @router.delete("/{client_id}")
