@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -18,9 +18,12 @@ import {
   ExternalLink,
   Trash2,
   Package,
+  Search,
+  X,
 } from 'lucide-react';
 import type { ScanDetail, Target } from '@/types';
 import * as api from '@/services/api';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 
 /* ── Platform icon lookup ─────────────────────────────────────── */
 const PLATFORM_ICON: Record<string, { icon: typeof Monitor; color: string }> = {
@@ -80,6 +83,8 @@ function complianceColor(pct: number | null): string {
   return 'text-red-400';
 }
 
+const PAGE_SIZE = 10;
+
 /* ── Props ────────────────────────────────────────────────────── */
 interface Props {
   missionId: number;
@@ -96,10 +101,14 @@ export default function ScanHistoryPanel({
   onImportResults,
   refreshKey = 0,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [scans, setScans] = useState<ScanDetail[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [deletingScanId, setDeletingScanId] = useState<number | null>(null);
 
   const loadScans = useCallback(async () => {
     setLoading(true);
@@ -114,27 +123,48 @@ export default function ScanHistoryPanel({
     }
   }, [missionId]);
 
-  // Load when expanded or refreshKey changes
+  // Load on mount (expanded by default) and when refreshKey changes
   useEffect(() => {
     if (expanded) loadScans();
   }, [expanded, refreshKey, loadScans]);
 
-  // Also load count on mount (for the header badge)
-  useEffect(() => {
-    api.getScans({ mission_id: missionId })
-      .then(resp => setTotal(resp.total))
-      .catch(() => {});
-  }, [missionId, refreshKey]);
+  // Client-side filtering
+  const filteredScans = useMemo(() => {
+    let result = scans;
+    if (statusFilter) {
+      result = result.filter(s => s.status === statusFilter);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(s =>
+        (s.target_hostname || '').toLowerCase().includes(q) ||
+        (s.target_ip || '').toLowerCase().includes(q) ||
+        (s.benchmark_name || '').toLowerCase().includes(q) ||
+        (s.scan_mode || '').toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [scans, searchQuery, statusFilter]);
 
-  const handleDelete = async (scanId: number) => {
-    if (!confirm('Delete this scan and all its findings?')) return;
+  const visibleScans = filteredScans.slice(0, visibleCount);
+  const hasMore = visibleCount < filteredScans.length;
+
+  const handleDelete = async () => {
+    if (deletingScanId == null) return;
     try {
-      await api.deleteScan(scanId);
+      await api.deleteScan(deletingScanId);
       await loadScans();
     } catch {
       // ignore
+    } finally {
+      setDeletingScanId(null);
     }
   };
+
+  const uniqueStatuses = useMemo(() => {
+    const set = new Set(scans.map(s => s.status));
+    return Array.from(set).sort();
+  }, [scans]);
 
   return (
     <div className="rounded-xl border border-dark-border bg-dark-card overflow-hidden">
@@ -165,11 +195,46 @@ export default function ScanHistoryPanel({
       {/* Expanded content */}
       {expanded && (
         <div className="border-t border-dark-border">
-          {scans.length === 0 && !loading ? (
+          {/* Search + Status filter bar */}
+          {scans.length > 0 && (
+            <div className="flex flex-col sm:flex-row gap-2 px-4 py-3 border-b border-dark-border/50">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-dark-muted" />
+                <input
+                  type="text"
+                  placeholder="Search scans..."
+                  value={searchQuery}
+                  onChange={(e) => { setSearchQuery(e.target.value); setVisibleCount(PAGE_SIZE); }}
+                  className="w-full rounded-lg border border-dark-border bg-dark-elevated py-1.5 pl-8 pr-8 text-xs text-white placeholder-dark-muted focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-dark-muted hover:text-white">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => { setStatusFilter(e.target.value); setVisibleCount(PAGE_SIZE); }}
+                className="rounded-lg border border-dark-border bg-dark-elevated px-2.5 py-1.5 text-xs text-white focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20"
+              >
+                <option value="">All statuses</option>
+                {uniqueStatuses.map(s => (
+                  <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace('_', ' ')}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {filteredScans.length === 0 && !loading ? (
             <div className="px-5 py-8 text-center">
               <History className="mx-auto h-8 w-8 text-dark-muted" />
-              <p className="mt-2 text-sm text-dark-secondary">No scans yet for this mission.</p>
-              <p className="mt-1 text-xs text-dark-muted">Run a scan or import results to get started.</p>
+              <p className="mt-2 text-sm text-dark-secondary">
+                {scans.length === 0 ? 'No scans yet for this mission.' : 'No scans match your filters.'}
+              </p>
+              {scans.length === 0 && (
+                <p className="mt-1 text-xs text-dark-muted">Run a scan or import results to get started.</p>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -189,7 +254,7 @@ export default function ScanHistoryPanel({
                   </tr>
                 </thead>
                 <tbody>
-                  {scans.map(s => {
+                  {visibleScans.map(s => {
                     const tIcon = getTargetIcon(targets, s.target_id);
                     const TargetIcon = tIcon.icon;
                     const badge = statusBadge(s.status);
@@ -287,7 +352,7 @@ export default function ScanHistoryPanel({
                               </button>
                             )}
                             <button
-                              onClick={() => handleDelete(s.id)}
+                              onClick={() => setDeletingScanId(s.id)}
                               className="rounded-md p-1.5 text-dark-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
                               title="Delete scan"
                             >
@@ -303,29 +368,49 @@ export default function ScanHistoryPanel({
             </div>
           )}
 
-          {/* Footer with import button */}
-          {scans.length > 0 && (
+          {/* Load more + footer */}
+          {filteredScans.length > 0 && (
             <div className="flex items-center justify-between px-5 py-3 border-t border-dark-border/50">
               <span className="text-[11px] text-dark-muted">
-                {scans.length} scan{scans.length !== 1 ? 's' : ''}
-                {scans.filter(s => s.status === 'completed').length > 0 && (
-                  <> · {scans.filter(s => s.status === 'completed').length} completed</>
+                Showing {visibleScans.length} of {filteredScans.length} scan{filteredScans.length !== 1 ? 's' : ''}
+                {filteredScans.filter(s => s.status === 'completed').length > 0 && (
+                  <> · {filteredScans.filter(s => s.status === 'completed').length} completed</>
                 )}
               </span>
-              <button
-                onClick={() => {
-                  // Pick the first target that has a benchmark for quick import
-                  const t = targets.find(x => !!x.default_benchmark_id);
-                  if (t) onImportResults(t);
-                }}
-                className="inline-flex items-center gap-1.5 text-[11px] text-dark-secondary hover:text-ey-yellow transition-colors"
-              >
-                <Upload className="h-3 w-3" /> Import Results
-              </button>
+              <div className="flex items-center gap-3">
+                {hasMore && (
+                  <button
+                    onClick={() => setVisibleCount(prev => prev + PAGE_SIZE)}
+                    className="text-[11px] text-ey-yellow hover:text-ey-yellow-hover transition-colors font-medium"
+                  >
+                    Load more ({filteredScans.length - visibleCount} remaining)
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    const t = targets.find(x => !!x.default_benchmark_id);
+                    if (t) onImportResults(t);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-[11px] text-dark-secondary hover:text-ey-yellow transition-colors"
+                >
+                  <Upload className="h-3 w-3" /> Import Results
+                </button>
+              </div>
             </div>
           )}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        open={deletingScanId != null}
+        title="Delete Scan"
+        message="Delete this scan and all its findings? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={handleDelete}
+        onCancel={() => setDeletingScanId(null)}
+      />
     </div>
   );
 }

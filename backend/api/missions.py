@@ -3,12 +3,14 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.client import Client
 from backend.models.mission import Mission
+from backend.models.target import Target
 from backend.schemas.mission import (
     MissionCreate,
     MissionDetailEnvelope,
@@ -42,31 +44,67 @@ def check_mission_lock(mission_id: int | None, db: Session) -> None:
         )
 
 
+def _target_count(db: Session, mission_id: int) -> int:
+    """Efficient target count without loading the full relationship."""
+    return db.query(func.count(Target.id)).filter(Target.mission_id == mission_id).scalar() or 0
+
+
+def _batch_target_counts(db: Session, mission_ids: list[int]) -> dict[int, int]:
+    """Batch-fetch target counts for multiple missions in one query."""
+    if not mission_ids:
+        return {}
+    rows = (
+        db.query(Target.mission_id, func.count(Target.id))
+        .filter(Target.mission_id.in_(mission_ids))
+        .group_by(Target.mission_id)
+        .all()
+    )
+    return dict(rows)
+
+
 @router.get("/missions", response_model=MissionListResponse)
-def list_all_missions(db: Session = Depends(get_db)) -> dict:
+def list_all_missions(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict:
     """List all missions across all clients."""
-    missions = db.query(Mission).order_by(Mission.id.desc()).all()
+    total = db.query(func.count(Mission.id)).scalar() or 0
+    missions = db.query(Mission).order_by(Mission.id.desc()).offset(skip).limit(limit).all()
+
+    counts_map = _batch_target_counts(db, [m.id for m in missions])
+
     result = []
     for m in missions:
         resp = MissionResponse.model_validate(m)
-        resp.target_count = len(m.targets)
+        resp.target_count = counts_map.get(m.id, 0)
         resp.client_name = m.client.name if m.client else None
         result.append(resp)
-    return {"data": result, "total": len(result)}
+    return {"data": result, "total": total}
 
 
 @router.get("/clients/{client_id}/missions", response_model=MissionListResponse)
-def list_missions(client_id: int, db: Session = Depends(get_db)) -> dict:
+def list_missions(
+    client_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict:
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
-    missions = db.query(Mission).filter(Mission.client_id == client_id).order_by(Mission.id).all()
+    base = db.query(Mission).filter(Mission.client_id == client_id)
+    total = base.count()
+    missions = base.order_by(Mission.id).offset(skip).limit(limit).all()
+
+    counts_map = _batch_target_counts(db, [m.id for m in missions])
+
     result = []
     for m in missions:
         resp = MissionResponse.model_validate(m)
-        resp.target_count = len(m.targets)
+        resp.target_count = counts_map.get(m.id, 0)
         result.append(resp)
-    return {"data": result, "total": len(result)}
+    return {"data": result, "total": total}
 
 
 @router.post("/missions", response_model=MissionDetailEnvelope, status_code=201)
@@ -89,7 +127,7 @@ def get_mission(mission_id: int, db: Session = Depends(get_db)) -> dict:
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
     resp = MissionResponse.model_validate(mission)
-    resp.target_count = len(mission.targets)
+    resp.target_count = _target_count(db, mission_id)
     return {"data": resp, "message": "success"}
 
 
@@ -105,7 +143,7 @@ def update_mission(mission_id: int, payload: MissionUpdate, db: Session = Depend
     db.commit()
     db.refresh(mission)
     resp = MissionResponse.model_validate(mission)
-    resp.target_count = len(mission.targets)
+    resp.target_count = _target_count(db, mission_id)
     return {"data": resp, "message": "Mission updated"}
 
 
@@ -141,7 +179,7 @@ def lock_mission(
     db.commit()
     db.refresh(mission)
     resp = MissionResponse.model_validate(mission)
-    resp.target_count = len(mission.targets)
+    resp.target_count = _target_count(db, mission_id)
     return {"data": resp, "message": "Mission locked"}
 
 
@@ -165,7 +203,7 @@ def unlock_mission(
     db.commit()
     db.refresh(mission)
     resp = MissionResponse.model_validate(mission)
-    resp.target_count = len(mission.targets)
+    resp.target_count = _target_count(db, mission_id)
     return {"data": resp, "message": "Mission unlocked"}
 
 

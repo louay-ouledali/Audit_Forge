@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Upload, Trash2, RefreshCw, ChevronRight, ChevronLeft, Database,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { CatalogCategory, CatalogVendor, ProductLine, BenchmarkCatalog, CatalogBenchmark } from '@/types';
 import * as api from '@/services/api';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Icon mapping — maps icon strings from the backend classifier to Lucide icons
@@ -332,6 +333,18 @@ export default function Benchmarks() {
   const [newBenchmarkPlatform, setNewBenchmarkPlatform] = useState('Windows');
   const [newBenchmarkFamily, setNewBenchmarkFamily] = useState('Windows');
   const [creating, setCreating] = useState(false);
+  const [deletingBenchmarkId, setDeletingBenchmarkId] = useState<number | null>(null);
+
+  /* Platform → family auto-link map */
+  const PLATFORM_TO_FAMILY: Record<string, string> = {
+    Windows: 'Windows', Linux: 'Unix', macOS: 'Unix',
+    Network: 'Network', Cloud: 'Cloud', Database: 'Database', Other: 'other',
+  };
+  const handlePlatformChange = useCallback((platform: string) => {
+    setNewBenchmarkPlatform(platform);
+    const mapped = PLATFORM_TO_FAMILY[platform];
+    if (mapped) setNewBenchmarkFamily(mapped);
+  }, []);
 
   const allBenchmarksFlat = useMemo(() => {
     if (!catalog) return [];
@@ -383,9 +396,13 @@ export default function Benchmarks() {
 
   /* Delete */
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this benchmark and all associated data?')) return;
-    try { await api.deleteBenchmark(id); await fetchCatalog(); }
+    setDeletingBenchmarkId(id);
+  };
+  const confirmDelete = async () => {
+    if (deletingBenchmarkId == null) return;
+    try { await api.deleteBenchmark(deletingBenchmarkId); await fetchCatalog(); }
     catch { setError('Failed to delete benchmark'); }
+    finally { setDeletingBenchmarkId(null); }
   };
 
   /* Create Custom Benchmark */
@@ -492,7 +509,7 @@ export default function Benchmarks() {
             </div>
             <div>
               <label className="block text-xs text-dark-secondary mb-1">Platform</label>
-              <select value={newBenchmarkPlatform} onChange={(e) => setNewBenchmarkPlatform(e.target.value)}
+              <select value={newBenchmarkPlatform} onChange={(e) => handlePlatformChange(e.target.value)}
                 className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20">
                 <option value="Windows">Windows</option>
                 <option value="Linux">Linux</option>
@@ -723,6 +740,17 @@ export default function Benchmarks() {
           )}
         </div>
       )}
+
+      {/* Delete confirmation dialog */}
+      <ConfirmDialog
+        open={deletingBenchmarkId != null}
+        title="Delete Benchmark"
+        message="Delete this benchmark and all associated data? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeletingBenchmarkId(null)}
+      />
     </div>
   );
 }

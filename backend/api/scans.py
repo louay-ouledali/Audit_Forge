@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -565,9 +565,15 @@ def list_scans(
     mission_id: int | None = None,
     target_id: int | None = None,
     status: str | None = None,
+    benchmark_id: int | None = None,
+    scan_mode: str | None = None,
+    started_after: str | None = None,
+    started_before: str | None = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
-    """List all scans with optional filters."""
+    """List all scans with optional filters and pagination."""
     from backend.models.target import Target as TargetModel
     from backend.models.mission import Mission as MissionModel
     from backend.models.client import Client as ClientModel
@@ -576,12 +582,28 @@ def list_scans(
     if target_id:
         query = query.filter(Scan.target_id == target_id)
     if mission_id:
-        # Scans now have direct mission_id
         query = query.filter(Scan.mission_id == mission_id)
     if status:
         query = query.filter(Scan.status == status)
+    if benchmark_id:
+        query = query.filter(Scan.benchmark_id == benchmark_id)
+    if scan_mode:
+        query = query.filter(Scan.scan_mode == scan_mode)
+    if started_after:
+        from datetime import datetime as _dt
+        try:
+            query = query.filter(Scan.started_at >= _dt.fromisoformat(started_after))
+        except ValueError:
+            pass
+    if started_before:
+        from datetime import datetime as _dt
+        try:
+            query = query.filter(Scan.started_at <= _dt.fromisoformat(started_before))
+        except ValueError:
+            pass
 
-    scans = query.order_by(Scan.created_at.desc()).all()
+    total = query.count()
+    scans = query.order_by(Scan.created_at.desc()).offset(skip).limit(limit).all()
 
     # Pre-fetch related names for enrichment
     target_ids = {s.target_id for s in scans if s.target_id}
@@ -647,7 +669,7 @@ def list_scans(
             "client_name": cli.name if cli else None,
         })
 
-    return {"data": result, "total": len(result)}
+    return {"data": result, "total": total}
 
 
 @router.post("/import")
@@ -790,7 +812,7 @@ async def smart_import(
             logger.error("Smart Import execute failed: %s\n%s", exc, traceback.format_exc())
             raise HTTPException(
                 status_code=500,
-                detail=f"Import failed: {exc}",
+                detail="Import failed due to an internal error. Check server logs for details.",
             )
 
         return result.to_dict()
@@ -1016,6 +1038,13 @@ def delete_scan(scan_id: int, db: Session = Depends(get_db)):
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
 
+    # Reject deletion of running scans
+    if scan.status in ("running", "in_progress", "pending"):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete a scan that is currently running. Cancel it first.",
+        )
+
     check_mission_lock(scan.mission_id, db)
 
     db.delete(scan)
@@ -1031,9 +1060,11 @@ def list_scan_findings(
     scan_id: int,
     status: str | None = None,
     severity: str | None = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=2000),
     db: Session = Depends(get_db),
 ):
-    """List findings for a specific scan with optional filters."""
+    """List findings for a specific scan with optional filters and pagination."""
     from backend.models.finding import Finding
     from backend.models.rule import Rule
 
@@ -1047,10 +1078,19 @@ def list_scan_findings(
     if severity:
         query = query.filter(Finding.severity == severity)
 
-    findings = query.order_by(Finding.id).all()
+    total = query.count()
+    findings = query.order_by(Finding.id).offset(skip).limit(limit).all()
+
+    # Batch-fetch rules in one query instead of N+1
+    rule_ids = {f.rule_id for f in findings if f.rule_id}
+    rules_map: dict[int, Rule] = {}
+    if rule_ids:
+        for r in db.query(Rule).filter(Rule.id.in_(rule_ids)).all():
+            rules_map[r.id] = r
+
     result = []
     for f in findings:
-        rule = db.query(Rule).filter(Rule.id == f.rule_id).first()
+        rule = rules_map.get(f.rule_id) if f.rule_id else None
         result.append({
             "id": f.id,
             "scan_id": f.scan_id,
@@ -1067,7 +1107,7 @@ def list_scan_findings(
             "section_number": rule.section_number if rule else None,
             "rule_title": rule.title if rule else None,
         })
-    return {"data": result, "total": len(result)}
+    return {"data": result, "total": total}
 
 
 # ── Result import ─────────────────────────────────────────────

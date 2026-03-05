@@ -203,13 +203,13 @@ export default function TargetCard({
             {target.ip_address || 'No IP'}{target.port ? ` : ${target.port}` : ''}
           </p>
           {target.mac_address && (
-            <p className="text-[9px] text-dark-muted/50 font-mono" title="Hardware ID (MAC)">
+            <p className="text-[11px] text-dark-secondary/70 font-mono tracking-wide" title="Hardware ID (MAC)">
               {target.mac_address}
             </p>
           )}
         </div>
-        {/* Top-right action icons */}
-        <div className="flex gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Top-right action icons — always visible */}
+        <div className="flex gap-1">
           <button
             onClick={() => onConfigure(target)}
             disabled={isLocked}
@@ -246,7 +246,6 @@ export default function TargetCard({
             </span>
           )}
         </div>
-
         {/* Connection */}
         <div className="flex items-center justify-between text-xs">
           <span className="flex items-center gap-1.5 text-dark-muted">
@@ -287,18 +286,6 @@ export default function TargetCard({
           </div>
         </div>
 
-      {/* ── Setup Help button ─────────────────────────────────── */}
-      <button
-        onClick={() => onSetupHelp ? onSetupHelp(target) : setShowLocalPrereqs(true)}
-        className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
-          connStatus === 'failed'
-            ? 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/50'
-            : 'border-dark-border bg-dark-elevated text-dark-secondary hover:bg-dark-overlay hover:text-white'
-        }`}
-      >
-        <BookOpen className="h-3.5 w-3.5" /> Setup Help &amp; Scripts
-      </button>
-
         {/* Benchmark */}
         <div className="flex items-center justify-between text-xs">
           <span className="flex items-center gap-1.5 text-dark-muted">
@@ -315,6 +302,27 @@ export default function TargetCard({
           )}
         </div>
       </div>
+
+      {/* ── Setup Help button (outside checklist) ─────────────── */}
+      <button
+        onClick={() => onSetupHelp ? onSetupHelp(target) : setShowLocalPrereqs(true)}
+        className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+          connStatus === 'failed'
+            ? 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:border-amber-500/50'
+            : 'border-dark-border bg-dark-elevated text-dark-secondary hover:bg-dark-overlay hover:text-white'
+        }`}
+      >
+        <BookOpen className="h-3.5 w-3.5" /> Setup Help &amp; Scripts
+      </button>
+
+      {/* ── Target notes (discovery enrichment) ───────────────── */}
+      {target.notes && (
+        <div className="mt-2 rounded-lg border border-dark-border/50 bg-dark-elevated/30 px-3 py-2">
+          <p className="text-[11px] text-dark-secondary leading-relaxed line-clamp-2" title={target.notes}>
+            {target.notes}
+          </p>
+        </div>
+      )}
 
       {/* ── Action buttons (only in mission context) ─────────── */}
       {(onScan || onUsbExport || onImportResults) && (

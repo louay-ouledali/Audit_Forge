@@ -43,21 +43,21 @@ _FILE_EXTENSIONS = {"pdf": "pdf", "excel": "xlsx", "csv": "csv", "html": "html"}
 
 def _inject_builder_data(data: dict, payload) -> None:
     """Copy Phase 2 builder fields (groups, audience, sections, summaries) into the report data dict."""
-    if hasattr(payload, "groups") and payload.groups:
+    if payload.groups:
         data["builder_groups"] = [
             {"name": g.name, "rule_ids": g.rule_ids} for g in payload.groups
         ]
     else:
         data["builder_groups"] = None
 
-    data["audience"] = getattr(payload, "audience", "technical") or "technical"
+    data["audience"] = payload.audience or "technical"
 
-    if hasattr(payload, "sections") and payload.sections:
+    if payload.sections:
         data["sections"] = payload.sections
     else:
         data["sections"] = None
 
-    if hasattr(payload, "group_summaries") and payload.group_summaries:
+    if payload.group_summaries:
         data["group_summaries"] = payload.group_summaries
     else:
         data["group_summaries"] = None

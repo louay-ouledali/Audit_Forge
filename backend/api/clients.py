@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.client import Client
+from backend.models.mission import Mission
 from backend.schemas.client import (
     ClientCreate,
     ClientDetailEnvelope,
@@ -16,15 +18,36 @@ from backend.schemas.client import (
 router = APIRouter(prefix="/clients", tags=["clients"])
 
 
+def _client_mission_count(db: Session, client_id: int) -> int:
+    """Efficient mission count without loading the full relationship."""
+    return db.query(func.count(Mission.id)).filter(Mission.client_id == client_id).scalar() or 0
+
+
 @router.get("", response_model=ClientListResponse)
-def list_clients(db: Session = Depends(get_db)) -> dict:
-    clients = db.query(Client).order_by(Client.id).all()
+def list_clients(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> dict:
+    total = db.query(func.count(Client.id)).scalar() or 0
+    clients = db.query(Client).order_by(Client.id).offset(skip).limit(limit).all()
+
+    # Batch-fetch mission counts with a single query
+    client_ids = [c.id for c in clients]
+    count_rows = (
+        db.query(Mission.client_id, func.count(Mission.id))
+        .filter(Mission.client_id.in_(client_ids))
+        .group_by(Mission.client_id)
+        .all()
+    ) if client_ids else []
+    counts_map = dict(count_rows)
+
     result = []
     for c in clients:
         resp = ClientResponse.model_validate(c)
-        resp.mission_count = len(c.missions)
+        resp.mission_count = counts_map.get(c.id, 0)
         result.append(resp)
-    return {"data": result, "total": len(result)}
+    return {"data": result, "total": total}
 
 
 @router.post("", response_model=ClientDetailEnvelope, status_code=201)
@@ -44,7 +67,7 @@ def get_client(client_id: int, db: Session = Depends(get_db)) -> dict:
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     resp = ClientResponse.model_validate(client)
-    resp.mission_count = len(client.missions)
+    resp.mission_count = _client_mission_count(db, client_id)
     return {"data": resp, "message": "success"}
 
 
@@ -58,7 +81,7 @@ def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(g
     db.commit()
     db.refresh(client)
     resp = ClientResponse.model_validate(client)
-    resp.mission_count = len(client.missions)
+    resp.mission_count = _client_mission_count(db, client_id)
     return {"data": resp, "message": "Client updated"}
 
 
