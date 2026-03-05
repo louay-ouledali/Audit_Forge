@@ -1,6 +1,6 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Building2, Crosshair, FileText, Play, Activity, BarChart3, Clock, CheckCircle } from 'lucide-react';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Building2, Crosshair, FileText, Play, Activity, BarChart3, Clock, CheckCircle, Plus, Upload, Search } from 'lucide-react';
 import { getDashboardStats, getScans, getAllMissions } from '../services/api';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { ScanDetail } from '../types';
@@ -45,83 +45,93 @@ export default function Dashboard() {
   const [totalMissions, setTotalMissions] = useState(0);
   const [recentScans, setRecentScans] = useState<ScanDetail[]>([]);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   const location = useLocation();
+  const navigate = useNavigate();
+  const pollRef = useRef<ReturnType<typeof setInterval>>();
+
+  const loadDashboard = () => {
+    Promise.all([
+      getDashboardStats(),
+      getScans({}),
+      getAllMissions()
+    ])
+      .then(([statsData, scansData, missionsData]) => {
+        setStats(statsData);
+        setTotalMissions(missionsData.length);
+        const sortedScans = scansData.data
+          .filter(s => s.status === 'completed' && s.completed_at)
+          .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime());
+        setRecentScans(sortedScans.slice(0, 5));
+      })
+      .catch(() => {
+        setError('Failed to load dashboard data. Is the backend running?');
+      })
+      .finally(() => setLoading(false));
+  };
 
   useEffect(() => {
     if (location.pathname === '/') {
-      Promise.all([
-        getDashboardStats(),
-        getScans({}),
-        getAllMissions()
-      ])
-        .then(([statsData, scansData, missionsData]) => {
-          setStats(statsData);
-          setTotalMissions(missionsData.length);
-          // Get the 5 most recent completed scans for the activity feed
-          const sortedScans = scansData.data
-            .filter(s => s.status === 'completed' && s.completed_at)
-            .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime());
-
-          setRecentScans(sortedScans.slice(0, 5));
-        })
-        .catch(() => {
-          setError('Failed to load dashboard data. Is the backend running?');
-        });
+      loadDashboard();
+      // Auto-refresh every 30s
+      pollRef.current = setInterval(loadDashboard, 30_000);
+      return () => clearInterval(pollRef.current);
     }
   }, [location.pathname]);
 
-  // Generate chart data from recent scans (last 30 days)
+  // Generate chart data from recent scans — only real data, no fabrication
   const chartData = useMemo(() => {
     if (!recentScans.length) return [];
 
-    // Group by date (simple implementation)
-    const dailyScores: Record<string, { total: number, count: number }> = {};
+    // Group by date
+    const dailyScores: Record<string, { total: number; count: number }> = {};
 
-    // Use all completed scans we have (or a subset)
-    const now = new Date();
-
-    const validScans = recentScans;
-
-    validScans.forEach(scan => {
+    recentScans.forEach(scan => {
       if (scan.completed_at && scan.compliance_percentage !== null) {
         const date = new Date(scan.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        if (!dailyScores[date]) {
-          dailyScores[date] = { total: 0, count: 0 };
-        }
+        if (!dailyScores[date]) dailyScores[date] = { total: 0, count: 0 };
         dailyScores[date].total += scan.compliance_percentage;
         dailyScores[date].count += 1;
       }
     });
 
-    // If we don't have enough historic data, generate some dummy trend data ending in the real average
-    const averageCompliance = validScans.reduce((acc, scan) => acc + (scan.compliance_percentage || 0), 0) / (validScans.length || 1);
+    const entries = Object.entries(dailyScores);
+    // Require at least 3 real data points for a meaningful chart
+    if (entries.length < 3) return [];
 
-    // Create 7 data points for smooth chart
-    const data = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(now.getDate() - i * 5); // Spaced out over 30 days
-      const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      // Minor random fluctuation around the real average if real data is missing for that day
-      const val = dailyScores[dateStr]
-        ? Math.round(dailyScores[dateStr].total / dailyScores[dateStr].count)
-        : Math.round(averageCompliance > 0 ? averageCompliance : 0);
-
-      data.push({
-        date: dateStr,
-        compliance: val > 100 ? 100 : val < 0 ? 0 : val
-      });
-    }
-
-    return data;
+    return entries.map(([date, v]) => ({
+      date,
+      compliance: Math.round(v.total / v.count),
+    }));
   }, [recentScans]);
 
   const cards = [
     { label: 'Clients', value: stats.clients, icon: Building2, accent: 'text-ey-yellow', bg: 'bg-ey-yellow/10', link: '/clients', progress: 100 },
     { label: 'Active Missions', value: stats.active_missions, icon: Crosshair, accent: 'text-emerald-400', bg: 'bg-emerald-400/10', link: '/clients', progress: totalMissions > 0 ? Math.round((stats.active_missions / totalMissions) * 100) : 0 },
     { label: 'Benchmarks', value: stats.benchmarks, icon: FileText, accent: 'text-purple-400', bg: 'bg-purple-400/10', link: '/benchmarks', progress: 100 },
-    { label: 'Total Scans', value: stats.scans, icon: Play, accent: 'text-sky-400', bg: 'bg-sky-400/10', link: '/clients', progress: 100 },
+    { label: 'Total Scans', value: stats.scans, icon: Play, accent: 'text-sky-400', bg: 'bg-sky-400/10', link: recentScans[0] ? `/missions/${recentScans[0].mission_id}` : '/clients', progress: 100 },
   ];
+
+  /* ── Loading skeleton ──────────────────────────────────────── */
+  if (loading) {
+    return (
+      <div className="relative z-10 space-y-8 pb-10 animate-pulse">
+        {/* Banner skeleton */}
+        <div className="rounded-xl border border-dark-border bg-dark-card p-8 h-32" />
+        {/* Stat cards */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[1,2,3,4].map(i => (
+            <div key={i} className="h-24 rounded-xl border border-dark-border bg-dark-card" />
+          ))}
+        </div>
+        {/* Chart + feed */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="col-span-1 lg:col-span-2 h-96 rounded-xl border border-dark-border bg-dark-card" />
+          <div className="h-96 rounded-xl border border-dark-border bg-dark-card" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative z-10 space-y-8 pb-10">
@@ -217,8 +227,10 @@ export default function Dashboard() {
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full items-center justify-center">
-                <p className="text-dark-muted">No scan data available yet.</p>
+              <div className="flex h-full flex-col items-center justify-center gap-2">
+                <BarChart3 className="h-8 w-8 text-dark-muted" />
+                <p className="text-dark-muted text-sm">Not enough data to display a trend chart</p>
+                <p className="text-xs text-dark-muted">At least 3 scans on different days are needed.</p>
               </div>
             )}
           </div>
@@ -272,6 +284,24 @@ export default function Dashboard() {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="rounded-xl border border-dark-border bg-dark-card p-5">
+        <h3 className="mb-4 text-sm font-semibold text-white uppercase tracking-wider">Quick Actions</h3>
+        <div className="flex flex-wrap gap-3">
+          <button onClick={() => navigate('/clients', { state: { openNew: true } })} className="inline-flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-4 py-2.5 text-sm font-medium text-dark-secondary hover:text-white hover:border-ey-yellow/30 transition-colors">
+            <Plus className="h-4 w-4" /> New Client
+          </button>
+          <button onClick={() => navigate('/benchmarks')} className="inline-flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-4 py-2.5 text-sm font-medium text-dark-secondary hover:text-white hover:border-purple-400/30 transition-colors">
+            <Upload className="h-4 w-4" /> Import Benchmark
+          </button>
+          {recentScans[0] && (
+            <button onClick={() => navigate(`/missions/${recentScans[0].mission_id}`, { state: { tab: 'findings' } })} className="inline-flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-4 py-2.5 text-sm font-medium text-dark-secondary hover:text-white hover:border-sky-400/30 transition-colors">
+              <Search className="h-4 w-4" /> Latest Findings
+            </button>
+          )}
         </div>
       </div>
 

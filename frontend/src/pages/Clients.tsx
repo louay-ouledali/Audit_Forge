@@ -1,9 +1,11 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, Pencil, Trash2, Search, Building2, Mail, User, X, LayoutGrid, List, ArrowUpDown, ArrowRight } from 'lucide-react';
 import type { Client } from '@/types';
 import * as api from '@/services/api';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { useToast } from '@/components/common/Toast';
 
 interface ClientForm {
   name: string;
@@ -31,7 +33,19 @@ export default function Clients() {
 
   // New State for UI/UX Improvements
   const [sortBy, setSortBy] = useState<SortOption>('name_asc');
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('clients_viewMode') as ViewMode) || 'grid');
+  const [submitting, setSubmitting] = useState(false);
+
+  // ConfirmDialog state
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState<number | null>(null);
+
+  const toast = useToast();
+
+  const setAndPersistViewMode = (mode: ViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem('clients_viewMode', mode);
+  };
 
   const fetchClients = async () => {
     try { setClients(await api.getClients()); }
@@ -75,12 +89,19 @@ export default function Clients() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSubmitting(true);
     try {
-      if (editingId) await api.updateClient(editingId, form);
-      else await api.createClient(form);
+      if (editingId) {
+        await api.updateClient(editingId, form);
+        toast.success('Client updated successfully');
+      } else {
+        await api.createClient(form);
+        toast.success('Client created successfully');
+      }
       setShowForm(false); setEditingId(null); setForm(emptyForm);
       await fetchClients();
     } catch { setError(editingId ? 'Failed to update client' : 'Failed to create client'); }
+    finally { setSubmitting(false); }
   };
 
   const handleEdit = (client: Client) => {
@@ -88,11 +109,18 @@ export default function Clients() {
     setEditingId(client.id); setShowForm(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this client and all associated data?')) return;
-    try { await api.deleteClient(id); await fetchClients(); }
-    catch { setError('Failed to delete client'); }
+  const handleDelete = (id: number) => {
+    setConfirmTarget(id);
+    setConfirmOpen(true);
   };
+
+  const confirmDelete = useCallback(async () => {
+    if (confirmTarget === null) return;
+    setConfirmOpen(false);
+    try { await api.deleteClient(confirmTarget); toast.success('Client deleted'); await fetchClients(); }
+    catch { setError('Failed to delete client'); }
+    finally { setConfirmTarget(null); }
+  }, [confirmTarget]);
 
   const handleCancel = () => { setShowForm(false); setEditingId(null); setForm(emptyForm); setError(''); };
 
@@ -155,14 +183,14 @@ export default function Clients() {
 
             <div className="flex items-center rounded-lg border border-dark-border bg-dark-card p-1">
               <button
-                onClick={() => setViewMode('grid')}
+                onClick={() => setAndPersistViewMode('grid')}
                 className={`rounded p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-dark-elevated text-ey-yellow' : 'text-dark-muted hover:text-white'}`}
                 title="Grid View"
               >
                 <LayoutGrid className="h-4 w-4" />
               </button>
               <button
-                onClick={() => setViewMode('list')}
+                onClick={() => setAndPersistViewMode('list')}
                 className={`rounded p-1.5 transition-colors ${viewMode === 'list' ? 'bg-dark-elevated text-ey-yellow' : 'text-dark-muted hover:text-white'}`}
                 title="List View"
               >
@@ -214,7 +242,7 @@ export default function Clients() {
             </div>
             <div className="flex justify-end gap-3 border-t border-dark-border pt-5">
               <button type="button" onClick={handleCancel} className="rounded-lg border border-dark-border bg-dark-card px-4 py-2 text-sm font-medium text-dark-secondary hover:bg-dark-overlay hover:text-white transition-colors">Cancel</button>
-              <button type="submit" className="rounded-lg bg-ey-yellow px-5 py-2 text-sm font-semibold text-black hover:bg-ey-yellow-hover shadow-lg shadow-ey-yellow/10 transition-all">{editingId ? 'Save Changes' : 'Create Client'}</button>
+              <button type="submit" disabled={submitting} className="rounded-lg bg-ey-yellow px-5 py-2 text-sm font-semibold text-black hover:bg-ey-yellow-hover shadow-lg shadow-ey-yellow/10 transition-all disabled:opacity-50">{submitting ? 'Saving…' : editingId ? 'Save Changes' : 'Create Client'}</button>
             </div>
           </form>
           </div>
@@ -310,6 +338,17 @@ export default function Clients() {
           ))}
         </div>
       )}
+
+      {/* Confirm delete dialog */}
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete Client"
+        message="Delete this client and all associated missions, targets, and scan data? This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => { setConfirmOpen(false); setConfirmTarget(null); }}
+      />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Plus,
@@ -33,6 +33,9 @@ import * as api from '../services/api';
 import logoImg from '../assets/logo.png';
 import TargetCardGrid from '@/components/targets/TargetCardGrid';
 import TargetConfigDrawer from '@/components/targets/TargetConfigDrawer';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { useToast } from '@/components/common/Toast';
+import { useNumericParam } from '@/hooks/useNumericParam';
 
 /* ── Status styling ──────────────────────────────────────────── */
 const STATUS_STYLES: Record<string, string> = {
@@ -73,9 +76,9 @@ const emptyMissionForm: MissionForm = { name: '', description: '', status: 'in_p
 const inputClass = 'block w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all';
 
 export default function ClientWorkspace() {
-  const { id } = useParams<{ id: string }>();
+  const clientId = useNumericParam('id');
   const navigate = useNavigate();
-  const clientId = Number(id);
+  const toast = useToast();
 
   /* ── Data state ──────────────────────────────────────────── */
   const [client, setClient] = useState<Client | null>(null);
@@ -109,6 +112,10 @@ export default function ClientWorkspace() {
   const [drawerTarget, setDrawerTarget] = useState<Target | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [creatingTarget, setCreatingTarget] = useState(false);
+
+  /* ── Confirm dialog ──────────────────────────────────────── */
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ type: 'mission' | 'target'; id: number; label: string } | null>(null);
 
   /* ── Fetch data ──────────────────────────────────────────── */
   const fetchData = useCallback(async () => {
@@ -248,10 +255,15 @@ export default function ClientWorkspace() {
   const handleMissionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    // Validate dates
+    if (missionForm.start_date && missionForm.end_date && missionForm.start_date > missionForm.end_date) {
+      setError('Start date must be before end date');
+      return;
+    }
     try {
       const payload = { ...missionForm, client_id: clientId, start_date: missionForm.start_date || null, end_date: missionForm.end_date || null };
-      if (editingMissionId) await api.updateMission(editingMissionId, payload);
-      else await api.createMission(payload);
+      if (editingMissionId) { await api.updateMission(editingMissionId, payload); toast.success('Mission updated'); }
+      else { await api.createMission(payload); toast.success('Mission created'); }
       setShowMissionForm(false);
       setEditingMissionId(null);
       setMissionForm(emptyMissionForm);
@@ -273,11 +285,26 @@ export default function ClientWorkspace() {
     setShowMissionForm(true);
   };
 
-  const handleDeleteMission = async (missionId: number) => {
-    if (!window.confirm('Delete this mission and all associated data?')) return;
-    try { await api.deleteMission(missionId); await fetchData(); }
-    catch { setError('Failed to delete mission'); }
+  const handleDeleteMission = (missionId: number) => {
+    setConfirmAction({ type: 'mission', id: missionId, label: 'Delete this mission and all associated data?' });
+    setConfirmOpen(true);
   };
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!confirmAction) return;
+    setConfirmOpen(false);
+    try {
+      if (confirmAction.type === 'mission') {
+        await api.deleteMission(confirmAction.id);
+        toast.success('Mission deleted');
+      } else {
+        await api.deleteTarget(confirmAction.id);
+        toast.success('Target deleted');
+      }
+      await fetchData();
+    } catch { setError(`Failed to delete ${confirmAction.type}`); }
+    finally { setConfirmAction(null); }
+  }, [confirmAction, fetchData]);
 
   /* ── Target CRUD (new: quick-create + drawer) ─────────────── */
   const handleNewTargetSubmit = async (e: React.FormEvent) => {
@@ -322,10 +349,9 @@ export default function ClientWorkspace() {
     await fetchData();
   };
 
-  const handleDeleteTarget = async (targetId: number) => {
-    if (!window.confirm('Delete this target?')) return;
-    try { await api.deleteTarget(targetId); await fetchData(); }
-    catch { setError('Failed to delete target'); }
+  const handleDeleteTarget = (targetId: number) => {
+    setConfirmAction({ type: 'target', id: targetId, label: 'Delete this target?' });
+    setConfirmOpen(true);
   };
 
   const cancelNewTargetForm = () => { setShowNewTargetForm(false); setNewTargetForm(emptyNewTargetForm); };
@@ -763,7 +789,7 @@ export default function ClientWorkspace() {
                                   </div>
                                 ))}
                                 {(missionScans[mission.id] || []).length > 10 && (
-                                  <p className="text-xs font-medium text-ey-yellow text-center pt-2 cursor-pointer hover:underline">
+                                  <p onClick={() => navigate(`/missions/${mission.id}`)} className="text-xs font-medium text-ey-yellow text-center pt-2 cursor-pointer hover:underline">
                                     View all {(missionScans[mission.id] || []).length} scans
                                   </p>
                                 )}
@@ -884,6 +910,17 @@ export default function ClientWorkspace() {
           />
         </div>
       )}
+
+      {/* Shared Confirm Dialog */}
+      <ConfirmDialog
+        open={confirmOpen}
+        title={confirmAction?.type === 'mission' ? 'Delete Mission' : 'Delete Target'}
+        message={confirmAction?.label || 'Are you sure?'}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => { setConfirmOpen(false); setConfirmAction(null); }}
+      />
     </div>
   );
 }

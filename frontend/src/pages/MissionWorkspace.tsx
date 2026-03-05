@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Crosshair,
@@ -15,6 +15,8 @@ import {
 import type { Mission, Target, Client, ScanDetail } from '@/types';
 import * as api from '@/services/api';
 import { STATUS_STYLES, STATUS_LABELS, inputClass } from '@/components/mission/badgeHelpers';
+import { useNumericParam } from '@/hooks/useNumericParam';
+import { extractApiError } from '@/utils/apiError';
 
 /* ── Tab-level components ──────────────────────────────────── */
 import MissionOverview from '@/components/mission/MissionOverview';
@@ -28,9 +30,8 @@ import TargetsTab from '@/components/targets/TargetsTab';
 type MissionTab = 'overview' | 'targets' | 'findings' | 'reports';
 
 export default function MissionWorkspace() {
-  const { id } = useParams<{ id: string }>();
+  const missionId = useNumericParam('id');
   const navigate = useNavigate();
-  const missionId = Number(id);
 
   /* ── Core data ───────────────────────────────────────────── */
   const [mission, setMission] = useState<Mission | null>(null);
@@ -106,7 +107,7 @@ export default function MissionWorkspace() {
       setShowLockDialog(false);
       setLockPassword('');
     } catch (err: any) {
-      setError(err?.response?.data?.detail || `Failed to ${lockAction} mission`);
+      setError(extractApiError(err, `Failed to ${lockAction} mission`));
     } finally {
       setLockLoading(false);
     }
@@ -309,7 +310,15 @@ export default function MissionWorkspace() {
 
       {/* ── Tab Content ──────────────────────────────────────── */}
       {activeTab === 'overview' && (
-        <MissionOverview mission={mission} scans={scans} missionTargets={missionTargets} />
+        <MissionOverview
+          mission={mission}
+          scans={scans}
+          missionTargets={missionTargets}
+          onScanClick={(scanId) => {
+            setFindingsFilter({ ...DEFAULT_FILTER_STATE, selectedScanId: scanId });
+            setActiveTab('findings');
+          }}
+        />
       )}
 
       {activeTab === 'targets' && (

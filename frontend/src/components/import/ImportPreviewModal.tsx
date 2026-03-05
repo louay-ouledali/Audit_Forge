@@ -14,6 +14,8 @@ import {
   Target,
 } from 'lucide-react';
 import type { SmartImportPreviewResponse } from '@/services/api';
+import type { Target as TargetType } from '@/types';
+import { extractApiError } from '@/utils/apiError';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Import Preview Modal — Phase 1 Smart Import
@@ -26,7 +28,10 @@ interface Props {
   preview: SmartImportPreviewResponse | null;
   loading: boolean;
   filename: string;
+  fileCount?: number;
   onImport: (options: ImportOptions) => Promise<void>;
+  /** Available targets for import destination selector */
+  targets?: TargetType[];
 }
 
 export interface ImportOptions {
@@ -52,10 +57,11 @@ function StatCard({ label, value, color }: { label: string; value: number | stri
   );
 }
 
-export default function ImportPreviewModal({ open, onClose, preview, loading, filename, onImport }: Props) {
+export default function ImportPreviewModal({ open, onClose, preview, loading, filename, fileCount = 1, onImport, targets = [] }: Props) {
   const [importing, setImporting] = useState(false);
   const [runFpDetection, setRunFpDetection] = useState(true);
   const [allowBenchmarkCreation, setAllowBenchmarkCreation] = useState(true);
+  const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null);
   const [importError, setImportError] = useState('');
 
   if (!open) return null;
@@ -67,12 +73,10 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
       await onImport({
         runFpDetection,
         allowBenchmarkCreation,
+        targetId: selectedTargetId,
       });
     } catch (err: unknown) {
-      const msg = err && typeof err === 'object' && 'response' in err
-        ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail || 'Import failed'
-        : err instanceof Error ? err.message : 'Import failed';
-      setImportError(msg);
+      setImportError(extractApiError(err, 'Import failed'));
     } finally {
       setImporting(false);
     }
@@ -104,7 +108,9 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
             </div>
             <div>
               <h2 className="text-lg font-semibold text-white">Smart Import Preview</h2>
-              <p className="text-xs text-dark-secondary truncate max-w-[280px]">{filename}</p>
+              <p className="text-xs text-dark-secondary truncate max-w-[280px]">
+                {filename}{fileCount > 1 && <span className="ml-1 text-ey-yellow">(+{fileCount - 1} more)</span>}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-dark-muted hover:bg-dark-elevated hover:text-white transition-colors">
@@ -126,6 +132,19 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
             </div>
           ) : preview ? (
             <>
+              {/* Source Scanner Badge */}
+              {preview.source_tool && (
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 px-3 py-1 text-xs font-semibold text-sky-400">
+                    <FileSearch className="h-3 w-3" />
+                    {preview.source_tool}
+                  </span>
+                  {fileCount > 1 && (
+                    <span className="text-xs text-dark-muted">{fileCount} files will be imported with these settings</span>
+                  )}
+                </div>
+              )}
+
               {/* Platform Detection */}
               <div className="rounded-xl border border-dark-border bg-dark-card p-4">
                 <h3 className="text-xs font-medium text-dark-secondary uppercase tracking-wider mb-3">Detected Platform</h3>
@@ -159,11 +178,6 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
                       )}
                     </div>
                   </div>
-                  {preview.source_tool && (
-                    <span className="shrink-0 rounded-full bg-dark-overlay px-2.5 py-1 text-[11px] text-dark-secondary">
-                      {preview.source_tool}
-                    </span>
-                  )}
                 </div>
                 {(preview.hostname || preview.ip_address) && (
                   <div className="mt-3 flex items-center gap-2 text-xs text-dark-secondary">
@@ -220,6 +234,28 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
               {/* Import Options */}
               <div className="space-y-3">
                 <h3 className="text-xs font-medium text-dark-secondary uppercase tracking-wider">Options</h3>
+
+                {/* Target selector */}
+                {targets.length > 0 && (
+                  <div className="space-y-1">
+                    <label className="text-sm text-white">Import to target</label>
+                    <select
+                      value={selectedTargetId ?? ''}
+                      onChange={(e) => setSelectedTargetId(e.target.value ? Number(e.target.value) : null)}
+                      className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/50 focus:outline-none focus:ring-1 focus:ring-ey-yellow/30"
+                    >
+                      <option value="">Auto-detect / create new</option>
+                      {targets.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.hostname || t.ip_address || `Target #${t.id}`}
+                          {t.target_type ? ` (${t.target_type})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-dark-muted">Select a target or let the system auto-match by hostname/IP</p>
+                  </div>
+                )}
+
                 <label className="flex items-center gap-3 cursor-pointer group">
                   <input
                     type="checkbox"

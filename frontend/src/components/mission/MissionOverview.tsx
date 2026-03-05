@@ -1,4 +1,5 @@
-import { Server, Calendar, Flag, Activity, Play, CheckCircle2 } from 'lucide-react';
+import { useState } from 'react';
+import { Server, Calendar, Flag, Activity, Play, CheckCircle2, ChevronDown } from 'lucide-react';
 import type { ScanDetail, Target, Mission } from '@/types';
 import { scanStatusBadge } from './badgeHelpers';
 
@@ -6,9 +7,11 @@ interface Props {
   mission: Mission;
   scans: ScanDetail[];
   missionTargets: Target[];
+  onScanClick?: (scanId: number) => void;
 }
 
-export default function MissionOverview({ mission, scans, missionTargets }: Props) {
+export default function MissionOverview({ mission, scans, missionTargets, onScanClick }: Props) {
+  const [showAllTimeline, setShowAllTimeline] = useState(false);
   // Sort scans chronologically by creation or start time
   const sortedScans = [...scans].sort((a, b) => {
     const timeA = new Date(a.started_at || a.created_at || 0).getTime();
@@ -49,8 +52,8 @@ export default function MissionOverview({ mission, scans, missionTargets }: Prop
             </div>
 
             {/* Scans Nodes */}
-            {sortedScans.length > 0 ? sortedScans.slice(0, 10).map((scan, i) => (
-              <div key={scan.id} className="relative flex flex-col sm:flex-row items-start sm:items-center justify-between sm:odd:flex-row-reverse group">
+            {sortedScans.length > 0 ? (showAllTimeline ? sortedScans : sortedScans.slice(0, 10)).map((scan, i) => (
+              <div key={scan.id} className={`relative flex flex-col sm:flex-row items-start sm:items-center justify-between sm:odd:flex-row-reverse group ${onScanClick ? 'cursor-pointer' : ''}`} onClick={onScanClick ? () => onScanClick(scan.id) : undefined}>
                 <div className="hidden sm:block sm:w-1/2" />
                 <div className="absolute left-0 sm:left-1/2 flex h-8 w-8 -translate-x-0 sm:-translate-x-1/2 items-center justify-center rounded-full border-4 border-dark-card bg-sky-500/20 shadow-sm z-10 transition-transform group-hover:scale-110">
                   <Play className="h-3.5 w-3.5 text-sky-400" />
@@ -88,6 +91,18 @@ export default function MissionOverview({ mission, scans, missionTargets }: Prop
                     <p className="text-xs text-dark-muted font-medium">Awaiting first scan execution...</p>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Show All link */}
+            {!showAllTimeline && sortedScans.length > 10 && (
+              <div className="relative z-10 text-center">
+                <button
+                  onClick={() => setShowAllTimeline(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-dark-border bg-dark-elevated px-4 py-2 text-xs font-medium text-ey-yellow hover:bg-dark-elevated/80 transition-colors"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" /> Show all {sortedScans.length} scans
+                </button>
               </div>
             )}
 

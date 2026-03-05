@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Shield, Pencil } from 'lucide-react';
 import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse, MigrationReadiness } from '@/types';
 import * as api from '@/services/api';
@@ -8,6 +8,10 @@ import RuleEditor from '@/components/benchmark/RuleEditor';
 import RuleTestPanel from '@/components/benchmark/RuleTestPanel';
 import InlineEditField from '@/components/benchmark/InlineEditField';
 import FrameworkCoveragePanel from '@/components/FrameworkCoveragePanel';
+import { useNumericParam } from '@/hooks/useNumericParam';
+import { extractApiError } from '@/utils/apiError';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
+import { useToast } from '@/components/common/Toast';
 
 function severityBadge(severity: string) {
   const styles: Record<string, string> = {
@@ -64,9 +68,9 @@ function verificationResultBadge(result: string) {
 }
 
 export default function BenchmarkDetail() {
-  const { id } = useParams();
+  const benchmarkId = useNumericParam('id', '/benchmarks');
   const navigate = useNavigate();
-  const benchmarkId = Number(id);
+  const toast = useToast();
 
   const [benchmark, setBenchmark] = useState<Benchmark | null>(null);
   const [rules, setRules] = useState<Rule[]>([]);
@@ -100,6 +104,9 @@ export default function BenchmarkDetail() {
   const [migrationReadiness, setMigrationReadiness] = useState<MigrationReadiness | null>(null);
   const [showTestPanel, setShowTestPanel] = useState<number | null>(null);
   const [mediumRuleCount, setMediumRuleCount] = useState(0);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [confirmDeleteRule, setConfirmDeleteRule] = useState<{ id: number; section: string } | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
@@ -127,19 +134,28 @@ export default function BenchmarkDetail() {
   const fetchRules = useCallback(async () => {
     try {
       const params: Record<string, string> = {};
-      if (searchTerm) params.search = searchTerm;
+      if (debouncedSearch) params.search = debouncedSearch;
       if (severityFilter) params.severity = severityFilter;
       const data = await api.getBenchmarkRules(benchmarkId, params);
       setRules(data);
     } catch {
       // Silently handle - rules may not be ready yet
     }
-  }, [benchmarkId, searchTerm, severityFilter]);
+  }, [benchmarkId, debouncedSearch, severityFilter]);
+
+  // Debounce search input by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  useEffect(() => {
     fetchRules();
-  }, [fetchData, fetchRules]);
+  }, [fetchRules]);
 
   // Poll for updates when processing
   useEffect(() => {
@@ -165,7 +181,7 @@ export default function BenchmarkDetail() {
       await api.startEnrichment(benchmarkId);
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start enrichment');
+      setError(extractApiError(err, 'Failed to start enrichment'));
     }
   };
 
@@ -174,7 +190,7 @@ export default function BenchmarkDetail() {
       await api.pauseEnrichment(benchmarkId);
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to pause enrichment');
+      setError(extractApiError(err, 'Failed to pause enrichment'));
     }
   };
 
@@ -190,7 +206,7 @@ export default function BenchmarkDetail() {
       }
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start severity classification');
+      setError(extractApiError(err, 'Failed to start severity classification'));
     } finally {
       setSevLoading(false);
     }
@@ -201,7 +217,7 @@ export default function BenchmarkDetail() {
       await api.startVerification(benchmarkId);
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start verification');
+      setError(extractApiError(err, 'Failed to start verification'));
     }
   };
 
@@ -212,7 +228,7 @@ export default function BenchmarkDetail() {
       await fetchData();
       await fetchRules();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to bulk accept');
+      setError(extractApiError(err, 'Failed to bulk accept'));
     } finally {
       setActionLoading(false);
     }
@@ -224,7 +240,7 @@ export default function BenchmarkDetail() {
       await api.bulkRegenerateCommands(benchmarkId);
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start bulk regeneration');
+      setError(extractApiError(err, 'Failed to start bulk regeneration'));
     } finally {
       setActionLoading(false);
     }
@@ -236,7 +252,7 @@ export default function BenchmarkDetail() {
       await api.overrideVerification(benchmarkId);
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to override');
+      setError(extractApiError(err, 'Failed to override'));
     } finally {
       setActionLoading(false);
     }
@@ -249,7 +265,7 @@ export default function BenchmarkDetail() {
       await api.startValidation(benchmarkId);
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start validation');
+      setError(extractApiError(err, 'Failed to start validation'));
     }
   };
 
@@ -258,12 +274,12 @@ export default function BenchmarkDetail() {
       await api.pauseValidation(benchmarkId);
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to pause validation');
+      setError(extractApiError(err, 'Failed to pause validation'));
     }
   };
 
 
-  const fetchValidationResults = async () => {
+  const fetchValidationResults = useCallback(async () => {
     try {
       const params = validationFilter ? { status_filter: validationFilter } : undefined;
       const result = await api.getValidationResults(benchmarkId, params);
@@ -271,7 +287,14 @@ export default function BenchmarkDetail() {
     } catch {
       /* silent */
     }
-  };
+  }, [benchmarkId, validationFilter]);
+
+  // Re-fetch validation results when filter changes
+  useEffect(() => {
+    if (activeTab === 'validation') {
+      fetchValidationResults();
+    }
+  }, [validationFilter, fetchValidationResults, activeTab]);
 
   const handleApplyCorrection = async (ruleCommandId: number) => {
     try {
@@ -280,7 +303,7 @@ export default function BenchmarkDetail() {
       await fetchValidationResults();
       setSuccessMsg('Correction applied');
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to apply correction');
+      setError(extractApiError(err, 'Failed to apply correction'));
     } finally {
       setActionLoading(false);
     }
@@ -292,7 +315,7 @@ export default function BenchmarkDetail() {
       await api.dismissCorrection(benchmarkId, ruleCommandId);
       await fetchValidationResults();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to dismiss correction');
+      setError(extractApiError(err, 'Failed to dismiss correction'));
     } finally {
       setActionLoading(false);
     }
@@ -306,7 +329,7 @@ export default function BenchmarkDetail() {
       await fetchValidationResults();
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to bulk apply');
+      setError(extractApiError(err, 'Failed to bulk apply'));
     } finally {
       setActionLoading(false);
     }
@@ -320,7 +343,7 @@ export default function BenchmarkDetail() {
       await fetchValidationResults();
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to bulk dismiss');
+      setError(extractApiError(err, 'Failed to bulk dismiss'));
     } finally {
       setActionLoading(false);
     }
@@ -360,7 +383,7 @@ export default function BenchmarkDetail() {
       await fetchData();
       await fetchRules();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to import rules');
+      setError(extractApiError(err, 'Failed to import rules'));
     } finally {
       setActionLoading(false);
       if (rulesImportRef.current) rulesImportRef.current.value = '';
@@ -388,7 +411,7 @@ export default function BenchmarkDetail() {
       await fetchData();
       await fetchRules();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to import commands');
+      setError(extractApiError(err, 'Failed to import commands'));
     } finally {
       setActionLoading(false);
       if (commandsImportRef.current) commandsImportRef.current.value = '';
@@ -404,16 +427,22 @@ export default function BenchmarkDetail() {
     await fetchRules();
   };
 
-  const handleDeleteRule = async (ruleId: number, sectionNumber: string) => {
-    if (!window.confirm(`Delete rule ${sectionNumber}? This cannot be undone.`)) return;
+  const handleDeleteRule = (ruleId: number, sectionNumber: string) => {
+    setConfirmDeleteRule({ id: ruleId, section: sectionNumber });
+  };
+
+  const confirmDeleteRuleAction = async () => {
+    if (!confirmDeleteRule) return;
+    const { id: ruleId, section: sectionNumber } = confirmDeleteRule;
+    setConfirmDeleteRule(null);
     try {
       setActionLoading(true);
       await api.deleteRuleFromBenchmark(benchmarkId, ruleId);
-      setSuccessMsg(`Rule ${sectionNumber} deleted`);
+      toast.success(`Rule ${sectionNumber} deleted`);
       await fetchData();
       await fetchRules();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to delete rule');
+      setError(extractApiError(err, 'Failed to delete rule'));
     } finally {
       setActionLoading(false);
     }
@@ -426,7 +455,7 @@ export default function BenchmarkDetail() {
       setSuccessMsg(result.message);
       await fetchData();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to start command generation');
+      setError(extractApiError(err, 'Failed to start command generation'));
     } finally {
       setActionLoading(false);
     }
@@ -453,16 +482,19 @@ export default function BenchmarkDetail() {
       await fetchData();
       await fetchRules();
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to import benchmark file');
+      setError(extractApiError(err, 'Failed to import benchmark file'));
     } finally {
       setActionLoading(false);
       if (benchmarkImportRef.current) benchmarkImportRef.current.value = '';
     }
   };
 
+  const expandedRuleRef = useRef<number | null>(null);
+
   const handleExpandRule = async (ruleId: number) => {
     if (expandedRule === ruleId) {
       setExpandedRule(null);
+      expandedRuleRef.current = null;
       setRuleCommand(null);
       setCommandHistory([]);
       setVerificationReports([]);
@@ -473,15 +505,24 @@ export default function BenchmarkDetail() {
       return;
     }
     setExpandedRule(ruleId);
+    expandedRuleRef.current = ruleId;
+    setRuleCommand(null);
+    setCommandHistory([]);
+    setVerificationReports([]);
     setShowHistory(false);
     setShowReports(false);
     setShowFlagForm(false);
     setShowUnlockForm(false);
     try {
       const cmd = await api.getRuleCommand(ruleId);
-      setRuleCommand(cmd);
+      // Guard: only set if this rule is still the one expanded
+      if (expandedRuleRef.current === ruleId) {
+        setRuleCommand(cmd);
+      }
     } catch {
-      setRuleCommand(null);
+      if (expandedRuleRef.current === ruleId) {
+        setRuleCommand(null);
+      }
     }
   };
 
@@ -491,7 +532,7 @@ export default function BenchmarkDetail() {
       const updated = await api.updateRuleFull(benchmark.id, ruleId, { [field]: value || null });
       setRules(prev => prev.map(r => r.id === ruleId ? { ...r, ...updated } : r));
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to save rule');
+      setError(extractApiError(err, 'Failed to save rule'));
       throw err; // re-throw so InlineEditField stays in editing mode
     }
   };
@@ -505,7 +546,7 @@ export default function BenchmarkDetail() {
       setShowFlagForm(false);
       setFlagReason('');
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to flag command');
+      setError(extractApiError(err, 'Failed to flag command'));
     } finally {
       setActionLoading(false);
     }
@@ -517,7 +558,7 @@ export default function BenchmarkDetail() {
       const cmd = await api.regenerateCommand(ruleId);
       setRuleCommand(cmd);
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to regenerate command');
+      setError(extractApiError(err, 'Failed to regenerate command'));
     } finally {
       setActionLoading(false);
     }
@@ -529,7 +570,7 @@ export default function BenchmarkDetail() {
       const cmd = await api.protectCommand(ruleId);
       setRuleCommand(cmd);
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to protect command');
+      setError(extractApiError(err, 'Failed to protect command'));
     } finally {
       setActionLoading(false);
     }
@@ -544,7 +585,7 @@ export default function BenchmarkDetail() {
       setShowUnlockForm(false);
       setUnlockReason('');
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to unlock command');
+      setError(extractApiError(err, 'Failed to unlock command'));
     } finally {
       setActionLoading(false);
     }
@@ -556,7 +597,7 @@ export default function BenchmarkDetail() {
       const cmd = await api.verifySingleCommand(ruleId);
       setRuleCommand(cmd);
     } catch (err: unknown) {
-      setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to verify command');
+      setError(extractApiError(err, 'Failed to verify command'));
     } finally {
       setActionLoading(false);
     }
@@ -591,7 +632,22 @@ export default function BenchmarkDetail() {
   };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-12 text-dark-secondary">Loading{'\u2026'}</div>;
+    return (
+      <div className="space-y-6 animate-pulse">
+        <div className="flex items-center gap-4">
+          <div className="h-9 w-9 rounded-lg bg-dark-overlay" />
+          <div className="space-y-2">
+            <div className="h-5 w-64 rounded bg-dark-overlay" />
+            <div className="h-3 w-40 rounded bg-dark-overlay" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-32 rounded-xl border border-dark-border bg-dark-card" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   if (!benchmark) {
@@ -1442,10 +1498,11 @@ export default function BenchmarkDetail() {
                 <BarChart3 className="h-5 w-5 text-sky-400" />
                 <h3 className="text-lg font-medium text-white">Migration Readiness</h3>
                 <button
-                  onClick={() => api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => {})}
-                  className="ml-auto rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-overlay hover:text-white"
+                  onClick={() => { setReadinessLoading(true); api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => {}).finally(() => setReadinessLoading(false)); }}
+                  disabled={readinessLoading}
+                  className="ml-auto rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-overlay hover:text-white disabled:opacity-50"
                 >
-                  <RefreshCw className="h-3 w-3" />
+                  <RefreshCw className={`h-3 w-3${readinessLoading ? ' animate-spin' : ''}`} />
                 </button>
               </div>
             </div>
@@ -1544,6 +1601,16 @@ export default function BenchmarkDetail() {
         <FrameworkCoveragePanel benchmarkId={benchmark.id} benchmarkName={benchmark.name} />
       )}
 
+      {/* Delete Rule Confirm */}
+      <ConfirmDialog
+        open={!!confirmDeleteRule}
+        title="Delete Rule"
+        message={`Delete rule ${confirmDeleteRule?.section ?? ''}? This cannot be undone.`}
+        variant="danger"
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteRuleAction}
+        onCancel={() => setConfirmDeleteRule(null)}
+      />
     </div >
   );
 }

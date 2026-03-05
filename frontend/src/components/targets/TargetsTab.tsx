@@ -21,6 +21,9 @@ import PrerequisiteGuideModal from './PrerequisiteGuideModal';
 import ScanHistoryPanel from './ScanHistoryPanel';
 import ImportPreviewModal from '../import/ImportPreviewModal';
 import type { ImportOptions } from '../import/ImportPreviewModal';
+import ConfirmDialog from '../common/ConfirmDialog';
+import { useToast } from '../common/Toast';
+import { extractApiError } from '@/utils/apiError';
 
 interface Props {
   missionId: number;
@@ -35,6 +38,7 @@ interface Props {
 }
 
 export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab, onSwitchToFindings, isLocked = false }: Props) {
+  const toast = useToast();
   const [assignTargetId, setAssignTargetId] = useState<number | ''>('');
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -74,6 +78,8 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewFilename, setPreviewFilename] = useState('');
   const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
+  const [pendingImportFiles, setPendingImportFiles] = useState<File[]>([]);
+  const [confirmUnassign, setConfirmUnassign] = useState<number | null>(null);
 
   const unassignedTargets = clientTargets.filter(
     ct => !missionTargets.some(mt => mt.id === ct.id),
@@ -97,9 +103,16 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   };
 
   const handleUnassignTarget = async (targetId: number) => {
-    if (!confirm('Unassign this target from the mission?')) return;
+    setConfirmUnassign(targetId);
+  };
+
+  const confirmUnassignAction = async () => {
+    if (confirmUnassign === null) return;
+    const targetId = confirmUnassign;
+    setConfirmUnassign(null);
     try {
       await api.unassignTargetFromMission(missionId, targetId);
+      toast.success('Target unassigned');
       await onRefresh();
     } catch {
       setError('Failed to unassign target');
@@ -207,14 +220,14 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       if (!files || files.length === 0) return;
       setError('');
 
-      // Show preview for supported scanner formats (single file)
       const firstFile = files[0];
       const ext = firstFile.name.split('.').pop()?.toLowerCase();
       const isScannerFormat = ['csv', 'html', 'htm', 'nessus', 'xml'].includes(ext || '');
 
-      if (isScannerFormat && files.length === 1) {
-        // Show preview modal for Nessus-type files
+      if (isScannerFormat) {
+        // Always show preview modal for scanner formats (single or multi-file)
         setPendingImportFile(firstFile);
+        setPendingImportFiles(Array.from(files));
         setPreviewFilename(firstFile.name);
         setPreviewLoading(true);
         setShowPreviewModal(true);
@@ -222,17 +235,14 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
           const preview = await api.smartImportPreview(firstFile, clientId);
           setPreviewData(preview);
         } catch (err: unknown) {
-          const msg = err && typeof err === 'object' && 'response' in err
-            ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail || 'Preview failed'
-            : err instanceof Error ? err.message : 'Preview failed';
-          setPreviewData({ format: 'error', filename: firstFile.name, message: msg });
+          setPreviewData({ format: 'error', filename: firstFile.name, message: extractApiError(err, 'Preview failed') });
         } finally {
           setPreviewLoading(false);
         }
         return;
       }
 
-      // Legacy flow for JSON/ZIP files (or multi-file)
+      // Legacy flow for JSON/ZIP files
       let totalFindings = 0;
       let totalCompliance = 0;
       let fileCount = 0;
@@ -245,10 +255,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
           totalCompliance += res.compliance_percentage;
           fileCount++;
         } catch (err: unknown) {
-          const msg = err && typeof err === 'object' && 'response' in err
-            ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail || 'Import failed'
-            : err instanceof Error ? err.message : 'Import failed';
-          errors.push(`${file.name}: ${msg}`);
+          errors.push(`${file.name}: ${extractApiError(err, 'Import failed')}`);
         }
       }
 
@@ -266,30 +273,42 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   };
 
   const handlePreviewImport = async (options: ImportOptions) => {
-    if (!pendingImportFile) return;
-    try {
-      const res = await api.smartImport(pendingImportFile, missionId, clientId, {
-        runFpDetection: options.runFpDetection,
-        allowBenchmarkCreation: options.allowBenchmarkCreation,
-        targetId: options.targetId,
-      });
-      setShowPreviewModal(false);
-      setPendingImportFile(null);
-      setPreviewData(null);
-      await handleRefreshAll();
+    const filesToImport = pendingImportFiles.length > 0 ? pendingImportFiles : pendingImportFile ? [pendingImportFile] : [];
+    if (filesToImport.length === 0) return;
 
-      const parts: string[] = [`Smart Import complete!`];
-      parts.push(`${res.findings_created} findings imported`);
-      if (res.benchmark_reconstructed) parts.push(`Benchmark reconstructed: ${res.benchmark_name}`);
-      if (res.enrichment_source) parts.push(`Severity enriched from: ${res.enrichment_source}`);
-      if (res.rules_enriched && res.rules_enriched > 0) parts.push(`${res.rules_enriched} rules enriched`);
-      if (res.commands_inherited && res.commands_inherited > 0) parts.push(`${res.commands_inherited} commands inherited`);
-      if (res.fp_suspects && res.fp_suspects > 0) parts.push(`${res.fp_suspects} potential false positives flagged`);
-      if (res.warnings && res.warnings.length > 0) parts.push(`Warnings: ${res.warnings.length}`);
-      setSuccessMsg(parts.join(' | '));
-    } catch (err) {
-      throw err; // Let the modal handle the error display
+    const importOpts = {
+      runFpDetection: options.runFpDetection,
+      allowBenchmarkCreation: options.allowBenchmarkCreation,
+      targetId: options.targetId,
+    };
+
+    let totalFindings = 0;
+    const errors: string[] = [];
+    const parts: string[] = [];
+
+    for (const file of filesToImport) {
+      try {
+        const res = await api.smartImport(file, missionId, clientId, importOpts);
+        totalFindings += res.findings_created;
+        if (res.benchmark_reconstructed) parts.push(`Benchmark: ${res.benchmark_name}`);
+        if (res.fp_suspects && res.fp_suspects > 0) parts.push(`${res.fp_suspects} potential FPs`);
+      } catch (err) {
+        if (filesToImport.length === 1) throw err; // Let modal handle single-file errors
+        errors.push(`${file.name}: ${extractApiError(err, 'Import failed')}`);
+      }
     }
+
+    setShowPreviewModal(false);
+    setPendingImportFile(null);
+    setPendingImportFiles([]);
+    setPreviewData(null);
+    await handleRefreshAll();
+
+    const summary = [`Smart Import complete! ${totalFindings} findings imported`];
+    if (filesToImport.length > 1) summary.push(`${filesToImport.length - errors.length}/${filesToImport.length} files`);
+    summary.push(...parts);
+    if (errors.length) summary.push(`${errors.length} error(s)`);
+    toast.success(summary.join(' | '));
   };
 
   const handleBulkImport = async () => {
@@ -514,11 +533,24 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
       {/* ── 9. Smart Import Preview Modal ─────────────────── */}
       <ImportPreviewModal
         open={showPreviewModal}
-        onClose={() => { setShowPreviewModal(false); setPendingImportFile(null); setPreviewData(null); }}
+        onClose={() => { setShowPreviewModal(false); setPendingImportFile(null); setPendingImportFiles([]); setPreviewData(null); }}
         preview={previewData}
         loading={previewLoading}
         filename={previewFilename}
+        fileCount={pendingImportFiles.length || 1}
         onImport={handlePreviewImport}
+        targets={missionTargets}
+      />
+
+      {/* ── 10. Unassign Confirm ──────────────────────────── */}
+      <ConfirmDialog
+        open={confirmUnassign !== null}
+        title="Unassign Target"
+        message="Unassign this target from the mission?"
+        variant="danger"
+        confirmLabel="Unassign"
+        onConfirm={confirmUnassignAction}
+        onCancel={() => setConfirmUnassign(null)}
       />
     </div>
   );

@@ -5,9 +5,11 @@ import MissionWorkspace from './pages/MissionWorkspace';
 import BenchmarkDetail from './pages/BenchmarkDetail';
 import FindingDetail from './pages/FindingDetail';
 import MissionAnalysis from './pages/MissionAnalysis';
+import { ToastProvider } from './components/common/Toast';
 
 function App() {
   return (
+    <ToastProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<MainLayout />}>
@@ -37,6 +39,7 @@ function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </ToastProvider>
   );
 }
 
