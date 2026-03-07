@@ -1,11 +1,13 @@
-version: "3.8"
-
 services:
   discovery-agent:
     build:
       context: .
       dockerfile: Dockerfile.agent
-    network_mode: host
+    # On Linux production: uncomment network_mode: host for full Layer 2 access
+    # and change DISCOVERY_AGENT_HOST below to host.docker.internal
+    # network_mode: host
+    ports:
+      - "37120:37120"
     cap_add:
       - NET_RAW
       - NET_ADMIN
@@ -32,7 +34,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - DATABASE_URL=sqlite:///data/auditforge.db
       - DOCKER_HOST_MODE=bridge
-      - DISCOVERY_AGENT_HOST=host.docker.internal
+      - DISCOVERY_AGENT_HOST=discovery-agent
       - DISCOVERY_AGENT_PORT=37120
     depends_on:
       - discovery-agent
