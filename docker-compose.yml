@@ -1,20 +1,4 @@
 services:
-  discovery-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.agent
-    # On Linux production: uncomment network_mode: host for full Layer 2 access
-    # and change DISCOVERY_AGENT_HOST below to host.docker.internal
-    # network_mode: host
-    ports:
-      - "37120:37120"
-    cap_add:
-      - NET_RAW
-      - NET_ADMIN
-    environment:
-      - AUDITFORGE_AGENT_MODE=1
-    restart: unless-stopped
-
   backend:
     build:
       context: ./backend
@@ -34,10 +18,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - DATABASE_URL=sqlite:///data/auditforge.db
       - DOCKER_HOST_MODE=bridge
-      - DISCOVERY_AGENT_HOST=discovery-agent
+      - DISCOVERY_AGENT_HOST=host.docker.internal
       - DISCOVERY_AGENT_PORT=37120
-    depends_on:
-      - discovery-agent
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     working_dir: /app
 

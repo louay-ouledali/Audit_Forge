@@ -352,12 +352,15 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
             <div className="text-xs text-amber-300 space-y-1">
               <p className="font-semibold">Discovery Agent not detected</p>
               <p className="text-amber-400/80">
-                The discovery-agent service is not responding. Without it, MAC addresses and consumer devices (phones, TVs, IoT) won't be detected.
-                Make sure all services are running:
+                The discovery agent is not responding. Without it, MAC addresses and consumer devices (phones, TVs, IoT) won't be detected.
+                Start everything with one command:
               </p>
               <code className="block rounded bg-dark-elevated px-2 py-1 text-[10px] text-amber-300 font-mono">
-                docker-compose up -d
+                .\start.ps1
               </code>
+              <p className="text-amber-400/60 text-[10px]">
+                Or manually: <span className="font-mono">python discovery_agent.py</span> then <span className="font-mono">docker compose up -d</span>
+              </p>
             </div>
           </div>
         )}

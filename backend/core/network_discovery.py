@@ -994,6 +994,7 @@ _OUI_VENDOR: dict[str, str] = {
     "BC:44:86": "Samsung", "5C:49:7D": "Samsung", "CC:07:AB": "Samsung",
     "F0:25:B7": "Samsung", "94:35:0A": "Samsung", "40:4E:36": "Samsung",
     "34:14:5F": "Samsung", "A8:7C:01": "Samsung", "50:01:BB": "Samsung",
+    "6C:0B:5E": "Samsung", "D0:D2:B0": "Samsung", "24:18:C6": "Samsung",
     # ── Xiaomi / Redmi ──
     "64:CC:2E": "Xiaomi", "28:6C:07": "Xiaomi", "78:11:DC": "Xiaomi",
     "F8:A4:5F": "Xiaomi", "9C:99:A0": "Xiaomi", "50:64:2B": "Xiaomi",
@@ -2930,6 +2931,27 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
         # Determine device role from ports + OS
         device_role = _guess_device_role(open_ports, os_guess)
 
+        # Refine role from vendor if still unknown (phones, IoT with no ports)
+        vendor = fp.get("vendor", "")
+        if device_role == "unknown" and vendor:
+            vl = vendor.lower()
+            if any(kw in vl for kw in ("samsung", "google", "oneplus",
+                   "xiaomi", "huawei", "oppo", "realme", "motorola", "sony",
+                   "lg", "nokia", "honor", "amazon", "apple")):
+                device_role = "mobile"
+
+        # Detect locally-administered (randomized) MACs — bit 1 of first octet
+        mac_addr = fp.get("mac_address", "")
+        if mac_addr and not vendor:
+            try:
+                first_byte = int(mac_addr.split(":")[0], 16)
+                if first_byte & 0x02:
+                    vendor = "(randomized MAC)"
+                    if device_role == "unknown":
+                        device_role = "mobile"
+            except (ValueError, IndexError):
+                pass
+
         return DiscoveredHost(
             ip=ip,
             hostname=hostname,
@@ -2938,11 +2960,11 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
             device_role=device_role,
             connection_methods=conn_methods,
             os_version=fp.get("os_version", ""),
-            vendor=fp.get("vendor", ""),
+            vendor=vendor,
             banners=banners,
             device_model=fp.get("device_model", ""),
             firmware=fp.get("firmware", ""),
-            mac_address=fp.get("mac_address", ""),
+            mac_address=mac_addr,
             domain=fp.get("domain", ""),
             detection_method=fp.get("detection_method", ""),
             confidence=fp.get("confidence", 0),
@@ -3100,7 +3122,10 @@ async def discover_network(
 
     # Hosts found by ARP but missed by TCP/ICMP later will still get a
     # DiscoveredHost entry (ensures phones, IoT, stealth hosts appear).
-    arp_only_ips: set[str] = set(arp_results.keys())
+    # Filter to only IPs in the requested subnet — Windows ARP table
+    # includes entries from ALL interfaces (VMware, Hyper-V, etc).
+    hosts_set = set(hosts_to_scan)
+    arp_only_ips: set[str] = set(arp_results.keys()) & hosts_set
 
     sem = asyncio.Semaphore(MAX_CONCURRENT_HOSTS)
     discovered: list[DiscoveredHost] = []
@@ -3134,6 +3159,22 @@ async def discover_network(
         vendor = _lookup_oui_vendor(mac) if mac else ""
         os_guess = "unknown"
         device_role = "unknown"
+        detection = "arp_sweep"
+        conf = 25 if vendor else 10
+
+        # Detect locally-administered (randomized) MACs — bit 1 of first octet
+        is_random_mac = False
+        if mac and not vendor:
+            try:
+                first_byte = int(mac.split(":")[0], 16)
+                if first_byte & 0x02:
+                    is_random_mac = True
+                    device_role = "mobile"
+                    detection = "mac_arp"
+                    conf = 15
+            except (ValueError, IndexError):
+                pass
+
         if vendor:
             vendor_lower = vendor.lower()
             if any(kw in vendor_lower for kw in ("samsung", "google", "oneplus",
@@ -3150,11 +3191,11 @@ async def discover_network(
         discovered.append(DiscoveredHost(
             ip=arp_ip,
             mac_address=mac,
-            vendor=vendor,
+            vendor=vendor if vendor else ("(randomized MAC)" if is_random_mac else ""),
             os_guess=os_guess,
             device_role=device_role,
-            detection_method="arp_sweep",
-            confidence=25 if vendor else 10,
+            detection_method=detection,
+            confidence=conf,
         ))
 
     elapsed = time.monotonic() - start_time
