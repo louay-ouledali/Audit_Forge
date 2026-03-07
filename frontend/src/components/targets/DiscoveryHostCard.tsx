@@ -227,11 +227,11 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
           <div className="flex flex-wrap gap-1">
             {(visiblePorts || []).map(p => (
               <span
-                key={p.port}
+                key={`${p.port}-${p.proto || 'tcp'}`}
                 className="rounded bg-dark-elevated px-1.5 py-0.5 text-[10px] text-dark-secondary font-mono"
-                title={p.banner_snippet || `${p.port}/${p.service || ''}`}
+                title={p.banner_snippet || `${p.port}/${p.service || ''}${p.proto === 'udp' ? ' (UDP)' : ''}`}
               >
-                {p.port}{p.service ? `/${p.service}` : ''}
+                {p.port}{p.service ? `/${p.service}` : ''}{p.proto === 'udp' ? '/udp' : ''}
                 {p.product && p.version
                   ? ` (${p.product} ${p.version})`
                   : p.product

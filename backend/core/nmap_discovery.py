@@ -134,6 +134,32 @@ SCAN_PROFILES: dict[str, dict[str, Any]] = {
 DEFAULT_PROFILE = "standard"
 
 
+# ── Port → service name lookup ───────────────────────────────
+# Used to label ports found by the fast TCP probe that Nmap didn't
+# identify.  Prevents ugly "PORT-5985" → shows "WinRM-HTTP" instead.
+_PORT_SERVICE_MAP: dict[int, str] = {
+    20: "FTP-DATA", 21: "FTP", 22: "SSH", 23: "TELNET", 25: "SMTP",
+    53: "DNS", 67: "DHCP", 68: "DHCP", 69: "TFTP", 80: "HTTP",
+    88: "KERBEROS", 110: "POP3", 111: "RPCBIND", 123: "NTP",
+    135: "MSRPC", 137: "NETBIOS-NS", 138: "NETBIOS-DGM",
+    139: "NETBIOS-SSN", 143: "IMAP", 161: "SNMP", 162: "SNMPTRAP",
+    389: "LDAP", 443: "HTTPS", 445: "MICROSOFT-DS", 464: "KPASSWD",
+    465: "SMTPS", 514: "SYSLOG", 548: "AFP", 554: "RTSP",
+    587: "SUBMISSION", 593: "HTTP-RPC", 631: "IPP", 636: "LDAPS",
+    873: "RSYNC", 993: "IMAPS", 995: "POP3S",
+    1433: "MSSQL", 1521: "ORACLE", 1723: "PPTP", 1883: "MQTT",
+    2049: "NFS", 3268: "LDAP-GC", 3269: "LDAPS-GC",
+    3306: "MYSQL", 3389: "RDP", 5000: "UPNP",
+    5353: "MDNS", 5432: "POSTGRESQL", 5555: "ADB",
+    5900: "VNC", 5985: "WINRM-HTTP", 5986: "WINRM-HTTPS",
+    6379: "REDIS", 8000: "HTTP-ALT", 8008: "CHROMECAST",
+    8080: "HTTP-PROXY", 8443: "HTTPS-ALT", 8883: "MQTT-TLS",
+    8888: "HTTP-ALT2", 9090: "HTTP-MGMT", 9100: "RAW-PRINT",
+    9200: "ELASTICSEARCH", 9295: "PS-REMOTEPLAY",
+    27017: "MONGODB", 62078: "IPHONE-SYNC",
+}
+
+
 # ── Fast TCP discovery ports ─────────────────────────────────
 # Broad list of ports likely to be open on home/enterprise networks.
 # These are used in the Phase 1 fast-probe to find live hosts.
@@ -146,9 +172,11 @@ DISCOVERY_PORTS = [
 
 # Trimmed list used only for the fast host-discovery probe.
 # We just need to detect if a host is alive — Nmap handles the rest.
+# Includes consumer-device ports: 5555 (ADB Wi-Fi), 8008 (Chromecast),
+# 9295 (PlayStation Remote Play).
 _FAST_PROBE_PORTS = [
     22, 23, 53, 80, 135, 139, 443, 445, 554,
-    3389, 5000, 5900, 5985, 8080, 8443, 9100, 62078,
+    3389, 5000, 5555, 5900, 5985, 8008, 8080, 8443, 9100, 9295, 62078,
 ]
 
 
@@ -395,7 +423,9 @@ async def nmap_discover_network(
         _lookup_oui_vendor,
         _netbios_name_query,
         _parse_subnet,
+        _ping_host,
         _smb_ntlm_fingerprint,
+        _udp_probe_host,
     )
 
     profile = SCAN_PROFILES.get(scan_profile, SCAN_PROFILES[DEFAULT_PROFILE])
@@ -436,6 +466,7 @@ async def nmap_discover_network(
     # parallel TCP probe (3-5 sec) to identify which hosts are alive,
     # then run Nmap only on those live hosts.
     live_hosts: dict[str, list[int]] = {}
+    udp_alive: dict[str, list[dict[str, Any]]] = {}  # ip → UDP port results
     if len(all_ips) > 5:
         logger.info("Phase 1: fast TCP probe on %d hosts...", len(all_ips))
         if discovery_id and discovery_id in _discovery_progress:
@@ -443,9 +474,38 @@ async def nmap_discover_network(
         live_hosts = await _fast_host_discovery(
             all_ips, discovery_id=discovery_id,
         )
+
+        # ── Phase 1b: UDP probe for consumer devices ──────────
+        # Phones, TVs, game consoles, IoT have zero open TCP ports but
+        # respond to mDNS (5353), SSDP (1900), NetBIOS (137), etc.
+        # UDP unicast works through Docker bridge NAT.
+        logger.info("Phase 1b: UDP probe on %d hosts...", len(all_ips))
+        udp_sem = asyncio.Semaphore(50)
+
+        async def _udp_scan(ip: str) -> tuple[str, list[dict[str, Any]]]:
+            async with udp_sem:
+                ports = await _udp_probe_host(ip, timeout=2.0)
+                return ip, ports
+
+        udp_tasks = [_udp_scan(ip) for ip in all_ips]
+        udp_results = await asyncio.gather(*udp_tasks)
+        for ip, ports in udp_results:
+            if ports:
+                udp_alive[ip] = ports
+                # Mark host as alive if not already found by TCP
+                if ip not in live_hosts:
+                    live_hosts[ip] = []
+
+        logger.info(
+            "Phase 1b: %d hosts responded to UDP probes", len(udp_alive)
+        )
+
         live_ips = sorted(live_hosts.keys(),
                           key=lambda x: int(x.split(".")[-1]))
-        logger.info("Phase 1 found %d live hosts: %s", len(live_ips), live_ips)
+        logger.info(
+            "Phase 1 total: %d live hosts (TCP + UDP): %s",
+            len(live_ips), live_ips,
+        )
 
         if not live_ips:
             # No live hosts found
@@ -460,9 +520,15 @@ async def nmap_discover_network(
         # Use live IPs for Phase 2 (Nmap scan)
         scan_target = " ".join(live_ips)
     else:
-        # Small target (single IP or <6 hosts) — skip fast probe
+        # Small target (single IP or <6 hosts) — skip fast probe,
+        # but still run UDP probes for service labeling
         scan_target = subnet
         live_ips = all_ips or [subnet]
+        for ip in live_ips:
+            ports = await _udp_probe_host(ip, timeout=2.0)
+            if ports:
+                udp_alive[ip] = ports
+                live_hosts.setdefault(ip, [])
 
     # ── Phase 2: Run Nmap on live hosts only ─────────────────
     if discovery_id and discovery_id in _discovery_progress:
@@ -572,13 +638,21 @@ async def nmap_discover_network(
         if host_ip in live_hosts:
             for fp_port in live_hosts[host_ip]:
                 if fp_port not in nmap_open_port_nums:
-                    # Port was open in the fast probe but not in Nmap
+                    svc_label = _PORT_SERVICE_MAP.get(fp_port, f"PORT-{fp_port}")
                     open_ports.append({
                         "port": fp_port,
-                        "service": f"PORT-{fp_port}",
+                        "service": svc_label,
                         "platform_hint": "unknown",
                         "proto": "tcp",
                     })
+
+        # ── Merge UDP ports from Phase 1b ───────────────────
+        existing_ports = {p["port"] for p in open_ports}
+        if host_ip in udp_alive:
+            for udp_entry in udp_alive[host_ip]:
+                if udp_entry["port"] not in existing_ports:
+                    open_ports.append(udp_entry)
+                    existing_ports.add(udp_entry["port"])
 
         # ── Skip hosts with no open ports at all ────────────
         if not open_ports:

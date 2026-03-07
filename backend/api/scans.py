@@ -12,10 +12,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.api.missions import check_mission_lock
-from backend.core.network_discovery import (
+from backend.core.discovery_router import (
     cancel_discovery,
+    check_agent_health,
     cleanup_discovery,
     discover_network,
+    get_discovery_engine,
     get_discovery_progress,
 )
 from backend.core.scan_executor import (
@@ -67,9 +69,8 @@ class DiscoveryResponse(BaseModel):
 @router.post("/discover", response_model=DiscoveryResponse)
 async def start_discovery(payload: DiscoveryRequest):
     """Start a network discovery scan on the given subnet."""
-    from backend.core.nmap_discovery import is_nmap_available
     discovery_id = str(uuid.uuid4())[:8]
-    engine = "nmap" if is_nmap_available() else "python"
+    engine = await get_discovery_engine()
 
     async def _run_discovery():
         try:
@@ -96,11 +97,12 @@ async def start_discovery(payload: DiscoveryRequest):
 @router.get("/discover/profiles")
 async def get_scan_profiles():
     """Return available scan profiles and the active engine."""
-    from backend.core.nmap_discovery import SCAN_PROFILES, is_nmap_available
-    engine = "nmap" if is_nmap_available() else "python"
+    engine = await get_discovery_engine()
+    # Profiles are meaningful for all engines
     profiles = {
-        k: {"label": v["label"], "description": v["description"]}
-        for k, v in SCAN_PROFILES.items()
+        "quick": {"label": "Quick (ping sweep)", "description": "Host discovery only. ~15 seconds."},
+        "standard": {"label": "Standard (OS + services)", "description": "Recommended. Full fingerprinting."},
+        "thorough": {"label": "Thorough (deep scan)", "description": "Slowest but most data."},
     }
     return {"engine": engine, "profiles": profiles}
 
@@ -158,6 +160,14 @@ async def get_discovery_results(
     }
 
 
+@router.get("/discover/agent-status")
+async def get_agent_status():
+    """Check whether the host discovery agent is reachable."""
+    health = await check_agent_health()
+    engine = await get_discovery_engine()
+    return {"engine": engine, **health}
+
+
 @router.delete("/discover/cache")
 async def clear_discovery_cache(db: Session = Depends(get_db)):
     """Clear all entries from the discovery cache table."""
@@ -177,7 +187,6 @@ async def discover_and_return(
     Use this for small subnets (single IP or /28 and smaller).
     For larger subnets, use the async POST /discover endpoint.
     """
-    from backend.core.nmap_discovery import is_nmap_available
     try:
         hosts = await discover_network(
             payload.subnet,
@@ -191,7 +200,7 @@ async def discover_and_return(
 
     # Enrich with existing target info and benchmark suggestions
     enriched = _enrich_discovered_hosts(hosts, payload.mission_id, db)
-    engine = "nmap" if is_nmap_available() else "python"
+    engine = await get_discovery_engine()
     return {"hosts": enriched, "total_scanned": len(enriched), "engine": engine}
 
 

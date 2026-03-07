@@ -3058,12 +3058,12 @@ async def discover_network(
     -------
     List of dicts with ip, hostname, open_ports, os_guess, connection_methods.
     """
-    # ── Route to Nmap engine if available ────────────────────
-    from backend.core.nmap_discovery import is_nmap_available, nmap_discover_network
-    if is_nmap_available():
-        return await nmap_discover_network(subnet, discovery_id, scan_profile)
+    # When called from the discovery agent on the host, always use the
+    # pure-Python engine (full Layer 2 access, no Docker NAT issues).
+    # When called from inside Docker without the agent, also use pure-Python
+    # as a fallback (limited but functional).
 
-    logger.info("Nmap not available — using pure-Python discovery engine")
+    logger.info("Using pure-Python discovery engine")
 
     hosts_to_scan = _parse_subnet(subnet)
     total = len(hosts_to_scan)

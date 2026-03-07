@@ -492,7 +492,7 @@ export interface ScriptPreviewResponse {
 export interface DiscoveredHost {
   ip: string;
   hostname: string;
-  open_ports: { port: number; service: string; platform_hint: string; product?: string; version?: string; banner_snippet?: string }[];
+  open_ports: { port: number; service: string; platform_hint: string; proto?: string; product?: string; version?: string; banner_snippet?: string }[];
   os_guess: string;
   device_role: string;
   connection_methods: string[];

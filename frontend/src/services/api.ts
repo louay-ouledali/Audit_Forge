@@ -824,6 +824,11 @@ export async function getDiscoverProfiles(): Promise<{ engine: string; profiles:
   return data;
 }
 
+export async function getAgentStatus(): Promise<{ engine: string; available: boolean; detail: string }> {
+  const { data } = await api.get('/scans/discover/agent-status');
+  return data;
+}
+
 // ── Database Backup & Restore ────────────────────────────────
 
 export async function createBackup(): Promise<Blob> {
