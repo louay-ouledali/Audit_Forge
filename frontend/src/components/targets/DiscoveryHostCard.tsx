@@ -52,6 +52,9 @@ function formatDetectionMethod(method: string): string {
     .split('+')
     .map(m => {
       switch (m) {
+        case 'nmap': return 'Nmap';
+        case 'nmap_os': return 'Nmap OS';
+        case 'http': return 'HTTP Banner';
         case 'smb_ntlm': return 'SMB/NTLM';
         case 'snmp': return 'SNMP';
         case 'mac_oui': return 'MAC OUI';
@@ -205,9 +208,13 @@ export default function DiscoveryHostCard({ host, onAdd, adding }: Props) {
       )}
 
       {/* MAC address */}
-      {host.mac_address && (
+      {host.mac_address ? (
         <p className="mt-1 text-[10px] text-dark-muted/60 font-mono" title="MAC address">
           {host.mac_address}
+        </p>
+      ) : (
+        <p className="mt-1 text-[10px] text-dark-muted/40 italic" title="MAC addresses are not visible through Docker Desktop NAT">
+          MAC: unavailable (Docker NAT)
         </p>
       )}
 

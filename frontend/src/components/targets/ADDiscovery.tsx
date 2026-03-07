@@ -9,13 +9,11 @@ import {
   Network,
   Search,
   CheckCircle2,
-  XCircle,
   AlertCircle,
   Loader2,
   Monitor,
   Server,
   Shield,
-  Download,
   ChevronDown,
   ChevronUp,
   Wifi,
@@ -715,9 +713,8 @@ export default function ADDiscovery({
                       return (
                         <tr
                           key={comp.cn + idx}
-                          className={`transition-colors hover:bg-dark-elevated/50 ${
-                            !comp.enabled ? 'opacity-50' : ''
-                          }`}
+                          className={`transition-colors hover:bg-dark-elevated/50 ${!comp.enabled ? 'opacity-50' : ''
+                            }`}
                         >
                           <td className="px-3 py-2">
                             <input

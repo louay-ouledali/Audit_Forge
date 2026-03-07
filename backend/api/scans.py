@@ -55,21 +55,29 @@ logger = logging.getLogger("auditforge.api.scans")
 class DiscoveryRequest(BaseModel):
     subnet: str  # CIDR, range, or single IP
     mission_id: int | None = None  # optional — marks already-assigned targets
+    scan_profile: str = "standard"  # quick | standard | thorough
 
 
 class DiscoveryResponse(BaseModel):
     discovery_id: str
     status: str
+    engine: str = ""  # nmap | python
 
 
 @router.post("/discover", response_model=DiscoveryResponse)
 async def start_discovery(payload: DiscoveryRequest):
     """Start a network discovery scan on the given subnet."""
+    from backend.core.nmap_discovery import is_nmap_available
     discovery_id = str(uuid.uuid4())[:8]
+    engine = "nmap" if is_nmap_available() else "python"
 
     async def _run_discovery():
         try:
-            await discover_network(payload.subnet, discovery_id=discovery_id)
+            await discover_network(
+                payload.subnet,
+                discovery_id=discovery_id,
+                scan_profile=payload.scan_profile,
+            )
         except Exception as exc:
             from backend.core.network_discovery import _discovery_progress
             _discovery_progress[discovery_id] = {
@@ -82,7 +90,19 @@ async def start_discovery(payload: DiscoveryRequest):
             }
 
     asyncio.ensure_future(_run_discovery())
-    return DiscoveryResponse(discovery_id=discovery_id, status="running")
+    return DiscoveryResponse(discovery_id=discovery_id, status="running", engine=engine)
+
+
+@router.get("/discover/profiles")
+async def get_scan_profiles():
+    """Return available scan profiles and the active engine."""
+    from backend.core.nmap_discovery import SCAN_PROFILES, is_nmap_available
+    engine = "nmap" if is_nmap_available() else "python"
+    profiles = {
+        k: {"label": v["label"], "description": v["description"]}
+        for k, v in SCAN_PROFILES.items()
+    }
+    return {"engine": engine, "profiles": profiles}
 
 
 @router.get("/discover/{discovery_id}/status")
@@ -103,15 +123,48 @@ async def cancel_discovery_scan(discovery_id: str):
 
 
 @router.get("/discover/{discovery_id}/results")
-async def get_discovery_results(discovery_id: str):
-    """Return the full list of discovered hosts."""
+async def get_discovery_results(
+    discovery_id: str,
+    mission_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Return enriched results from a completed async discovery scan.
+
+    This does NOT re-scan — it reads the hosts from the in-memory progress
+    dict, upserts them into the discovery cache, and enriches them with
+    existing target / benchmark data.
+    """
     progress = get_discovery_progress(discovery_id)
     if not progress:
         raise HTTPException(status_code=404, detail="Discovery not found")
     if progress.get("status") not in ("completed", "cancelled"):
         return {"status": progress.get("status"), "hosts": []}
 
-    return {"status": progress.get("status"), "hosts": progress.get("hosts", [])}
+    raw_hosts = progress.get("hosts", [])
+    subnet = progress.get("subnet", "")
+
+    # Upsert into discovery cache + enrich with target/benchmark info
+    if raw_hosts:
+        _upsert_discovery_cache(raw_hosts, subnet, db)
+        enriched = _enrich_discovered_hosts(raw_hosts, mission_id, db)
+    else:
+        enriched = raw_hosts
+
+    return {
+        "status": progress.get("status"),
+        "hosts": enriched,
+        "engine": progress.get("engine", "python"),
+        "total_scanned": len(enriched),
+    }
+
+
+@router.delete("/discover/cache")
+async def clear_discovery_cache(db: Session = Depends(get_db)):
+    """Clear all entries from the discovery cache table."""
+    count = db.query(DiscoveryCache).count()
+    db.query(DiscoveryCache).delete()
+    db.commit()
+    return {"cleared": count}
 
 
 @router.post("/discover/scan")
@@ -124,8 +177,12 @@ async def discover_and_return(
     Use this for small subnets (single IP or /28 and smaller).
     For larger subnets, use the async POST /discover endpoint.
     """
+    from backend.core.nmap_discovery import is_nmap_available
     try:
-        hosts = await discover_network(payload.subnet)
+        hosts = await discover_network(
+            payload.subnet,
+            scan_profile=payload.scan_profile,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -134,7 +191,8 @@ async def discover_and_return(
 
     # Enrich with existing target info and benchmark suggestions
     enriched = _enrich_discovered_hosts(hosts, payload.mission_id, db)
-    return {"hosts": enriched, "total_scanned": len(enriched)}
+    engine = "nmap" if is_nmap_available() else "python"
+    return {"hosts": enriched, "total_scanned": len(enriched), "engine": engine}
 
 
 # ── Discovery cache upsert ───────────────────────────────────

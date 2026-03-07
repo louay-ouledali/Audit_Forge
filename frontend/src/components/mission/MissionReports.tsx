@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Bot, FileText, Download, Trash2, Calendar, Loader2 } from 'lucide-react';
+import { BarChart3, Bot, FileText, Trash2, Calendar, Loader2, Lock } from 'lucide-react';
 import type { SavedReport } from '@/types';
 import * as api from '@/services/api';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -9,9 +9,10 @@ import { useToast } from '@/components/common/Toast';
 interface Props {
   missionId: number;
   missionName?: string;
+  isLocked?: boolean;
 }
 
-export default function MissionReports({ missionId, missionName }: Props) {
+export default function MissionReports({ missionId, missionName, isLocked = false }: Props) {
   const navigate = useNavigate();
   const toast = useToast();
   const [reports, setReports] = useState<SavedReport[]>([]);
@@ -40,6 +41,13 @@ export default function MissionReports({ missionId, missionName }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* Locked banner */}
+      {isLocked && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-400">
+          <Lock className="h-3.5 w-3.5 shrink-0" /> Mission is locked — report creation and deletion are disabled.
+        </div>
+      )}
+
       {/* Generate section */}
       <div className="rounded-xl border border-dark-border bg-dark-card p-6">
         <h3 className="mb-4 text-lg font-semibold text-white">Generate Reports</h3>
@@ -101,13 +109,15 @@ export default function MissionReports({ missionId, missionName }: Props) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => setDeleteTarget(r.id)}
-                    className="rounded-md p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400 transition-colors"
-                    title="Delete report"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {!isLocked && (
+                    <button
+                      onClick={() => setDeleteTarget(r.id)}
+                      className="rounded-md p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400 transition-colors"
+                      title="Delete report"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

@@ -734,24 +734,31 @@ export default function ClientWorkspace() {
                               <Server className="h-4 w-4 text-sky-400" /> Assigned Targets
                               <span className="bg-dark-elevated text-white px-2 py-0.5 rounded-full text-xs ml-auto">{(missionTargets[mission.id] || []).length}</span>
                             </h5>
-                            {(missionTargets[mission.id] || []).length === 0 ? (
-                              <div className="py-6 text-center border-2 border-dashed border-dark-border rounded-lg">
-                                <p className="text-sm text-dark-muted">No targets assigned to this mission.</p>
-                              </div>
-                            ) : (
-                              <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
-                                {(missionTargets[mission.id] || []).map(t => (
-                                  <div key={t.id} className="flex justify-between items-center rounded-md bg-dark-elevated px-3 py-2 text-sm border border-dark-border/50">
-                                    <div className="flex items-center gap-2 text-white font-medium">
-                                      <Monitor className="h-3.5 w-3.5 text-dark-muted" />
-                                      {t.hostname || t.ip_address || `#${t.id}`}
+                                                          {(missionTargets[mission.id] || []).length === 0 ? (
+                                <div className="py-6 text-center border-2 border-dashed border-dark-border rounded-lg">
+                                  <p className="text-sm text-dark-muted">No targets assigned to this mission.</p>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col gap-2 pr-1">
+                                  {(missionTargets[mission.id] || []).slice(0, 5).map(t => (
+                                    <div key={t.id} className="flex justify-between items-center rounded-md bg-dark-elevated px-3 py-2 text-sm border border-dark-border/50">
+                                      <div className="flex items-center gap-2 text-white font-medium">
+                                        <Monitor className="h-3.5 w-3.5 text-dark-muted" />
+                                        {t.hostname || t.ip_address || `#${t.id}`}
+                                      </div>
+                                      <span className="text-xs text-dark-secondary uppercase">{t.target_type}</span>
                                     </div>
-                                    <span className="text-xs text-dark-secondary uppercase">{t.target_type}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                                  ))}
+                                  {(missionTargets[mission.id] || []).length > 5 && (
+                                    <div className="text-center pt-1">
+                                      <span className="text-xs text-dark-muted font-medium">
+                                        + {(missionTargets[mission.id] || []).length - 5} more target{(missionTargets[mission.id] || []).length - 5 !== 1 && 's'}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
 
                           {/* Scans section */}
                           <div className="bg-dark-card border border-dark-border rounded-lg p-4">
@@ -764,7 +771,7 @@ export default function ClientWorkspace() {
                                 <p className="text-sm text-dark-muted">No scans run during this mission.</p>
                               </div>
                             ) : (
-                              <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
+                              <div className="flex flex-col gap-2 pr-1">
                                 {(missionScans[mission.id] || []).slice(0, 10).map(s => (
                                   <div key={s.id} className="flex flex-col gap-1 rounded-md bg-dark-elevated px-3 py-2 text-sm border border-dark-border/50">
                                     <div className="flex items-center justify-between">
@@ -924,3 +931,5 @@ export default function ClientWorkspace() {
     </div>
   );
 }
+
+

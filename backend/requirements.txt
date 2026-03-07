@@ -19,3 +19,4 @@ pyodbc>=5.1.0
 weasyprint>=68.0
 openpyxl>=3.1.0
 markdown>=3.5.0
+python-nmap>=0.7.1

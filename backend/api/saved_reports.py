@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from backend.api.missions import check_mission_lock
 from backend.database import get_db
 from backend.models.saved_report import SavedReport
 from backend.schemas.saved_report import (
@@ -36,6 +37,7 @@ def list_saved_reports(
 
 @router.post("", response_model=SavedReportDetailEnvelope, status_code=201)
 def create_saved_report(payload: SavedReportCreate, db: Session = Depends(get_db)) -> dict:
+    check_mission_lock(payload.mission_id, db)
     report = SavedReport(**payload.model_dump())
     db.add(report)
     db.commit()
@@ -58,6 +60,7 @@ def update_saved_report(
     report = db.query(SavedReport).filter(SavedReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Saved report not found")
+    check_mission_lock(report.mission_id, db)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(report, field, value)
     report.updated_at = datetime.now(timezone.utc)
@@ -71,6 +74,7 @@ def delete_saved_report(report_id: int, db: Session = Depends(get_db)) -> dict:
     report = db.query(SavedReport).filter(SavedReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Saved report not found")
+    check_mission_lock(report.mission_id, db)
     db.delete(report)
     db.commit()
     return {"data": None, "message": "Saved report deleted"}
@@ -82,6 +86,7 @@ def generate_saved_report(report_id: int, db: Session = Depends(get_db)) -> dict
     report = db.query(SavedReport).filter(SavedReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Saved report not found")
+    check_mission_lock(report.mission_id, db)
 
     # Parse config
     config = json.loads(report.config_json) if report.config_json else {}

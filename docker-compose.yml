@@ -7,6 +7,9 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     volumes:
       - ./backend:/app/backend
       - ./data:/app/data

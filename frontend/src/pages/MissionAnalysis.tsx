@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Bot, Trash2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Target, BarChart3 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import type { Mission, MissionAnalysisResult, ComparableMission } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
@@ -16,9 +17,8 @@ export default function MissionAnalysis() {
   const [analyses, setAnalyses] = useState<MissionAnalysisResult[]>([]);
   const [comparableMissions, setComparableMissions] = useState<ComparableMission[]>([]);
   const [selectedCompareId, setSelectedCompareId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<AnalysisTab>('cross_target');
   const [loading, setLoading] = useState(true);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzingType, setAnalyzingType] = useState<AnalysisTab | null>(null);
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
@@ -52,17 +52,17 @@ export default function MissionAnalysis() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const handleRunAnalysis = async () => {
+  const handleRunAnalysis = async (type: AnalysisTab) => {
     setError('');
-    setAnalyzing(true);
+    setAnalyzingType(type);
     try {
       const payload: { analysis_type: AnalysisTab; compare_mission_id?: number | null } = {
-        analysis_type: activeTab,
+        analysis_type: type,
       };
-      if (activeTab === 'cross_mission') {
+      if (type === 'cross_mission') {
         if (!selectedCompareId) {
           setError('Please select a previous mission to compare with');
-          setAnalyzing(false);
+          setAnalyzingType(null);
           return;
         }
         payload.compare_mission_id = selectedCompareId;
@@ -73,7 +73,7 @@ export default function MissionAnalysis() {
       const message = err instanceof Error ? err.message : 'Analysis failed';
       setError(message);
     } finally {
-      setAnalyzing(false);
+      setAnalyzingType(null);
     }
   };
 
@@ -86,8 +86,6 @@ export default function MissionAnalysis() {
       setError('Failed to delete analysis');
     }
   };
-
-  const filteredAnalyses = analyses.filter((a) => a.analysis_type === activeTab);
 
   const tabs: { key: AnalysisTab; label: string; icon: React.ReactNode }[] = [
     { key: 'cross_target', label: 'Cross-Target Analysis', icon: <Target className="h-4 w-4" /> },
@@ -126,91 +124,117 @@ export default function MissionAnalysis() {
         </div>
       )}
 
-      {/* Tab Bar */}
-      <div className="flex gap-1 rounded-xl border border-dark-border bg-dark-elevated p-1">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${activeTab === tab.key
-              ? 'bg-dark-card text-ey-yellow shadow-sm'
-              : 'text-dark-secondary hover:text-gray-300'
-              }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Analysis Sections instead of Tabs */}
+      <div className="space-y-8 mt-6">
+        {tabs.map((tab, idx) => {
+          const typeAnalyses = analyses.filter((a) => a.analysis_type === tab.key);
+          const isComparing = tab.key === 'cross_mission';
 
-      {/* Cross-mission comparison selector */}
-      {activeTab === 'cross_mission' && (
-        <div className="rounded-xl border border-dark-border bg-dark-card p-4">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Select a previous mission to compare with:
-          </label>
-          {comparableMissions.length === 0 ? (
-            <p className="text-sm text-dark-secondary">No comparable missions found for this client.</p>
-          ) : (
-            <select
-              value={selectedCompareId ?? ''}
-              onChange={(e) => setSelectedCompareId(e.target.value ? Number(e.target.value) : null)}
-              className="block w-full max-w-md rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none"
+          return (
+            <motion.section
+              key={tab.key}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              className="rounded-xl border border-dark-border bg-dark-card overflow-hidden"
             >
-              <option value="">{`-- Select mission --`}</option>
-              {comparableMissions.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} {m.compliance != null ? `(${m.compliance}% compliance)` : ''} {m.start_date ? `- ${m.start_date}` : ''}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-      )}
+              {/* Section Header */}
+              <div className="border-b border-dark-border bg-dark-elevated/50 px-6 py-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-ey-yellow/10 p-2 text-ey-yellow shrink-0">
+                      {tab.icon}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">{tab.label}</h3>
+                      <p className="text-sm text-dark-secondary">
+                        {tab.key === 'cross_target' && 'Detect patterns and outliers across all evaluated targets.'}
+                        {tab.key === 'category_analysis' && 'Deep dive into strengths, weaknesses, and quick wins.'}
+                        {tab.key === 'cross_mission' && 'Compare this mission against previous baselines.'}
+                      </p>
+                    </div>
+                  </div>
 
-      {/* Run Analysis Button */}
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleRunAnalysis}
-          disabled={analyzing}
-          className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {analyzing ? (
-            <>
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              {`Analyzing\u2026`}
-            </>
-          ) : (
-            <>
-              <Bot className="h-4 w-4" />
-              Run {tabs.find((t) => t.key === activeTab)?.label}
-            </>
-          )}
-        </button>
-        {analyzing && (
-          <span className="text-sm text-dark-secondary">{`This may take a few minutes\u2026`}</span>
-        )}
+                  <div className="flex items-center gap-3 shrink-0">
+                    {typeAnalyses.length > 0 && (
+                      <span className="text-xs font-medium text-dark-muted px-2 py-1 rounded-md bg-dark-overlay">
+                        {typeAnalyses.length} Result{typeAnalyses.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleRunAnalysis(tab.key)}
+                      disabled={analyzingType !== null}
+                      className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-colors shadow-sm"
+                    >
+                      {analyzingType === tab.key ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        <>
+                          <Bot className="h-4 w-4" />
+                          Run Analysis
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {isComparing && (
+                  <div className="mt-4 flex items-center gap-3 rounded-lg bg-dark-overlay/50 p-3 border border-dark-border/50">
+                    <label className="text-sm text-gray-300 font-medium">Compare with:</label>
+                    <select
+                      value={selectedCompareId ?? ''}
+                      onChange={(e) => setSelectedCompareId(e.target.value ? Number(e.target.value) : null)}
+                      className="flex-1 rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-sm text-white focus:border-ey-yellow/50 focus:outline-none"
+                    >
+                      <option value="">-- Select a previous mission --</option>
+                      {comparableMissions.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} {m.compliance != null ? `(${m.compliance}%)` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Section Body */}
+              <div className="p-6 bg-dark-card">
+                {typeAnalyses.length === 0 ? (
+                  <div className="py-8 my-2 flex flex-col items-center text-center border-2 border-dashed border-dark-border rounded-lg text-dark-secondary bg-dark-elevated/20">
+                    <Bot className="h-10 w-10 text-dark-muted mb-3 opacity-50" />
+                    <p>No results yet.</p>
+                    <p className="text-sm mt-1">Click "Run Analysis" to generate insights.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <AnimatePresence>
+                      {typeAnalyses.map((analysis) => (
+                        <motion.div
+                          key={analysis.id}
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                        >
+                          <AnalysisCard
+                            analysis={analysis}
+                            expanded={expandedId === analysis.id}
+                            onToggle={() => setExpandedId(expandedId === analysis.id ? null : analysis.id)}
+                            onDelete={() => handleDelete(analysis.id)}
+                          />
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                )}
+              </div>
+            </motion.section>
+          );
+        })}
       </div>
-
-      {/* Results */}
-      {filteredAnalyses.length === 0 ? (
-        <div className="rounded-xl border border-dark-border bg-dark-card p-12 text-center text-dark-secondary">
-          No {tabs.find((t) => t.key === activeTab)?.label.toLowerCase()} results yet. Click the button above to run an analysis.
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {filteredAnalyses.map((analysis) => (
-            <AnalysisCard
-              key={analysis.id}
-              analysis={analysis}
-              expanded={expandedId === analysis.id}
-              onToggle={() => setExpandedId(expandedId === analysis.id ? null : analysis.id)}
-              onDelete={() => handleDelete(analysis.id)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+    </div >
   );
 }
 

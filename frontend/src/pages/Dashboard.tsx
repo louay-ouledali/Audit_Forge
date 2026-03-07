@@ -48,7 +48,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const location = useLocation();
   const navigate = useNavigate();
-  const pollRef = useRef<ReturnType<typeof setInterval>>();
+  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
   const loadDashboard = () => {
     Promise.all([
@@ -120,7 +120,7 @@ export default function Dashboard() {
         <div className="rounded-xl border border-dark-border bg-dark-card p-8 h-32" />
         {/* Stat cards */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[1,2,3,4].map(i => (
+          {[1, 2, 3, 4].map(i => (
             <div key={i} className="h-24 rounded-xl border border-dark-border bg-dark-card" />
           ))}
         </div>

@@ -4,8 +4,9 @@ import {
   Upload, Trash2, RefreshCw, ChevronRight, ChevronLeft, Database,
   Monitor, Server, Network, Cloud, AppWindow, Smartphone, GitBranch,
   Box, Shield, Laptop, Globe, HardDrive, Flame, Router,
-  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List, Plus
+  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List, Plus, MoreVertical
 } from 'lucide-react';
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { CatalogCategory, CatalogVendor, ProductLine, BenchmarkCatalog, CatalogBenchmark } from '@/types';
 import * as api from '@/services/api';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -267,9 +268,36 @@ function BenchmarkRow({ benchmark, onNavigate, onDelete }: { benchmark: CatalogB
           <span className="flex items-center gap-1">Verify: <PhaseBadge status={benchmark.verification_status} /></span>
         </div>
       </div>
-      <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
-        <button onClick={() => onDelete(benchmark.id)} className="rounded p-1.5 text-dark-muted hover:bg-red-500/10 hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
-        <button onClick={() => onNavigate(benchmark.id)} className="rounded p-1.5 text-dark-muted hover:bg-ey-yellow/10 hover:text-ey-yellow"><ChevronRight className="h-4 w-4" /></button>
+      <div className="flex items-center gap-1 opacity-100" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button className="rounded-md p-1.5 text-dark-muted hover:bg-dark-elevated hover:text-white data-[state=open]:bg-dark-elevated data-[state=open]:text-white transition-colors">
+              <MoreVertical className="h-4 w-4" />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              className="min-w-[160px] bg-dark-card border border-dark-border rounded-xl p-1 shadow-xl animate-in fade-in zoom-in-95 z-50"
+              sideOffset={5}
+              align="end"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <DropdownMenu.Item
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-dark-secondary outline-none hover:bg-dark-elevated hover:text-white"
+                onClick={() => onNavigate(benchmark.id)}
+              >
+                <ChevronRight className="h-4 w-4" /> Open Details
+              </DropdownMenu.Item>
+              <DropdownMenu.Separator className="my-1 h-px bg-dark-border" />
+              <DropdownMenu.Item
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-400 outline-none hover:bg-red-500/10"
+                onClick={() => onDelete(benchmark.id)}
+              >
+                <Trash2 className="h-4 w-4" /> Delete
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
       </div>
     </div>
   );
@@ -327,7 +355,7 @@ export default function Benchmarks() {
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [nav, setNav] = useState<NavState>({ level: 'categories' });
-  const [viewMode, setViewMode] = useState<'hierarchy' | 'flat'>('hierarchy');
+  const [viewMode, setViewMode] = useState<'hierarchy' | 'flat'>('flat');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newBenchmarkName, setNewBenchmarkName] = useState('');
   const [newBenchmarkPlatform, setNewBenchmarkPlatform] = useState('Windows');

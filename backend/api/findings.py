@@ -27,8 +27,18 @@ VALID_OVERRIDES = {"confirmed", "false_positive", "accepted_risk", ""}
 def _finding_to_response(finding: Finding, db: Session) -> dict:
     """Convert a Finding ORM object to a response dict with joined rule info."""
     from backend.core.comparison_engine import format_expression_display
+    from backend.models.mission import Mission
 
     rule = db.query(Rule).filter(Rule.id == finding.rule_id).first()
+
+    # Determine if the parent mission is locked
+    mission_locked = False
+    scan = db.query(Scan).filter(Scan.id == finding.scan_id).first()
+    if scan and scan.mission_id:
+        mission = db.query(Mission).filter(Mission.id == scan.mission_id).first()
+        if mission:
+            mission_locked = bool(mission.is_locked)
+
     return {
         "id": finding.id,
         "scan_id": finding.scan_id,
@@ -54,6 +64,8 @@ def _finding_to_response(finding: Finding, db: Session) -> dict:
         # Joined fields
         "section_number": rule.section_number if rule else None,
         "rule_title": rule.title if rule else None,
+        # Lock status
+        "mission_locked": mission_locked,
     }
 
 
@@ -131,9 +143,16 @@ async def generate_ai_advice(finding_id: int, force: bool = False, db: Session =
 
     If advice was already generated, return the cached version unless force=True.
     """
+    from backend.api.missions import check_mission_lock
+
     finding = db.query(Finding).filter(Finding.id == finding_id).first()
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found")
+
+    # Block AI advice generation on locked missions (it writes to the DB)
+    scan = db.query(Scan).filter(Scan.id == finding.scan_id).first()
+    if scan:
+        check_mission_lock(scan.mission_id, db)
 
     # Return cached advice if available and not forcing regeneration
     if not force and finding.ai_advice and finding.ai_advice_generated_at:

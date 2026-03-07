@@ -47,9 +47,37 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
   const [addingIp, setAddingIp] = useState<string | null>(null);
   const [addingAll, setAddingAll] = useState(false);
   const [error, setError] = useState('');
+
+  // Quick-add state (direct IP input without scanning)
+  const [quickIp, setQuickIp] = useState('');
+  const [quickType, setQuickType] = useState('linux');
+  const [quickMethod, setQuickMethod] = useState('ssh');
+  const [quickAdding, setQuickAdding] = useState(false);
   const [progress, setProgress] = useState<{ scanned: number; total: number; found: number } | null>(null);
   const discoveryIdRef = useRef<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Scan profile & engine state
+  const [scanProfile, setScanProfile] = useState('standard');
+  const [engine, setEngine] = useState<string>('');
+  const [profiles, setProfiles] = useState<Record<string, { label: string; description: string }>>({});
+
+  // Fetch available profiles + engine on mount
+  useEffect(() => {
+    api.getDiscoverProfiles()
+      .then(data => {
+        setEngine(data.engine);
+        setProfiles(data.profiles);
+      })
+      .catch(() => {
+        // Fallback — API may not be available yet
+        setProfiles({
+          quick: { label: 'Quick (ping sweep)', description: 'Host discovery only' },
+          standard: { label: 'Standard (OS + services)', description: 'Recommended' },
+          thorough: { label: 'Thorough (deep scan)', description: 'Slowest but most data' },
+        });
+      });
+  }, []);
 
   // Persist subnet preference
   useEffect(() => { if (subnet) saveSubnet(clientId, subnet); }, [subnet, clientId]);
@@ -74,8 +102,9 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
 
     try {
       // Start async discovery
-      const { discovery_id } = await api.startDiscoveryAsync(subnet.trim());
+      const { discovery_id, engine: usedEngine } = await api.startDiscoveryAsync(subnet.trim(), scanProfile);
       discoveryIdRef.current = discovery_id;
+      if (usedEngine) setEngine(usedEngine);
 
       // Poll for progress every 1.5 seconds
       pollRef.current = setInterval(async () => {
@@ -87,13 +116,13 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
             stopPolling();
             discoveryIdRef.current = null;
 
-            // Fetch enriched results
-            const result = await api.discoverNetworkEnhanced(subnet.trim(), missionId);
+            // Fetch enriched results from the completed scan (no re-scan)
+            const result = await api.getDiscoveryResultsEnriched(discovery_id, missionId);
             setDiscoveredHosts(result.hosts || []);
             if (!result.hosts || result.hosts.length === 0) {
               setError(status.status === 'cancelled'
                 ? 'Discovery was cancelled.'
-                : `No devices found on ${subnet}. Check that the subnet is reachable.`);
+                : `No devices found on ${subnet}. Check that the subnet is reachable from the Docker container.`);
             }
             setDiscovering(false);
             setProgress(null);
@@ -111,7 +140,7 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
     } catch (err: any) {
       // Fallback: if async endpoint fails, use synchronous discover
       try {
-        const result = await api.discoverNetworkEnhanced(subnet.trim(), missionId);
+        const result = await api.discoverNetworkEnhanced(subnet.trim(), missionId, scanProfile);
         setDiscoveredHosts(result.hosts || []);
         if (!result.hosts || result.hosts.length === 0) {
           setError(`No devices found on ${subnet}. Check that the subnet is reachable.`);
@@ -205,6 +234,36 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
     setAddingAll(false);
   };
 
+  /* ── Quick-add: add a target by IP without scanning ─────── */
+  const handleQuickAdd = async () => {
+    const ip = quickIp.trim();
+    if (!ip) return;
+    setQuickAdding(true);
+    setError('');
+    try {
+      const portMap: Record<string, number> = { ssh: 22, winrm: 5985, mssql: 1433, postgresql: 5432, oracle: 1521 };
+      const newTarget = await api.createTarget({
+        client_id: clientId,
+        hostname: null,
+        ip_address: ip,
+        mac_address: null,
+        target_type: quickType,
+        connection_method: quickMethod,
+        port: portMap[quickMethod] ?? null,
+        notes: 'Manually added via Quick Add',
+        default_benchmark_id: null,
+      });
+      await api.assignTargetToMission(missionId, newTarget.id);
+      api.matchTargetBenchmark(newTarget.id).catch(() => {});
+      setQuickIp('');
+      await onTargetsAdded();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || `Failed to add ${ip}`);
+    } finally {
+      setQuickAdding(false);
+    }
+  };
+
   /* ── Collapsed state ─────────────────────────────────────── */
   if (!expanded) {
     return (
@@ -236,9 +295,17 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
             <p className="text-xs text-dark-muted">Scan your network to find devices automatically</p>
           </div>
         </div>
-        <button onClick={() => setExpanded(false)} className="text-dark-muted hover:text-white transition-colors">
-          <ChevronUp className="h-5 w-5" />
-        </button>
+        <div className="flex items-center gap-3">
+          {engine && (
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${engine === 'nmap' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-blue-500/15 text-blue-400 border border-blue-500/30'}`}>
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {engine === 'nmap' ? 'Nmap' : 'Python'} Engine
+            </span>
+          )}
+          <button onClick={() => setExpanded(false)} className="text-dark-muted hover:text-white transition-colors">
+            <ChevronUp className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -257,6 +324,22 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
             />
             <Wifi className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-dark-muted" />
           </div>
+          {/* Scan profile selector */}
+          {Object.keys(profiles).length > 0 && (
+            <select
+              value={scanProfile}
+              onChange={e => setScanProfile(e.target.value)}
+              disabled={discovering}
+              className={`${inputClass} min-w-[160px]`}
+              title="Scan profile"
+            >
+              {Object.entries(profiles).map(([key, p]) => (
+                  <option key={key} value={key}>
+                    {p.label}
+                  </option>
+              ))}
+            </select>
+          )}
           <button
             onClick={handleDiscover}
             disabled={discovering || !subnet.trim()}
@@ -288,6 +371,64 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
               Add All ({notAddedHosts.length})
             </button>
           )}
+        </div>
+
+        {/* Quick-add divider + row: add a specific IP without scanning */}
+        <div className="flex items-center gap-3 pt-1">
+          <div className="h-px flex-1 bg-dark-border" />
+          <span className="text-[10px] font-medium uppercase tracking-wider text-dark-muted">or add target directly</span>
+          <div className="h-px flex-1 bg-dark-border" />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            value={quickIp}
+            onChange={e => setQuickIp(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleQuickAdd(); }}
+            placeholder="IP address (e.g. 192.168.1.100)"
+            className={`${inputClass} flex-1`}
+            disabled={quickAdding}
+          />
+          <select
+            value={quickType}
+            onChange={e => {
+              setQuickType(e.target.value);
+              setQuickMethod(e.target.value === 'windows' ? 'winrm' : 'ssh');
+            }}
+            className={`${inputClass} min-w-[120px]`}
+            disabled={quickAdding}
+          >
+            <option value="linux">Linux</option>
+            <option value="windows">Windows</option>
+            <option value="network">Network</option>
+            <option value="macos">macOS</option>
+            <option value="database">Database</option>
+          </select>
+          <select
+            value={quickMethod}
+            onChange={e => setQuickMethod(e.target.value)}
+            className={`${inputClass} min-w-[120px]`}
+            disabled={quickAdding}
+          >
+            <option value="ssh">SSH</option>
+            <option value="winrm">WinRM</option>
+            <option value="mssql">MSSQL</option>
+            <option value="postgresql">PostgreSQL</option>
+            <option value="oracle">Oracle</option>
+          </select>
+          <button
+            onClick={handleQuickAdd}
+            disabled={quickAdding || !quickIp.trim()}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-ey-yellow/30 bg-ey-yellow/10 px-4 py-2 text-sm font-medium text-ey-yellow transition-colors hover:bg-ey-yellow/20 disabled:opacity-50 whitespace-nowrap"
+          >
+            {quickAdding ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-ey-yellow border-t-transparent" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            Add Target
+          </button>
         </div>
 
         {/* Discovery progress */}

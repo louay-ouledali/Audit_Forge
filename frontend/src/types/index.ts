@@ -518,6 +518,7 @@ export interface DiscoveryProgress {
   found: number;
   hosts?: DiscoveredHost[];
   error?: string;
+  engine?: string;
 }
 
 export interface NetworkScanRequest {
@@ -609,6 +610,8 @@ export interface Finding {
   auditor_remediation: string | null;
   override_reason: string | null;
   overridden_at: string | null;
+  // Lock status from parent mission
+  mission_locked?: boolean;
 }
 
 export interface SavedReport {

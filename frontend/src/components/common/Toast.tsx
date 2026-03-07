@@ -32,9 +32,9 @@ export function useToast(): ToastContextValue {
 /* ── Variant config ────────────────────────────────────────── */
 const VARIANT_CFG: Record<ToastVariant, { icon: typeof CheckCircle2; border: string; bg: string; text: string }> = {
   success: { icon: CheckCircle2, border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-400' },
-  error:   { icon: XCircle,      border: 'border-red-500/30',     bg: 'bg-red-500/10',     text: 'text-red-400' },
-  warning: { icon: AlertTriangle, border: 'border-amber-500/30',  bg: 'bg-amber-500/10',   text: 'text-amber-400' },
-  info:    { icon: Info,          border: 'border-sky-500/30',     bg: 'bg-sky-500/10',     text: 'text-sky-400' },
+  error: { icon: XCircle, border: 'border-red-500/30', bg: 'bg-red-500/10', text: 'text-red-400' },
+  warning: { icon: AlertTriangle, border: 'border-amber-500/30', bg: 'bg-amber-500/10', text: 'text-amber-400' },
+  info: { icon: Info, border: 'border-sky-500/30', bg: 'bg-sky-500/10', text: 'text-sky-400' },
 };
 
 const DEFAULT_DURATION: Record<ToastVariant, number> = {
@@ -48,7 +48,7 @@ const DEFAULT_DURATION: Record<ToastVariant, number> = {
 function ToastItem({ toast: t, onDismiss }: { toast: Toast; onDismiss: (id: number) => void }) {
   const cfg = VARIANT_CFG[t.variant];
   const Icon = cfg.icon;
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     if (t.duration > 0) {

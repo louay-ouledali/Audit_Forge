@@ -498,8 +498,10 @@ export async function discoverNetwork(subnet: string): Promise<{ hosts: Discover
   return data;
 }
 
-export async function startDiscoveryAsync(subnet: string): Promise<{ discovery_id: string; status: string }> {
-  const { data } = await api.post('/scans/discover', { subnet });
+export async function startDiscoveryAsync(subnet: string, scanProfile?: string): Promise<{ discovery_id: string; status: string; engine: string }> {
+  const payload: Record<string, unknown> = { subnet };
+  if (scanProfile) payload.scan_profile = scanProfile;
+  const { data } = await api.post('/scans/discover', payload);
   return data;
 }
 
@@ -510,6 +512,13 @@ export async function getDiscoveryStatus(discoveryId: string): Promise<Discovery
 
 export async function cancelDiscovery(discoveryId: string): Promise<{ status: string }> {
   const { data } = await api.post(`/scans/discover/${discoveryId}/cancel`);
+  return data;
+}
+
+export async function getDiscoveryResultsEnriched(discoveryId: string, missionId?: number): Promise<{ hosts: DiscoveredHostEnriched[]; total_scanned: number; engine?: string; status: string }> {
+  const params: Record<string, unknown> = {};
+  if (missionId) params.mission_id = missionId;
+  const { data } = await api.get(`/scans/discover/${discoveryId}/results`, { params });
   return data;
 }
 
@@ -802,10 +811,16 @@ export async function cancelScanBatch(batchId: number): Promise<void> {
 
 // ── Enhanced Discovery (with mission context) ────────────────
 
-export async function discoverNetworkEnhanced(subnet: string, missionId?: number): Promise<{ hosts: DiscoveredHostEnriched[]; total_scanned: number }> {
+export async function discoverNetworkEnhanced(subnet: string, missionId?: number, scanProfile?: string): Promise<{ hosts: DiscoveredHostEnriched[]; total_scanned: number; engine?: string }> {
   const payload: Record<string, unknown> = { subnet };
   if (missionId) payload.mission_id = missionId;
+  if (scanProfile) payload.scan_profile = scanProfile;
   const { data } = await api.post('/scans/discover/scan', payload);
+  return data;
+}
+
+export async function getDiscoverProfiles(): Promise<{ engine: string; profiles: Record<string, { label: string; description: string }> }> {
+  const { data } = await api.get('/scans/discover/profiles');
   return data;
 }
 

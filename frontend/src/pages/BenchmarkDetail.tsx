@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Shield, Pencil } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse, MigrationReadiness } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
@@ -100,8 +101,15 @@ export default function BenchmarkDetail() {
   const benchmarkImportRef = useRef<HTMLInputElement>(null);
   const rulesImportRef = useRef<HTMLInputElement>(null);
   const commandsImportRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'rules' | 'validation' | 'testing' | 'frameworks'>('overview');
   const [migrationReadiness, setMigrationReadiness] = useState<MigrationReadiness | null>(null);
+
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) {
+      const y = el.getBoundingClientRect().top + window.scrollY - 100;
+      window.scrollTo({ top: y, behavior: 'smooth' });
+    }
+  };
   const [showTestPanel, setShowTestPanel] = useState<number | null>(null);
   const [mediumRuleCount, setMediumRuleCount] = useState(0);
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -121,9 +129,9 @@ export default function BenchmarkDetail() {
       setVerifyStatus(vs);
       setValidateStatus(vds);
       // Fetch severity status (medium rule count)
-      api.getSeverityEnrichStatus(benchmarkId).then(s => setMediumRuleCount(s.medium_count)).catch(() => {});
+      api.getSeverityEnrichStatus(benchmarkId).then(s => setMediumRuleCount(s.medium_count)).catch(() => { });
       // Fetch migration readiness (silently fail if not available)
-      api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => {});
+      api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => { });
     } catch {
       setError('Failed to load benchmark');
     } finally {
@@ -291,10 +299,8 @@ export default function BenchmarkDetail() {
 
   // Re-fetch validation results when filter changes
   useEffect(() => {
-    if (activeTab === 'validation') {
-      fetchValidationResults();
-    }
-  }, [validationFilter, fetchValidationResults, activeTab]);
+    fetchValidationResults();
+  }, [validationFilter, fetchValidationResults]);
 
   const handleApplyCorrection = async (ruleCommandId: number) => {
     try {
@@ -698,19 +704,17 @@ export default function BenchmarkDetail() {
         <div className="rounded-xl border border-dark-border bg-dark-card p-4">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm font-medium text-dark-secondary">Migration Readiness</h3>
-            <span className={`text-sm font-bold ${
-              benchmark.migration_readiness >= 80 ? 'text-emerald-400' :
+            <span className={`text-sm font-bold ${benchmark.migration_readiness >= 80 ? 'text-emerald-400' :
               benchmark.migration_readiness >= 50 ? 'text-amber-400' : 'text-red-400'
-            }`}>
+              }`}>
               {benchmark.migration_readiness.toFixed(0)}%
             </span>
           </div>
           <div className="h-2.5 w-full rounded-full bg-dark-overlay overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${
-                benchmark.migration_readiness >= 80 ? 'bg-emerald-500' :
+              className={`h-full rounded-full transition-all duration-500 ${benchmark.migration_readiness >= 80 ? 'bg-emerald-500' :
                 benchmark.migration_readiness >= 50 ? 'bg-amber-500' : 'bg-red-500'
-              }`}
+                }`}
               style={{ width: `${Math.min(100, benchmark.migration_readiness)}%` }}
             />
           </div>
@@ -718,8 +722,8 @@ export default function BenchmarkDetail() {
             {benchmark.migration_readiness >= 80
               ? 'Most rules have audit commands — ready for scanning.'
               : benchmark.migration_readiness >= 50
-              ? 'Some rules need enrichment before this benchmark can be used for scanning.'
-              : 'Run Phase 2 enrichment to generate audit commands for imported rules.'}
+                ? 'Some rules need enrichment before this benchmark can be used for scanning.'
+                : 'Run Phase 2 enrichment to generate audit commands for imported rules.'}
           </p>
         </div>
       )}
@@ -746,860 +750,878 @@ export default function BenchmarkDetail() {
         </div>
       )}
 
-      {/* Tab Navigation */}
-      <div className="flex border-b border-dark-border mb-6 overflow-x-auto custom-scrollbar">
-        <button onClick={() => setActiveTab('overview')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'overview' ? 'border-b-2 border-ey-yellow text-ey-yellow' : 'text-dark-secondary hover:text-white'}`}>Overview</button>
-        <button onClick={() => setActiveTab('rules')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'rules' ? 'border-b-2 border-ey-yellow text-ey-yellow' : 'text-dark-secondary hover:text-white'}`}>Rules & Commands</button>
-        {benchmark.phase2_status === 'completed' && (
-          <button onClick={() => { setActiveTab('validation'); if (validationResults.length === 0) fetchValidationResults(); }} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'validation' ? 'border-b-2 border-ey-yellow text-ey-yellow' : 'text-dark-secondary hover:text-white'}`}>Validation Results</button>
-        )}
-        <button onClick={() => setActiveTab('testing')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'testing' ? 'border-b-2 border-sky-400 text-sky-400' : 'text-dark-secondary hover:text-white'}`}>
-          <Activity className="inline h-3.5 w-3.5 mr-1" />Testing & Readiness
-        </button>
-        <button onClick={() => setActiveTab('frameworks')} className={`shrink-0 pb-3 px-5 text-sm font-medium transition-colors ${activeTab === 'frameworks' ? 'border-b-2 border-purple-400 text-purple-400' : 'text-dark-secondary hover:text-white'}`}>
-          <Shield className="inline h-3.5 w-3.5 mr-1" />Frameworks
-        </button>
-      </div>
-
-      {/* Phase Status Cards */}
-      {activeTab === 'overview' && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-xl border border-dark-border bg-dark-card p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-300">Phase 1: Parse</h3>
-              {statusBadge(benchmark.phase1_status)}
-            </div>
-            <p className="mt-2 text-2xl font-bold text-white">{benchmark.total_rules} <span className="text-sm font-normal text-dark-secondary">rules extracted</span></p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {benchmark.phase1_status === 'completed' && benchmark.total_rules > 0 && (
-                <button onClick={handleExportRules} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                  <Download className="h-3 w-3" /> Export Rules
-                </button>
-              )}
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                <Upload className="h-3 w-3" /> Import Rules
-                <input ref={rulesImportRef} type="file" accept=".json" className="hidden" onChange={handleImportRules} disabled={actionLoading} />
-              </label>
-            </div>
-          </div>
-
-          {/* Phase 2 */}
-          <div className="rounded-xl border border-dark-border bg-dark-card p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-300">Phase 2: Enrich</h3>
-              {statusBadge(enrichStatus?.status || benchmark.phase2_status)}
-            </div>
-            {enrichStatus && enrichStatus.total > 0 && (
-              <>
-                <p className="mt-2 text-2xl font-bold text-white">
-                  {enrichStatus.processed}<span className="text-xl text-dark-secondary">/{enrichStatus.total}</span>
-                </p>
-                <p className="text-xs text-ey-yellow/80 mt-1 mb-2 font-medium">Processing rule {enrichStatus.processed} of {enrichStatus.total}{'\u2026'}</p>
-                <div className="mt-2 h-2 w-full rounded-full bg-dark-overlay overflow-hidden">
-                  <div className="h-full rounded-full bg-ey-yellow transition-all duration-300 relative overflow-hidden" style={{ width: `${enrichPercent}%` }}>
-                    {enrichStatus.status === 'processing' && <div className="absolute inset-0 bg-white/20 animate-pulse" />}
-                  </div>
-                </div>
-              </>
+      {/* Main Layout */}
+      <div className="flex flex-col xl:flex-row gap-8 mt-8">
+        {/* Sticky Sidebar */}
+        <div className="w-full xl:w-64 shrink-0">
+          <div className="sticky top-24 space-y-1 rounded-xl border border-dark-border bg-dark-card p-2 shadow-sm">
+            <button onClick={() => scrollToSection('overview')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors">Overview</button>
+            <button onClick={() => scrollToSection('rules')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors">Rules & Commands</button>
+            {benchmark.phase2_status === 'completed' && (
+              <button onClick={() => { scrollToSection('validation'); if (validationResults.length === 0) fetchValidationResults(); }} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors">Validation Results</button>
             )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && benchmark.phase2_status !== 'completed' && (
-                <button onClick={handleEnrich} className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover">
-                  <Play className="h-3 w-3" /> {benchmark.phase2_status === 'paused' ? 'Resume' : 'Start'} Enrichment
-                </button>
-              )}
-              {benchmark.phase2_status === 'processing' && (
-                <button onClick={handlePauseEnrich} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
-                  <Pause className="h-3 w-3" /> Pause
-                </button>
-              )}
-              {benchmark.phase1_status === 'completed' && benchmark.phase2_status === 'completed' && (
-                <button onClick={handleExportCommands} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                  <Download className="h-3 w-3" /> Export Commands
-                </button>
-              )}
-              {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && (
-                <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                  <Upload className="h-3 w-3" /> Import Commands
-                  <input ref={commandsImportRef} type="file" accept=".json" className="hidden" onChange={handleImportCommands} disabled={actionLoading} />
-                </label>
-              )}
-            </div>
-            {mediumRuleCount > 0 && benchmark.phase1_status === 'completed' && benchmark.phase2_status !== 'processing' && (
-              <button
-                onClick={handleClassifySeverities}
-                disabled={sevLoading}
-                className="mt-2 inline-flex items-center gap-1.5 text-xs text-dark-secondary hover:text-ey-yellow transition-colors disabled:opacity-50"
-              >
-                <Sparkles className="h-3 w-3" />
-                {sevLoading ? 'Classifying…' : `${mediumRuleCount} rules with default severity — Classify with AI`}
-              </button>
-            )}
+            <button onClick={() => scrollToSection('testing')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors">
+              <Activity className="h-4 w-4" /> Testing & Readiness
+            </button>
+            <button onClick={() => scrollToSection('frameworks')} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors">
+              <Shield className="h-4 w-4" /> Frameworks
+            </button>
           </div>
-
-          {/* Verification */}
-          <div className="rounded-xl border border-dark-border bg-dark-card p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-300">Verification</h3>
-              {statusBadge(verifyStatus?.status || benchmark.verification_status)}
-            </div>
-            {verifyStatus && verifyStatus.total > 0 && (
-              <div className="mt-2 flex gap-4">
-                <div>
-                  <span className="text-2xl font-bold text-emerald-400">{verifyStatus.passed}</span>
-                  <span className="text-sm text-dark-secondary"> passed</span>
-                </div>
-                <div>
-                  <span className="text-2xl font-bold text-red-400">{verifyStatus.failed}</span>
-                  <span className="text-sm text-dark-secondary"> failed</span>
-                </div>
-              </div>
-            )}
-            <div className="mt-3 flex flex-wrap gap-2">
-              {benchmark.phase2_status === 'completed' && !['processing'].includes(benchmark.verification_status) && (
-                <button onClick={handleVerify} className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
-                  <img src={logoImg} alt="Verify Logo" className="h-3 w-3 object-contain invert brightness-0" />
-                  {['completed', 'completed_with_issues', 'overridden'].includes(benchmark.verification_status) ? 'Re-run' : 'Run'} Verification
-                </button>
-              )}
-              {verifyStatus && verifyStatus.failed > 0 && (
-                <button onClick={handleBulkRegenerate} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50">
-                  <RefreshCw className="h-3 w-3" /> Regenerate Flagged
-                </button>
-              )}
-              {['completed', 'completed_with_issues'].includes(benchmark.verification_status) && (
-                <button onClick={handleBulkAccept} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-                  <CheckCheck className="h-3 w-3" /> Accept All
-                </button>
-              )}
-              {benchmark.verification_status === 'completed_with_issues' && !benchmark.is_ready && (
-                <button onClick={handleOverride} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50">
-                  <AlertTriangle className="h-3 w-3" /> Override
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Phase 3: Validate & Correct (optional) */}
-          {benchmark.phase2_status === 'completed' && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-gray-300">
-                  <Sparkles className="mr-1 inline h-3.5 w-3.5 text-amber-400" />
-                  Validate & Correct
-                </h3>
-                {validateStatus && validateStatus.status !== 'not_started' && statusBadge(validateStatus.status)}
-                {(!validateStatus || validateStatus.status === 'not_started') && (
-                  <span className="inline-flex items-center rounded-full bg-dark-overlay px-2.5 py-0.5 text-xs font-medium text-dark-secondary">optional</span>
-                )}
-              </div>
-              {validateStatus && validateStatus.total > 0 && (
-                <>
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    <div>
-                      <span className="text-lg font-bold text-emerald-400">{validateStatus.validated}</span>
-                      <span className="text-xs text-dark-secondary"> ok</span>
-                    </div>
-                    <div>
-                      <span className="text-lg font-bold text-amber-400">{validateStatus.corrected}</span>
-                      <span className="text-xs text-dark-secondary"> corrected</span>
-                    </div>
-                    <div>
-                      <span className="text-lg font-bold text-red-400">{validateStatus.flagged}</span>
-                      <span className="text-xs text-dark-secondary"> flagged</span>
-                    </div>
-                  </div>
-                  {validateStatus.status === 'processing' && validateStatus.total > 0 && (
-                    <div className="mt-2 h-2 w-full rounded-full bg-dark-overlay">
-                      <div className="h-2 rounded-full bg-amber-500 transition-all" style={{ width: `${Math.round((validateStatus.processed / validateStatus.total) * 100)}%` }} />
-                    </div>
-                  )}
-                </>
-              )}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {benchmark.phase3_status !== 'processing' && (
-                  <button onClick={handleStartValidation} className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
-                    <Sparkles className="h-3 w-3" /> {benchmark.phase3_status === 'paused' ? 'Resume' : benchmark.phase3_status === 'completed' ? 'Re-run' : 'Run'} Validation
-                  </button>
-                )}
-                {benchmark.phase3_status === 'processing' && (
-                  <button onClick={handlePauseValidation} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
-                    <Pause className="h-3 w-3" /> Pause
-                  </button>
-                )}
-                {validateStatus && (validateStatus.corrected > 0 || validateStatus.flagged > 0) && (
-                  <button onClick={() => { setActiveTab('validation'); if (validationResults.length === 0) fetchValidationResults(); }} className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-dark-elevated px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-dark-overlay">
-                    <Search className="h-3 w-3" /> View Results
-                  </button>
-                )}
-                {validateStatus && validateStatus.corrected > 0 && (
-                  <button onClick={handleBulkApplyCorrections} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
-                    <Check className="h-3 w-3" /> Apply All (High)
-                  </button>
-                )}
-              </div>
-              <p className="mt-2 text-xs text-dark-muted">LLM reviews generated commands for accuracy. Completely optional.</p>
-            </div>
-          )}
         </div>
-      )}
 
-      {/* Phase 3: Validation Results */}
-      {activeTab === 'validation' && (
-        <div className="rounded-xl border border-amber-500/30 bg-dark-card animate-in fade-in slide-in-from-bottom-2 duration-300">
-          <div className="border-b border-amber-500/30 bg-amber-500/5 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-medium text-white">
-                <Sparkles className="mr-2 inline h-4 w-4 text-amber-400" />
-                Validation Results ({validationResults.length})
-              </h3>
-              <div className="flex items-center gap-2">
-                <select
-                  value={validationFilter}
-                  onChange={(e) => { setValidationFilter(e.target.value); }}
-                  className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-sm text-white focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
-                >
-                  <option value="">All statuses</option>
-                  <option value="corrected">Corrected</option>
-                  <option value="flagged">Flagged</option>
-                  <option value="validated">Validated</option>
-                </select>
-                <button onClick={fetchValidationResults} className="rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-overlay hover:text-white">
-                  <RefreshCw className="h-3 w-3" />
-                </button>
-                <button onClick={handleBulkDismissCorrections} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-dark-overlay px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-border disabled:opacity-50">
-                  <X className="h-3 w-3" /> Dismiss All
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="divide-y divide-dark-border">
-            {validationResults.map((item) => (
-              <div key={item.rule_command_id} className="px-4 py-3 space-y-2">
-                <div className="flex items-center gap-3">
-                  <span className="min-w-[60px] text-sm font-mono text-dark-secondary">{item.section_number}</span>
-                  <span className="flex-1 text-sm font-medium text-white">{item.title}</span>
-                  {statusBadge(item.validation_status || 'pending')}
-                  {item.validation_confidence && (
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${item.validation_confidence === 'high' ? 'bg-emerald-500/10 text-emerald-400' :
-                      item.validation_confidence === 'medium' ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-red-500/10 text-red-400'
-                      }`}>
-                      {item.validation_confidence}
-                    </span>
-                  )}
+        {/* Main Content Sections */}
+        <div className="flex-1 space-y-16 pb-20 max-w-5xl">
+
+          {/* Phase Status Cards */}
+          <motion.section id="overview" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }} transition={{ duration: 0.5 }} className="scroll-mt-32">
+            <h3 className="text-2xl font-bold text-white mb-6 border-b border-dark-border pb-4">Overview</h3>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-gray-300">Phase 1: Parse</h3>
+                  {statusBadge(benchmark.phase1_status)}
                 </div>
-                {item.notes && (
-                  <p className="text-xs text-dark-secondary italic">{item.notes}</p>
-                )}
-                {item.corrections.length > 0 && (
-                  <div className="space-y-1.5">
-                    {item.corrections.map((corr, idx) => (
-                      <div key={idx} className="rounded border border-amber-500/30 bg-amber-500/10 p-2">
-                        <div className="text-xs font-medium text-amber-400 mb-1">{corr.field}</div>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div>
-                            <span className="text-dark-secondary">Before: </span>
-                            <code className="rounded bg-red-500/10 px-1 py-0.5 text-red-400">{corr.old_value || '(empty)'}</code>
-                          </div>
-                          <div>
-                            <span className="text-dark-secondary">After: </span>
-                            <code className="rounded bg-emerald-500/10 px-1 py-0.5 text-emerald-400">{corr.new_value}</code>
-                          </div>
-                        </div>
-                        {corr.reason && <p className="mt-1 text-xs text-dark-secondary">{corr.reason}</p>}
+                <p className="mt-2 text-2xl font-bold text-white">{benchmark.total_rules} <span className="text-sm font-normal text-dark-secondary">rules extracted</span></p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {benchmark.phase1_status === 'completed' && benchmark.total_rules > 0 && (
+                    <button onClick={handleExportRules} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                      <Download className="h-3 w-3" /> Export Rules
+                    </button>
+                  )}
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                    <Upload className="h-3 w-3" /> Import Rules
+                    <input ref={rulesImportRef} type="file" accept=".json" className="hidden" onChange={handleImportRules} disabled={actionLoading} />
+                  </label>
+                </div>
+              </div>
+
+              {/* Phase 2 */}
+              <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-gray-300">Phase 2: Enrich</h3>
+                  {statusBadge(enrichStatus?.status || benchmark.phase2_status)}
+                </div>
+                {enrichStatus && enrichStatus.total > 0 && (
+                  <>
+                    <p className="mt-2 text-2xl font-bold text-white">
+                      {enrichStatus.processed}<span className="text-xl text-dark-secondary">/{enrichStatus.total}</span>
+                    </p>
+                    <p className="text-xs text-ey-yellow/80 mt-1 mb-2 font-medium">Processing rule {enrichStatus.processed} of {enrichStatus.total}{'\u2026'}</p>
+                    <div className="mt-2 h-2 w-full rounded-full bg-dark-overlay overflow-hidden">
+                      <div className="h-full rounded-full bg-ey-yellow transition-all duration-300 relative overflow-hidden" style={{ width: `${enrichPercent}%` }}>
+                        {enrichStatus.status === 'processing' && <div className="absolute inset-0 bg-white/20 animate-pulse" />}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  </>
                 )}
-                {item.validation_status === 'corrected' && (
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={() => handleApplyCorrection(item.rule_command_id)}
-                      disabled={actionLoading}
-                      className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-                    >
-                      <Check className="h-3 w-3" /> Apply
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && benchmark.phase2_status !== 'completed' && (
+                    <button onClick={handleEnrich} className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover">
+                      <Play className="h-3 w-3" /> {benchmark.phase2_status === 'paused' ? 'Resume' : 'Start'} Enrichment
                     </button>
-                    <button
-                      onClick={() => handleDismissCorrection(item.rule_command_id)}
-                      disabled={actionLoading}
-                      className="inline-flex items-center gap-1 rounded-md bg-dark-overlay px-3 py-1 text-xs font-medium text-gray-300 hover:bg-dark-border disabled:opacity-50"
-                    >
-                      <X className="h-3 w-3" /> Dismiss
+                  )}
+                  {benchmark.phase2_status === 'processing' && (
+                    <button onClick={handlePauseEnrich} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
+                      <Pause className="h-3 w-3" /> Pause
                     </button>
-                  </div>
-                )}
-                {item.validation_status === 'flagged' && (
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={() => handleDismissCorrection(item.rule_command_id)}
-                      disabled={actionLoading}
-                      className="inline-flex items-center gap-1 rounded-md bg-dark-overlay px-3 py-1 text-xs font-medium text-gray-300 hover:bg-dark-border disabled:opacity-50"
-                    >
-                      <X className="h-3 w-3" /> Dismiss
+                  )}
+                  {benchmark.phase1_status === 'completed' && benchmark.phase2_status === 'completed' && (
+                    <button onClick={handleExportCommands} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                      <Download className="h-3 w-3" /> Export Commands
                     </button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Rules Section */}
-      {activeTab === 'rules' && (benchmark.phase1_status === 'completed' || benchmark.source === 'custom') && (
-        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          {/* Editable Benchmark Toolbar */}
-          {benchmark.is_editable && (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
-              <span className="text-xs font-medium text-amber-400 mr-2">Benchmark Studio</span>
-              <button
-                onClick={() => setShowAddRule(true)}
-                disabled={showAddRule}
-                className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50"
-              >
-                <Plus className="h-3 w-3" /> Add Rule
-              </button>
-              <button
-                onClick={handleBulkGenerateAll}
-                disabled={actionLoading || benchmark.phase2_status === 'processing'}
-                className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
-              >
-                <Zap className="h-3 w-3" /> Generate All Commands
-              </button>
-              <button
-                onClick={handleExportBenchmarkFull}
-                className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white"
-              >
-                <Download className="h-3 w-3" /> Export .auditforge.json
-              </button>
-              <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                <Upload className="h-3 w-3" /> Import Rules
-                <input ref={benchmarkImportRef} type="file" accept=".json" className="hidden" onChange={handleImportBenchmarkFile} disabled={actionLoading} />
-              </label>
-            </div>
-          )}
-
-          {/* Add Rule Form */}
-          {showAddRule && benchmark.is_editable && (
-            <RuleEditor
-              benchmarkId={benchmarkId}
-              onRuleCreated={handleRuleCreated}
-              onCancel={() => setShowAddRule(false)}
-              existingSections={rules.map(r => r.section_number)}
-            />
-          )}
-
-          <div className="rounded-xl border border-dark-border bg-dark-card">
-          <div className="border-b border-dark-border p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <h3 className="text-lg font-medium text-white">Rules</h3>
-              <div className="ml-auto flex items-center gap-2">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-muted" />
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder={`Search rules${'\u2026'}`}
-                    className="rounded-lg border border-dark-border bg-dark-elevated py-1.5 pl-9 pr-3 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:outline-none focus:ring-1 focus:ring-ey-yellow/30"
-                  />
+                  )}
+                  {benchmark.phase1_status === 'completed' && !['processing'].includes(benchmark.phase2_status) && (
+                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                      <Upload className="h-3 w-3" /> Import Commands
+                      <input ref={commandsImportRef} type="file" accept=".json" className="hidden" onChange={handleImportCommands} disabled={actionLoading} />
+                    </label>
+                  )}
                 </div>
-                <select
-                  value={severityFilter}
-                  onChange={(e) => setSeverityFilter(e.target.value)}
-                  className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-sm text-white focus:border-ey-yellow/50 focus:outline-none focus:ring-1 focus:ring-ey-yellow/30"
-                >
-                  <option value="">All severities</option>
-                  <option value="critical">Critical</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="divide-y divide-dark-border">
-            {rules.length === 0 ? (
-              <div className="p-8 text-center text-dark-secondary">
-                No rules found matching your criteria.
-              </div>
-            ) : (
-              rules.map((rule) => (
-                <div key={rule.id}>
+                {mediumRuleCount > 0 && benchmark.phase1_status === 'completed' && benchmark.phase2_status !== 'processing' && (
                   <button
-                    onClick={() => handleExpandRule(rule.id)}
-                    className="group flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-dark-elevated"
+                    onClick={handleClassifySeverities}
+                    disabled={sevLoading}
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs text-dark-secondary hover:text-ey-yellow transition-colors disabled:opacity-50"
                   >
-                    <span className="min-w-[60px] text-sm font-mono text-dark-secondary">{rule.section_number}</span>
-                    <span className="flex-1 text-sm font-medium text-white">{rule.title}</span>
-                    {severityBadge(rule.severity)}
-                    {rule.assessment_type && (
-                      <span className="rounded bg-dark-overlay px-2 py-0.5 text-xs text-dark-secondary">{rule.assessment_type}</span>
+                    <Sparkles className="h-3 w-3" />
+                    {sevLoading ? 'Classifying…' : `${mediumRuleCount} rules with default severity — Classify with AI`}
+                  </button>
+                )}
+              </div>
+
+              {/* Verification */}
+              <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-medium text-gray-300">Verification</h3>
+                  {statusBadge(verifyStatus?.status || benchmark.verification_status)}
+                </div>
+                {verifyStatus && verifyStatus.total > 0 && (
+                  <div className="mt-2 flex gap-4">
+                    <div>
+                      <span className="text-2xl font-bold text-emerald-400">{verifyStatus.passed}</span>
+                      <span className="text-sm text-dark-secondary"> passed</span>
+                    </div>
+                    <div>
+                      <span className="text-2xl font-bold text-red-400">{verifyStatus.failed}</span>
+                      <span className="text-sm text-dark-secondary"> failed</span>
+                    </div>
+                  </div>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {benchmark.phase2_status === 'completed' && !['processing'].includes(benchmark.verification_status) && (
+                    <button onClick={handleVerify} className="inline-flex items-center gap-1.5 rounded-md bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700">
+                      <img src={logoImg} alt="Verify Logo" className="h-3 w-3 object-contain invert brightness-0" />
+                      {['completed', 'completed_with_issues', 'overridden'].includes(benchmark.verification_status) ? 'Re-run' : 'Run'} Verification
+                    </button>
+                  )}
+                  {verifyStatus && verifyStatus.failed > 0 && (
+                    <button onClick={handleBulkRegenerate} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-orange-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-700 disabled:opacity-50">
+                      <RefreshCw className="h-3 w-3" /> Regenerate Flagged
+                    </button>
+                  )}
+                  {['completed', 'completed_with_issues'].includes(benchmark.verification_status) && (
+                    <button onClick={handleBulkAccept} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                      <CheckCheck className="h-3 w-3" /> Accept All
+                    </button>
+                  )}
+                  {benchmark.verification_status === 'completed_with_issues' && !benchmark.is_ready && (
+                    <button onClick={handleOverride} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50">
+                      <AlertTriangle className="h-3 w-3" /> Override
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Phase 3: Validate & Correct (optional) */}
+              {benchmark.phase2_status === 'completed' && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium text-gray-300">
+                      <Sparkles className="mr-1 inline h-3.5 w-3.5 text-amber-400" />
+                      Validate & Correct
+                    </h3>
+                    {validateStatus && validateStatus.status !== 'not_started' && statusBadge(validateStatus.status)}
+                    {(!validateStatus || validateStatus.status === 'not_started') && (
+                      <span className="inline-flex items-center rounded-full bg-dark-overlay px-2.5 py-0.5 text-xs font-medium text-dark-secondary">optional</span>
                     )}
-                    {rule.tags.map((t) => (
-                      <span key={t.id} className="rounded bg-sky-500/10 px-2 py-0.5 text-xs text-sky-400">{t.tag_id}</span>
-                    ))}
-                    {rule.source === 'nessus_import' && (
-                      <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">imported</span>
-                    )}
-                    {rule.source === 'cis_extract' && (
-                      <span className="rounded bg-ey-yellow/10 px-2 py-0.5 text-[10px] font-medium text-ey-yellow">CIS</span>
-                    )}
-                    {rule.source === 'manual' && (
-                      <span className="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400">manual</span>
-                    )}
-                    {rule.source === 'imported' && (
-                      <span className="rounded bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">imported</span>
-                    )}
-                    {benchmark.is_editable && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.id, rule.section_number); }}
-                        disabled={actionLoading}
-                        className="rounded p-1 text-dark-muted hover:bg-red-500/10 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
-                        title="Delete rule"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
+                  </div>
+                  {validateStatus && validateStatus.total > 0 && (
+                    <>
+                      <div className="mt-2 flex flex-wrap gap-3">
+                        <div>
+                          <span className="text-lg font-bold text-emerald-400">{validateStatus.validated}</span>
+                          <span className="text-xs text-dark-secondary"> ok</span>
+                        </div>
+                        <div>
+                          <span className="text-lg font-bold text-amber-400">{validateStatus.corrected}</span>
+                          <span className="text-xs text-dark-secondary"> corrected</span>
+                        </div>
+                        <div>
+                          <span className="text-lg font-bold text-red-400">{validateStatus.flagged}</span>
+                          <span className="text-xs text-dark-secondary"> flagged</span>
+                        </div>
+                      </div>
+                      {validateStatus.status === 'processing' && validateStatus.total > 0 && (
+                        <div className="mt-2 h-2 w-full rounded-full bg-dark-overlay">
+                          <div className="h-2 rounded-full bg-amber-500 transition-all" style={{ width: `${Math.round((validateStatus.processed / validateStatus.total) * 100)}%` }} />
+                        </div>
+                      )}
+                    </>
+                  )}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {benchmark.phase3_status !== 'processing' && (
+                      <button onClick={handleStartValidation} className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700">
+                        <Sparkles className="h-3 w-3" /> {benchmark.phase3_status === 'paused' ? 'Resume' : benchmark.phase3_status === 'completed' ? 'Re-run' : 'Run'} Validation
                       </button>
                     )}
-                    {expandedRule === rule.id ? <ChevronUp className="h-4 w-4 text-dark-muted" /> : <ChevronDown className="h-4 w-4 text-dark-muted" />}
-                  </button>
-                  {expandedRule === rule.id && (
-                    <div className="border-t border-dark-border bg-dark-elevated px-4 py-3 space-y-3">
-                      {/* Inline editable rule fields */}
-                      <InlineEditField
-                        label="Title"
-                        value={rule.title}
-                        onSave={v => handleSaveRuleField(rule.id, 'title', v)}
-                        editable={benchmark?.is_editable ?? false}
-                      />
-                      <InlineEditField
-                        label="Description"
-                        value={rule.description || ''}
-                        onSave={v => handleSaveRuleField(rule.id, 'description', v)}
-                        editable={benchmark?.is_editable ?? false}
-                        multiline
-                        placeholder="No description — click to add…"
-                      />
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <InlineEditField
-                          label="Severity"
-                          value={rule.severity}
-                          onSave={v => handleSaveRuleField(rule.id, 'severity', v)}
-                          editable={benchmark?.is_editable ?? false}
-                          options={[
-                            { value: 'critical', label: 'Critical' },
-                            { value: 'high', label: 'High' },
-                            { value: 'medium', label: 'Medium' },
-                            { value: 'low', label: 'Low' },
-                          ]}
-                        />
-                        <InlineEditField
-                          label="Profile Applicability"
-                          value={rule.profile_applicability || ''}
-                          onSave={v => handleSaveRuleField(rule.id, 'profile_applicability', v)}
-                          editable={benchmark?.is_editable ?? false}
-                          placeholder="e.g. Level 1"
-                        />
-                        <InlineEditField
-                          label="Assessment Type"
-                          value={rule.assessment_type || ''}
-                          onSave={v => handleSaveRuleField(rule.id, 'assessment_type', v)}
-                          editable={benchmark?.is_editable ?? false}
-                          placeholder="e.g. Automated"
-                        />
+                    {benchmark.phase3_status === 'processing' && (
+                      <button onClick={handlePauseValidation} className="inline-flex items-center gap-1 rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700">
+                        <Pause className="h-3 w-3" /> Pause
+                      </button>
+                    )}
+                    {validateStatus && (validateStatus.corrected > 0 || validateStatus.flagged > 0) && (
+                      <button onClick={() => { scrollToSection('validation'); if (validationResults.length === 0) fetchValidationResults(); }} className="inline-flex items-center gap-1 rounded-md border border-amber-500/30 bg-dark-elevated px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-dark-overlay">
+                        <Search className="h-3 w-3" /> View Results
+                      </button>
+                    )}
+                    {validateStatus && validateStatus.corrected > 0 && (
+                      <button onClick={handleBulkApplyCorrections} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+                        <Check className="h-3 w-3" /> Apply All (High)
+                      </button>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-dark-muted">LLM reviews generated commands for accuracy. Completely optional.</p>
+                </div>
+              )}
+            </div>
+          </motion.section>
+
+          {/* Phase 3: Validation Results */}
+          {benchmark.phase2_status === 'completed' && (
+            <motion.section id="validation" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }} transition={{ duration: 0.5 }} className="scroll-mt-32">
+              <h3 className="text-2xl font-bold text-white mb-6 border-b border-dark-border pb-4">Validation Results</h3>
+              <div className="rounded-xl border border-amber-500/30 bg-dark-card">
+                <div className="border-b border-amber-500/30 bg-amber-500/5 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-medium text-white">
+                      <Sparkles className="mr-2 inline h-4 w-4 text-amber-400" />
+                      Validation Results ({validationResults.length})
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={validationFilter}
+                        onChange={(e) => { setValidationFilter(e.target.value); }}
+                        className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-sm text-white focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+                      >
+                        <option value="">All statuses</option>
+                        <option value="corrected">Corrected</option>
+                        <option value="flagged">Flagged</option>
+                        <option value="validated">Validated</option>
+                      </select>
+                      <button onClick={fetchValidationResults} className="rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-overlay hover:text-white">
+                        <RefreshCw className="h-3 w-3" />
+                      </button>
+                      <button onClick={handleBulkDismissCorrections} disabled={actionLoading} className="inline-flex items-center gap-1 rounded-md bg-dark-overlay px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-border disabled:opacity-50">
+                        <X className="h-3 w-3" /> Dismiss All
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="divide-y divide-dark-border">
+                  {validationResults.map((item) => (
+                    <div key={item.rule_command_id} className="px-4 py-3 space-y-2">
+                      <div className="flex items-center gap-3">
+                        <span className="min-w-[60px] text-sm font-mono text-dark-secondary">{item.section_number}</span>
+                        <span className="flex-1 text-sm font-medium text-white">{item.title}</span>
+                        {statusBadge(item.validation_status || 'pending')}
+                        {item.validation_confidence && (
+                          <span className={`rounded px-2 py-0.5 text-xs font-medium ${item.validation_confidence === 'high' ? 'bg-emerald-500/10 text-emerald-400' :
+                            item.validation_confidence === 'medium' ? 'bg-amber-500/10 text-amber-400' :
+                              'bg-red-500/10 text-red-400'
+                            }`}>
+                            {item.validation_confidence}
+                          </span>
+                        )}
                       </div>
-                      <InlineEditField
-                        label="Rationale"
-                        value={rule.rationale || ''}
-                        onSave={v => handleSaveRuleField(rule.id, 'rationale', v)}
-                        editable={benchmark?.is_editable ?? false}
-                        multiline
-                        placeholder="No rationale — click to add…"
-                      />
-                      <InlineEditField
-                        label="Remediation"
-                        value={rule.remediation_description_raw || ''}
-                        onSave={v => handleSaveRuleField(rule.id, 'remediation_description_raw', v)}
-                        editable={benchmark?.is_editable ?? false}
-                        multiline
-                        placeholder="No remediation text — click to add…"
-                      />
-                      {/* Full form edit button */}
-                      {benchmark?.is_editable && (
-                        editingRule?.id === rule.id ? (
-                          <RuleEditor
-                            benchmarkId={benchmarkId}
-                            editRule={rule}
-                            onRuleCreated={() => {}}
-                            onRuleUpdated={(updated) => {
-                              setRules(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
-                              setEditingRule(null);
-                              setSuccessMsg('Rule updated successfully');
-                            }}
-                            onCancel={() => setEditingRule(null)}
-                          />
-                        ) : (
-                          <button
-                            onClick={() => setEditingRule(rule)}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-ey-yellow/30 bg-ey-yellow/10 px-3 py-1.5 text-xs font-medium text-ey-yellow hover:bg-ey-yellow/20 transition-colors"
-                          >
-                            <Pencil className="h-3 w-3" /> Edit Full Rule
-                          </button>
-                        )
+                      {item.notes && (
+                        <p className="text-xs text-dark-secondary italic">{item.notes}</p>
                       )}
-                      {ruleCommand && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-dark-secondary">Command Status:</span>
-                            {statusBadge(ruleCommand.status)}
-                            {ruleCommand.is_protected && <span className="rounded bg-purple-500/10 px-2 py-0.5 text-xs text-purple-400">Protected</span>}
-                            {ruleCommand.source && (
-                              <span className="rounded bg-dark-overlay px-2 py-0.5 text-xs text-dark-secondary">{ruleCommand.source}</span>
-                            )}
-                            {ruleCommand.regeneration_count > 0 && (
-                              <span className="rounded bg-sky-500/10 px-2 py-0.5 text-xs text-sky-400">
-                                Regen #{ruleCommand.regeneration_count}
-                              </span>
-                            )}
-                          </div>
-                          {ruleCommand.audit_command && (
-                            <div>
-                              <span className="text-xs font-medium text-dark-secondary">Audit Command:</span>
-                              <pre className="mt-1 rounded bg-gray-900 p-3 text-xs text-green-400 overflow-x-auto">{ruleCommand.audit_command}</pre>
-                            </div>
-                          )}
-                          {ruleCommand.expected_output_description && (
-                            <div>
-                              <span className="text-xs font-medium text-dark-secondary">Expected Output:</span>
-                              <p className="mt-1 text-sm text-gray-300">{ruleCommand.expected_output_description}</p>
-                            </div>
-                          )}
-                          {ruleCommand.expected_output_regex && (
-                            <div>
-                              <span className="text-xs font-medium text-dark-secondary">Comparison Expression:</span>
-                              <code className="mt-1 block rounded bg-sky-500/10 border border-sky-500/30 p-2 text-xs text-sky-400 font-semibold">{ruleCommand.expected_output_regex}</code>
-                            </div>
-                          )}
-                          {ruleCommand.flag_reason && (
-                            <div className="rounded bg-red-500/10 p-2">
-                              <span className="text-xs font-medium text-red-400">Flag Reason:</span>
-                              <p className="mt-1 text-sm text-red-400">{ruleCommand.flag_reason}</p>
-                            </div>
-                          )}
-
-                          {/* Command Action Buttons */}
-                          <div className="flex flex-wrap gap-2 pt-2 border-t border-dark-border">
-                            {!ruleCommand.is_protected && ruleCommand.status !== 'flagged' && (
-                              <button
-                                onClick={() => setShowFlagForm(!showFlagForm)}
-                                className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20"
-                              >
-                                <Flag className="h-3 w-3" /> Flag
-                              </button>
-                            )}
-                            {ruleCommand.status === 'flagged' && !ruleCommand.is_protected && (
-                              <button
-                                onClick={() => handleRegenerateCommand(rule.id)}
-                                disabled={actionLoading}
-                                className="inline-flex items-center gap-1 rounded-md bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-400 hover:bg-orange-500/20 disabled:opacity-50"
-                              >
-                                <RefreshCw className="h-3 w-3" /> Regenerate
-                              </button>
-                            )}
-                            {!ruleCommand.is_protected && (
-                              <button
-                                onClick={() => handleVerifySingle(rule.id)}
-                                disabled={actionLoading}
-                                className="inline-flex items-center gap-1 rounded-md bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-500/20 disabled:opacity-50"
-                              >
-                                <ShieldCheck className="h-3 w-3" /> Verify
-                              </button>
-                            )}
-                            {!ruleCommand.is_protected && ['verified', 'generated'].includes(ruleCommand.status) && (
-                              <button
-                                onClick={() => handleProtectCommand(rule.id)}
-                                disabled={actionLoading}
-                                className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50"
-                              >
-                                <Lock className="h-3 w-3" /> Protect
-                              </button>
-                            )}
-                            {ruleCommand.is_protected && (
-                              <button
-                                onClick={() => setShowUnlockForm(!showUnlockForm)}
-                                className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-amber-500/20"
-                              >
-                                <Unlock className="h-3 w-3" /> Unlock
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleShowHistory(rule.id)}
-                              className="inline-flex items-center gap-1 rounded-md bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay"
-                            >
-                              <History className="h-3 w-3" /> {showHistory ? 'Hide' : 'Show'} History
-                            </button>
-                            <button
-                              onClick={() => handleShowReports(rule.id)}
-                              className="inline-flex items-center gap-1 rounded-md bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay"
-                            >
-                              <ShieldOff className="h-3 w-3" /> {showReports ? 'Hide' : 'Show'} Reports
-                            </button>
-                            {ruleCommand.audit_command && (
-                              <button
-                                onClick={() => setShowTestPanel(showTestPanel === rule.id ? null : rule.id)}
-                                className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-400 hover:bg-sky-500/20"
-                              >
-                                <Activity className="h-3 w-3" /> {showTestPanel === rule.id ? 'Hide' : 'Live'} Test
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Flag Form */}
-                          {showFlagForm && (
-                            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 space-y-2">
-                              <label className="block text-xs font-medium text-red-400">Flag Reason:</label>
-                              <textarea
-                                value={flagReason}
-                                onChange={(e) => setFlagReason(e.target.value)}
-                                placeholder={`Describe why this command is broken${'\u2026'}`}
-                                className="w-full rounded border border-red-500/30 bg-dark-elevated p-2 text-sm text-white placeholder-dark-muted focus:border-red-500/50 focus:outline-none focus:ring-1 focus:ring-red-500/30"
-                                rows={2}
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleFlagCommand(rule.id)}
-                                  disabled={actionLoading || !flagReason.trim()}
-                                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
-                                >
-                                  Submit Flag
-                                </button>
-                                <button
-                                  onClick={() => { setShowFlagForm(false); setFlagReason(''); }}
-                                  className="rounded-md bg-dark-overlay px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-border"
-                                >
-                                  Cancel
-                                </button>
+                      {item.corrections.length > 0 && (
+                        <div className="space-y-1.5">
+                          {item.corrections.map((corr, idx) => (
+                            <div key={idx} className="rounded border border-amber-500/30 bg-amber-500/10 p-2">
+                              <div className="text-xs font-medium text-amber-400 mb-1">{corr.field}</div>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="text-dark-secondary">Before: </span>
+                                  <code className="rounded bg-red-500/10 px-1 py-0.5 text-red-400">{corr.old_value || '(empty)'}</code>
+                                </div>
+                                <div>
+                                  <span className="text-dark-secondary">After: </span>
+                                  <code className="rounded bg-emerald-500/10 px-1 py-0.5 text-emerald-400">{corr.new_value}</code>
+                                </div>
                               </div>
+                              {corr.reason && <p className="mt-1 text-xs text-dark-secondary">{corr.reason}</p>}
                             </div>
-                          )}
-
-                          {/* Unlock Form */}
-                          {showUnlockForm && (
-                            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
-                              <label className="block text-xs font-medium text-amber-400">Unlock Reason:</label>
-                              <textarea
-                                value={unlockReason}
-                                onChange={(e) => setUnlockReason(e.target.value)}
-                                placeholder={`Explain why you are unlocking this protected command${'\u2026'}`}
-                                className="w-full rounded border border-amber-500/30 bg-dark-elevated p-2 text-sm text-white placeholder-dark-muted focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
-                                rows={2}
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleUnlockCommand(rule.id)}
-                                  disabled={actionLoading || !unlockReason.trim()}
-                                  className="rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
-                                >
-                                  Confirm Unlock
-                                </button>
-                                <button
-                                  onClick={() => { setShowUnlockForm(false); setUnlockReason(''); }}
-                                  className="rounded-md bg-dark-overlay px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-border"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Command History */}
-                          {showHistory && (
-                            <div className="rounded-xl border border-dark-border bg-dark-card p-3 space-y-2">
-                              <h4 className="text-xs font-medium text-gray-300">Command History ({commandHistory.length} entries)</h4>
-                              {commandHistory.length === 0 ? (
-                                <p className="text-xs text-dark-muted">No previous command versions.</p>
-                              ) : (
-                                commandHistory.map((entry, idx) => (
-                                  <div key={idx} className="rounded border border-dark-border bg-dark-elevated p-2 space-y-1">
-                                    <div className="flex items-center gap-2 text-xs text-dark-secondary">
-                                      <span>Attempt #{idx + 1}</span>
-                                      {entry.source && <span className="rounded bg-dark-overlay px-1.5 py-0.5">{entry.source}</span>}
-                                      {entry.timestamp && <span>{new Date(entry.timestamp).toLocaleString()}</span>}
-                                    </div>
-                                    {entry.audit_command && (
-                                      <pre className="rounded bg-gray-900 p-2 text-xs text-green-400 overflow-x-auto">{entry.audit_command}</pre>
-                                    )}
-                                    {entry.flag_reason && (
-                                      <p className="text-xs text-red-400">Flag: {entry.flag_reason}</p>
-                                    )}
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          )}
-
-                          {/* Verification Reports */}
-                          {showReports && (
-                            <div className="rounded-xl border border-dark-border bg-dark-card p-3 space-y-2">
-                              <h4 className="text-xs font-medium text-gray-300">Verification Reports ({verificationReports.length})</h4>
-                              {verificationReports.length === 0 ? (
-                                <p className="text-xs text-dark-muted">No verification reports yet. Run verification first.</p>
-                              ) : (
-                                verificationReports.map((report) => (
-                                  <div key={report.id} className="flex items-center gap-2 rounded border border-dark-border bg-dark-elevated p-2">
-                                    <span className="min-w-[90px] text-xs font-mono text-dark-secondary">{report.level}</span>
-                                    {verificationResultBadge(report.result)}
-                                    <span className="flex-1 text-xs text-gray-300">{report.message}</span>
-                                    {report.auto_fixable && (
-                                      <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-xs text-sky-400">auto-fixable</span>
-                                    )}
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          )}
-
-                          {/* Live Test Panel */}
-                          {showTestPanel === rule.id && (
-                            <RuleTestPanel
-                              benchmarkId={benchmarkId}
-                              ruleId={rule.id}
-                              sectionNumber={rule.section_number}
-                              hasCommand={!!ruleCommand?.audit_command}
-                              onValidated={() => { fetchData(); fetchRules(); }}
-                            />
-                          )}
+                          ))}
                         </div>
                       )}
-                      {!ruleCommand && benchmark.phase2_status !== 'completed' && (
-                        <p className="text-sm text-dark-muted italic">No audit command generated yet. Run Phase 2 enrichment to generate commands.</p>
+                      {item.validation_status === 'corrected' && (
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => handleApplyCorrection(item.rule_command_id)}
+                            disabled={actionLoading}
+                            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            <Check className="h-3 w-3" /> Apply
+                          </button>
+                          <button
+                            onClick={() => handleDismissCorrection(item.rule_command_id)}
+                            disabled={actionLoading}
+                            className="inline-flex items-center gap-1 rounded-md bg-dark-overlay px-3 py-1 text-xs font-medium text-gray-300 hover:bg-dark-border disabled:opacity-50"
+                          >
+                            <X className="h-3 w-3" /> Dismiss
+                          </button>
+                        </div>
+                      )}
+                      {item.validation_status === 'flagged' && (
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            onClick={() => handleDismissCorrection(item.rule_command_id)}
+                            disabled={actionLoading}
+                            className="inline-flex items-center gap-1 rounded-md bg-dark-overlay px-3 py-1 text-xs font-medium text-gray-300 hover:bg-dark-border disabled:opacity-50"
+                          >
+                            <X className="h-3 w-3" /> Dismiss
+                          </button>
+                        </div>
                       )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-        </div>
-      )
-      }
-
-      {/* Testing & Readiness Tab */}
-      {activeTab === 'testing' && (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-          {/* Migration Readiness Dashboard */}
-          <div className="rounded-xl border border-sky-500/30 bg-dark-card overflow-hidden">
-            <div className="border-b border-sky-500/20 bg-sky-500/5 p-4">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5 text-sky-400" />
-                <h3 className="text-lg font-medium text-white">Migration Readiness</h3>
-                <button
-                  onClick={() => { setReadinessLoading(true); api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => {}).finally(() => setReadinessLoading(false)); }}
-                  disabled={readinessLoading}
-                  className="ml-auto rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-overlay hover:text-white disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-3 w-3${readinessLoading ? ' animate-spin' : ''}`} />
-                </button>
               </div>
-            </div>
-            {migrationReadiness ? (
-              <div className="p-5 space-y-4">
-                {/* Readiness bar */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-dark-secondary">Overall Readiness</span>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-2xl font-bold ${
-                        migrationReadiness.readiness_percentage >= 95 ? 'text-emerald-400' :
-                        migrationReadiness.readiness_percentage >= 50 ? 'text-amber-400' : 'text-red-400'
-                      }`}>
-                        {migrationReadiness.readiness_percentage.toFixed(1)}%
-                      </span>
-                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                        migrationReadiness.status === 'ready' ? 'bg-emerald-500/10 text-emerald-400' :
-                        migrationReadiness.status === 'partial' ? 'bg-amber-500/10 text-amber-400' :
-                        'bg-red-500/10 text-red-400'
-                      }`}>
-                        {migrationReadiness.status}
-                      </span>
+            </motion.section>
+          )
+          }
+
+          {/* Rules Section */}
+          {
+            (benchmark.phase1_status === 'completed' || benchmark.source === 'custom') && (
+              <motion.section id="rules" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }} transition={{ duration: 0.5 }} className="scroll-mt-32 space-y-4">
+                <h3 className="text-2xl font-bold text-white mb-6 border-b border-dark-border pb-4">Rules & Commands</h3>
+                {/* Editable Benchmark Toolbar */}
+                {benchmark.is_editable && (
+                  <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                    <span className="text-xs font-medium text-amber-400 mr-2">Benchmark Studio</span>
+                    <button
+                      onClick={() => setShowAddRule(true)}
+                      disabled={showAddRule}
+                      className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50"
+                    >
+                      <Plus className="h-3 w-3" /> Add Rule
+                    </button>
+                    <button
+                      onClick={handleBulkGenerateAll}
+                      disabled={actionLoading || benchmark.phase2_status === 'processing'}
+                      className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+                    >
+                      <Zap className="h-3 w-3" /> Generate All Commands
+                    </button>
+                    <button
+                      onClick={handleExportBenchmarkFull}
+                      className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white"
+                    >
+                      <Download className="h-3 w-3" /> Export .auditforge.json
+                    </button>
+                    <label className="inline-flex cursor-pointer items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                      <Upload className="h-3 w-3" /> Import Rules
+                      <input ref={benchmarkImportRef} type="file" accept=".json" className="hidden" onChange={handleImportBenchmarkFile} disabled={actionLoading} />
+                    </label>
+                  </div>
+                )}
+
+                {/* Add Rule Form */}
+                {showAddRule && benchmark.is_editable && (
+                  <RuleEditor
+                    benchmarkId={benchmarkId}
+                    onRuleCreated={handleRuleCreated}
+                    onCancel={() => setShowAddRule(false)}
+                    existingSections={rules.map(r => r.section_number)}
+                  />
+                )}
+
+                <div className="rounded-xl border border-dark-border bg-dark-card">
+                  <div className="border-b border-dark-border p-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <h3 className="text-lg font-medium text-white">Rules</h3>
+                      <div className="ml-auto flex items-center gap-2">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dark-muted" />
+                          <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder={`Search rules${'\u2026'}`}
+                            className="rounded-lg border border-dark-border bg-dark-elevated py-1.5 pl-9 pr-3 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:outline-none focus:ring-1 focus:ring-ey-yellow/30"
+                          />
+                        </div>
+                        <select
+                          value={severityFilter}
+                          onChange={(e) => setSeverityFilter(e.target.value)}
+                          className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-sm text-white focus:border-ey-yellow/50 focus:outline-none focus:ring-1 focus:ring-ey-yellow/30"
+                        >
+                          <option value="">All severities</option>
+                          <option value="critical">Critical</option>
+                          <option value="high">High</option>
+                          <option value="medium">Medium</option>
+                          <option value="low">Low</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
-                  <div className="h-3 w-full rounded-full bg-dark-overlay overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ${
-                        migrationReadiness.readiness_percentage >= 95 ? 'bg-emerald-500' :
-                        migrationReadiness.readiness_percentage >= 50 ? 'bg-amber-500' : 'bg-red-500'
-                      }`}
-                      style={{ width: `${Math.min(100, migrationReadiness.readiness_percentage)}%` }}
-                    />
+
+                  <div className="divide-y divide-dark-border">
+                    {rules.length === 0 ? (
+                      <div className="p-8 text-center text-dark-secondary">
+                        No rules found matching your criteria.
+                      </div>
+                    ) : (
+                      rules.map((rule) => (
+                        <div key={rule.id}>
+                          <button
+                            onClick={() => handleExpandRule(rule.id)}
+                            className="group flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-dark-elevated"
+                          >
+                            <span className="min-w-[60px] text-sm font-mono text-dark-secondary">{rule.section_number}</span>
+                            <span className="flex-1 text-sm font-medium text-white">{rule.title}</span>
+                            {severityBadge(rule.severity)}
+                            {rule.assessment_type && (
+                              <span className="rounded bg-dark-overlay px-2 py-0.5 text-xs text-dark-secondary">{rule.assessment_type}</span>
+                            )}
+                            {rule.tags.map((t) => (
+                              <span key={t.id} className="rounded bg-sky-500/10 px-2 py-0.5 text-xs text-sky-400">{t.tag_id}</span>
+                            ))}
+                            {rule.source === 'nessus_import' && (
+                              <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">imported</span>
+                            )}
+                            {rule.source === 'cis_extract' && (
+                              <span className="rounded bg-ey-yellow/10 px-2 py-0.5 text-[10px] font-medium text-ey-yellow">CIS</span>
+                            )}
+                            {rule.source === 'manual' && (
+                              <span className="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400">manual</span>
+                            )}
+                            {rule.source === 'imported' && (
+                              <span className="rounded bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">imported</span>
+                            )}
+                            {benchmark.is_editable && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.id, rule.section_number); }}
+                                disabled={actionLoading}
+                                className="rounded p-1 text-dark-muted hover:bg-red-500/10 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                                title="Delete rule"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {expandedRule === rule.id ? <ChevronUp className="h-4 w-4 text-dark-muted" /> : <ChevronDown className="h-4 w-4 text-dark-muted" />}
+                          </button>
+                          {expandedRule === rule.id && (
+                            <div className="border-t border-dark-border bg-dark-elevated px-4 py-3 space-y-3">
+                              {/* Inline editable rule fields */}
+                              <InlineEditField
+                                label="Title"
+                                value={rule.title}
+                                onSave={v => handleSaveRuleField(rule.id, 'title', v)}
+                                editable={benchmark?.is_editable ?? false}
+                              />
+                              <InlineEditField
+                                label="Description"
+                                value={rule.description || ''}
+                                onSave={v => handleSaveRuleField(rule.id, 'description', v)}
+                                editable={benchmark?.is_editable ?? false}
+                                multiline
+                                placeholder="No description — click to add…"
+                              />
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <InlineEditField
+                                  label="Severity"
+                                  value={rule.severity}
+                                  onSave={v => handleSaveRuleField(rule.id, 'severity', v)}
+                                  editable={benchmark?.is_editable ?? false}
+                                  options={[
+                                    { value: 'critical', label: 'Critical' },
+                                    { value: 'high', label: 'High' },
+                                    { value: 'medium', label: 'Medium' },
+                                    { value: 'low', label: 'Low' },
+                                  ]}
+                                />
+                                <InlineEditField
+                                  label="Profile Applicability"
+                                  value={rule.profile_applicability || ''}
+                                  onSave={v => handleSaveRuleField(rule.id, 'profile_applicability', v)}
+                                  editable={benchmark?.is_editable ?? false}
+                                  placeholder="e.g. Level 1"
+                                />
+                                <InlineEditField
+                                  label="Assessment Type"
+                                  value={rule.assessment_type || ''}
+                                  onSave={v => handleSaveRuleField(rule.id, 'assessment_type', v)}
+                                  editable={benchmark?.is_editable ?? false}
+                                  placeholder="e.g. Automated"
+                                />
+                              </div>
+                              <InlineEditField
+                                label="Rationale"
+                                value={rule.rationale || ''}
+                                onSave={v => handleSaveRuleField(rule.id, 'rationale', v)}
+                                editable={benchmark?.is_editable ?? false}
+                                multiline
+                                placeholder="No rationale — click to add…"
+                              />
+                              <InlineEditField
+                                label="Remediation"
+                                value={rule.remediation_description_raw || ''}
+                                onSave={v => handleSaveRuleField(rule.id, 'remediation_description_raw', v)}
+                                editable={benchmark?.is_editable ?? false}
+                                multiline
+                                placeholder="No remediation text — click to add…"
+                              />
+                              {/* Full form edit button */}
+                              {benchmark?.is_editable && (
+                                editingRule?.id === rule.id ? (
+                                  <RuleEditor
+                                    benchmarkId={benchmarkId}
+                                    editRule={rule}
+                                    onRuleCreated={() => { }}
+                                    onRuleUpdated={(updated) => {
+                                      setRules(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
+                                      setEditingRule(null);
+                                      setSuccessMsg('Rule updated successfully');
+                                    }}
+                                    onCancel={() => setEditingRule(null)}
+                                  />
+                                ) : (
+                                  <button
+                                    onClick={() => setEditingRule(rule)}
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-ey-yellow/30 bg-ey-yellow/10 px-3 py-1.5 text-xs font-medium text-ey-yellow hover:bg-ey-yellow/20 transition-colors"
+                                  >
+                                    <Pencil className="h-3 w-3" /> Edit Full Rule
+                                  </button>
+                                )
+                              )}
+                              {ruleCommand && (
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium text-dark-secondary">Command Status:</span>
+                                    {statusBadge(ruleCommand.status)}
+                                    {ruleCommand.is_protected && <span className="rounded bg-purple-500/10 px-2 py-0.5 text-xs text-purple-400">Protected</span>}
+                                    {ruleCommand.source && (
+                                      <span className="rounded bg-dark-overlay px-2 py-0.5 text-xs text-dark-secondary">{ruleCommand.source}</span>
+                                    )}
+                                    {ruleCommand.regeneration_count > 0 && (
+                                      <span className="rounded bg-sky-500/10 px-2 py-0.5 text-xs text-sky-400">
+                                        Regen #{ruleCommand.regeneration_count}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {ruleCommand.audit_command && (
+                                    <div>
+                                      <span className="text-xs font-medium text-dark-secondary">Audit Command:</span>
+                                      <pre className="mt-1 rounded bg-gray-900 p-3 text-xs text-green-400 overflow-x-auto">{ruleCommand.audit_command}</pre>
+                                    </div>
+                                  )}
+                                  {ruleCommand.expected_output_description && (
+                                    <div>
+                                      <span className="text-xs font-medium text-dark-secondary">Expected Output:</span>
+                                      <p className="mt-1 text-sm text-gray-300">{ruleCommand.expected_output_description}</p>
+                                    </div>
+                                  )}
+                                  {ruleCommand.expected_output_regex && (
+                                    <div>
+                                      <span className="text-xs font-medium text-dark-secondary">Comparison Expression:</span>
+                                      <code className="mt-1 block rounded bg-sky-500/10 border border-sky-500/30 p-2 text-xs text-sky-400 font-semibold">{ruleCommand.expected_output_regex}</code>
+                                    </div>
+                                  )}
+                                  {ruleCommand.flag_reason && (
+                                    <div className="rounded bg-red-500/10 p-2">
+                                      <span className="text-xs font-medium text-red-400">Flag Reason:</span>
+                                      <p className="mt-1 text-sm text-red-400">{ruleCommand.flag_reason}</p>
+                                    </div>
+                                  )}
+
+                                  {/* Command Action Buttons */}
+                                  <div className="flex flex-wrap gap-2 pt-2 border-t border-dark-border">
+                                    {!ruleCommand.is_protected && ruleCommand.status !== 'flagged' && (
+                                      <button
+                                        onClick={() => setShowFlagForm(!showFlagForm)}
+                                        className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20"
+                                      >
+                                        <Flag className="h-3 w-3" /> Flag
+                                      </button>
+                                    )}
+                                    {ruleCommand.status === 'flagged' && !ruleCommand.is_protected && (
+                                      <button
+                                        onClick={() => handleRegenerateCommand(rule.id)}
+                                        disabled={actionLoading}
+                                        className="inline-flex items-center gap-1 rounded-md bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-400 hover:bg-orange-500/20 disabled:opacity-50"
+                                      >
+                                        <RefreshCw className="h-3 w-3" /> Regenerate
+                                      </button>
+                                    )}
+                                    {!ruleCommand.is_protected && (
+                                      <button
+                                        onClick={() => handleVerifySingle(rule.id)}
+                                        disabled={actionLoading}
+                                        className="inline-flex items-center gap-1 rounded-md bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-500/20 disabled:opacity-50"
+                                      >
+                                        <ShieldCheck className="h-3 w-3" /> Verify
+                                      </button>
+                                    )}
+                                    {!ruleCommand.is_protected && ['verified', 'generated'].includes(ruleCommand.status) && (
+                                      <button
+                                        onClick={() => handleProtectCommand(rule.id)}
+                                        disabled={actionLoading}
+                                        className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50"
+                                      >
+                                        <Lock className="h-3 w-3" /> Protect
+                                      </button>
+                                    )}
+                                    {ruleCommand.is_protected && (
+                                      <button
+                                        onClick={() => setShowUnlockForm(!showUnlockForm)}
+                                        className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-400 hover:bg-amber-500/20"
+                                      >
+                                        <Unlock className="h-3 w-3" /> Unlock
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleShowHistory(rule.id)}
+                                      className="inline-flex items-center gap-1 rounded-md bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay"
+                                    >
+                                      <History className="h-3 w-3" /> {showHistory ? 'Hide' : 'Show'} History
+                                    </button>
+                                    <button
+                                      onClick={() => handleShowReports(rule.id)}
+                                      className="inline-flex items-center gap-1 rounded-md bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay"
+                                    >
+                                      <ShieldOff className="h-3 w-3" /> {showReports ? 'Hide' : 'Show'} Reports
+                                    </button>
+                                    {ruleCommand.audit_command && (
+                                      <button
+                                        onClick={() => setShowTestPanel(showTestPanel === rule.id ? null : rule.id)}
+                                        className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-400 hover:bg-sky-500/20"
+                                      >
+                                        <Activity className="h-3 w-3" /> {showTestPanel === rule.id ? 'Hide' : 'Live'} Test
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {/* Flag Form */}
+                                  {showFlagForm && (
+                                    <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 space-y-2">
+                                      <label className="block text-xs font-medium text-red-400">Flag Reason:</label>
+                                      <textarea
+                                        value={flagReason}
+                                        onChange={(e) => setFlagReason(e.target.value)}
+                                        placeholder={`Describe why this command is broken${'\u2026'}`}
+                                        className="w-full rounded border border-red-500/30 bg-dark-elevated p-2 text-sm text-white placeholder-dark-muted focus:border-red-500/50 focus:outline-none focus:ring-1 focus:ring-red-500/30"
+                                        rows={2}
+                                      />
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => handleFlagCommand(rule.id)}
+                                          disabled={actionLoading || !flagReason.trim()}
+                                          className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                                        >
+                                          Submit Flag
+                                        </button>
+                                        <button
+                                          onClick={() => { setShowFlagForm(false); setFlagReason(''); }}
+                                          className="rounded-md bg-dark-overlay px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-border"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Unlock Form */}
+                                  {showUnlockForm && (
+                                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                                      <label className="block text-xs font-medium text-amber-400">Unlock Reason:</label>
+                                      <textarea
+                                        value={unlockReason}
+                                        onChange={(e) => setUnlockReason(e.target.value)}
+                                        placeholder={`Explain why you are unlocking this protected command${'\u2026'}`}
+                                        className="w-full rounded border border-amber-500/30 bg-dark-elevated p-2 text-sm text-white placeholder-dark-muted focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+                                        rows={2}
+                                      />
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={() => handleUnlockCommand(rule.id)}
+                                          disabled={actionLoading || !unlockReason.trim()}
+                                          className="rounded-md bg-yellow-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-yellow-700 disabled:opacity-50"
+                                        >
+                                          Confirm Unlock
+                                        </button>
+                                        <button
+                                          onClick={() => { setShowUnlockForm(false); setUnlockReason(''); }}
+                                          className="rounded-md bg-dark-overlay px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-border"
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Command History */}
+                                  {showHistory && (
+                                    <div className="rounded-xl border border-dark-border bg-dark-card p-3 space-y-2">
+                                      <h4 className="text-xs font-medium text-gray-300">Command History ({commandHistory.length} entries)</h4>
+                                      {commandHistory.length === 0 ? (
+                                        <p className="text-xs text-dark-muted">No previous command versions.</p>
+                                      ) : (
+                                        commandHistory.map((entry, idx) => (
+                                          <div key={idx} className="rounded border border-dark-border bg-dark-elevated p-2 space-y-1">
+                                            <div className="flex items-center gap-2 text-xs text-dark-secondary">
+                                              <span>Attempt #{idx + 1}</span>
+                                              {entry.source && <span className="rounded bg-dark-overlay px-1.5 py-0.5">{entry.source}</span>}
+                                              {entry.timestamp && <span>{new Date(entry.timestamp).toLocaleString()}</span>}
+                                            </div>
+                                            {entry.audit_command && (
+                                              <pre className="rounded bg-gray-900 p-2 text-xs text-green-400 overflow-x-auto">{entry.audit_command}</pre>
+                                            )}
+                                            {entry.flag_reason && (
+                                              <p className="text-xs text-red-400">Flag: {entry.flag_reason}</p>
+                                            )}
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Verification Reports */}
+                                  {showReports && (
+                                    <div className="rounded-xl border border-dark-border bg-dark-card p-3 space-y-2">
+                                      <h4 className="text-xs font-medium text-gray-300">Verification Reports ({verificationReports.length})</h4>
+                                      {verificationReports.length === 0 ? (
+                                        <p className="text-xs text-dark-muted">No verification reports yet. Run verification first.</p>
+                                      ) : (
+                                        verificationReports.map((report) => (
+                                          <div key={report.id} className="flex items-center gap-2 rounded border border-dark-border bg-dark-elevated p-2">
+                                            <span className="min-w-[90px] text-xs font-mono text-dark-secondary">{report.level}</span>
+                                            {verificationResultBadge(report.result)}
+                                            <span className="flex-1 text-xs text-gray-300">{report.message}</span>
+                                            {report.auto_fixable && (
+                                              <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-xs text-sky-400">auto-fixable</span>
+                                            )}
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Live Test Panel */}
+                                  {showTestPanel === rule.id && (
+                                    <RuleTestPanel
+                                      benchmarkId={benchmarkId}
+                                      ruleId={rule.id}
+                                      sectionNumber={rule.section_number}
+                                      hasCommand={!!ruleCommand?.audit_command}
+                                      onValidated={() => { fetchData(); fetchRules(); }}
+                                    />
+                                  )}
+                                </div>
+                              )}
+                              {!ruleCommand && benchmark.phase2_status !== 'completed' && (
+                                <p className="text-sm text-dark-muted italic">No audit command generated yet. Run Phase 2 enrichment to generate commands.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
+              </motion.section>
+            )
+          }
 
-                {/* Stats grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
-                    <div className="text-2xl font-bold text-white">{migrationReadiness.total_rules}</div>
-                    <div className="text-xs text-dark-secondary mt-1">Total Rules</div>
-                  </div>
-                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
-                    <div className="text-2xl font-bold text-sky-400">{migrationReadiness.rules_with_commands}</div>
-                    <div className="text-xs text-dark-secondary mt-1">With Commands</div>
-                  </div>
-                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
-                    <div className="text-2xl font-bold text-emerald-400">{migrationReadiness.rules_validated}</div>
-                    <div className="text-xs text-dark-secondary mt-1">Validated</div>
-                  </div>
-                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
-                    <div className="text-2xl font-bold text-purple-400">{migrationReadiness.rules_generated}</div>
-                    <div className="text-xs text-dark-secondary mt-1">AI Generated</div>
-                  </div>
-                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
-                    <div className="text-2xl font-bold text-dark-muted">{migrationReadiness.rules_no_command}</div>
-                    <div className="text-xs text-dark-secondary mt-1">No Command</div>
-                  </div>
-                  <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
-                    <div className="text-2xl font-bold text-red-400">{migrationReadiness.rules_flagged}</div>
-                    <div className="text-xs text-dark-secondary mt-1">Flagged</div>
-                  </div>
+          {/* Testing & Readiness Section */}
+          <motion.section id="testing" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }} transition={{ duration: 0.5 }} className="scroll-mt-32 space-y-6">
+            <h3 className="text-2xl font-bold text-white mb-6 border-b border-dark-border pb-4">Testing & Readiness</h3>
+            {/* Migration Readiness Dashboard */}
+            <div className="rounded-xl border border-sky-500/30 bg-dark-card overflow-hidden">
+              <div className="border-b border-sky-500/20 bg-sky-500/5 p-4">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-sky-400" />
+                  <h3 className="text-lg font-medium text-white">Migration Readiness</h3>
+                  <button
+                    onClick={() => { setReadinessLoading(true); api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => { }).finally(() => setReadinessLoading(false)); }}
+                    disabled={readinessLoading}
+                    className="ml-auto rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-overlay hover:text-white disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3 w-3${readinessLoading ? ' animate-spin' : ''}`} />
+                  </button>
                 </div>
-
-                <p className="text-xs text-dark-muted">
-                  {migrationReadiness.status === 'ready'
-                    ? 'This benchmark is fully ready for production scanning. All rules have validated audit commands.'
-                    : migrationReadiness.status === 'partial'
-                    ? 'Some rules still need audit commands or validation. Run enrichment and test commands against a live target to improve readiness.'
-                    : 'Most rules lack audit commands. Run Phase 2 enrichment first, then test and validate commands.'}
-                </p>
               </div>
-            ) : (
-              <div className="p-8 text-center text-dark-secondary">
-                <p className="text-sm">Loading readiness data{'\u2026'}</p>
-              </div>
-            )}
-          </div>
+              {migrationReadiness ? (
+                <div className="p-5 space-y-4">
+                  {/* Readiness bar */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-dark-secondary">Overall Readiness</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-2xl font-bold ${migrationReadiness.readiness_percentage >= 95 ? 'text-emerald-400' :
+                          migrationReadiness.readiness_percentage >= 50 ? 'text-amber-400' : 'text-red-400'
+                          }`}>
+                          {migrationReadiness.readiness_percentage.toFixed(1)}%
+                        </span>
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${migrationReadiness.status === 'ready' ? 'bg-emerald-500/10 text-emerald-400' :
+                          migrationReadiness.status === 'partial' ? 'bg-amber-500/10 text-amber-400' :
+                            'bg-red-500/10 text-red-400'
+                          }`}>
+                          {migrationReadiness.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-3 w-full rounded-full bg-dark-overlay overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-700 ${migrationReadiness.readiness_percentage >= 95 ? 'bg-emerald-500' :
+                          migrationReadiness.readiness_percentage >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                          }`}
+                        style={{ width: `${Math.min(100, migrationReadiness.readiness_percentage)}%` }}
+                      />
+                    </div>
+                  </div>
 
-          {/* How to test instructions */}
-          <div className="rounded-xl border border-dark-border bg-dark-card p-5">
-            <h3 className="text-sm font-semibold text-white mb-3">How Rule Testing Works</h3>
-            <ol className="list-decimal list-inside space-y-2 text-sm text-dark-secondary">
-              <li>Go to the <button onClick={() => setActiveTab('rules')} className="text-sky-400 hover:underline">Rules & Commands</button> tab and expand any rule.</li>
-              <li>Click the <span className="text-sky-400 font-medium">Live Test</span> button to open the test panel.</li>
-              <li>Select a target machine and click <span className="text-sky-400 font-medium">Run Test</span> to execute the audit command via WinRM/SSH.</li>
-              <li>Review the output and <span className="text-emerald-400 font-medium">Approve</span>, <span className="text-amber-400 font-medium">Correct</span>, or <span className="text-red-400 font-medium">Flag</span> the command.</li>
-              <li>Validated commands increase the migration readiness percentage above.</li>
-            </ol>
-          </div>
-        </div>
-      )}
+                  {/* Stats grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                      <div className="text-2xl font-bold text-white">{migrationReadiness.total_rules}</div>
+                      <div className="text-xs text-dark-secondary mt-1">Total Rules</div>
+                    </div>
+                    <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                      <div className="text-2xl font-bold text-sky-400">{migrationReadiness.rules_with_commands}</div>
+                      <div className="text-xs text-dark-secondary mt-1">With Commands</div>
+                    </div>
+                    <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                      <div className="text-2xl font-bold text-emerald-400">{migrationReadiness.rules_validated}</div>
+                      <div className="text-xs text-dark-secondary mt-1">Validated</div>
+                    </div>
+                    <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                      <div className="text-2xl font-bold text-purple-400">{migrationReadiness.rules_generated}</div>
+                      <div className="text-xs text-dark-secondary mt-1">AI Generated</div>
+                    </div>
+                    <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                      <div className="text-2xl font-bold text-dark-muted">{migrationReadiness.rules_no_command}</div>
+                      <div className="text-xs text-dark-secondary mt-1">No Command</div>
+                    </div>
+                    <div className="rounded-lg border border-dark-border bg-dark-elevated p-3 text-center">
+                      <div className="text-2xl font-bold text-red-400">{migrationReadiness.rules_flagged}</div>
+                      <div className="text-xs text-dark-secondary mt-1">Flagged</div>
+                    </div>
+                  </div>
 
-      {/* Framework Coverage Tab */}
-      {activeTab === 'frameworks' && benchmark && (
-        <FrameworkCoveragePanel benchmarkId={benchmark.id} benchmarkName={benchmark.name} />
-      )}
+                  <p className="text-xs text-dark-muted">
+                    {migrationReadiness.status === 'ready'
+                      ? 'This benchmark is fully ready for production scanning. All rules have validated audit commands.'
+                      : migrationReadiness.status === 'partial'
+                        ? 'Some rules still need audit commands or validation. Run enrichment and test commands against a live target to improve readiness.'
+                        : 'Most rules lack audit commands. Run Phase 2 enrichment first, then test and validate commands.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-dark-secondary">
+                  <p className="text-sm">Loading readiness data{'\u2026'}</p>
+                </div>
+              )}
+            </div>
+
+            {/* How to test instructions */}
+            <div className="rounded-xl border border-dark-border bg-dark-card p-5">
+              <h3 className="text-sm font-semibold text-white mb-3">How Rule Testing Works</h3>
+              <ol className="list-decimal list-inside space-y-2 text-sm text-dark-secondary">
+                <li>Navigate to the <button onClick={() => scrollToSection('rules')} className="text-sky-400 hover:underline">Rules & Commands</button> section and expand any rule.</li>
+                <li>Click the <span className="text-sky-400 font-medium">Live Test</span> button to open the test panel.</li>
+                <li>Select a target machine and click <span className="text-sky-400 font-medium">Run Test</span> to execute the audit command via WinRM/SSH.</li>
+                <li>Review the output and <span className="text-emerald-400 font-medium">Approve</span>, <span className="text-amber-400 font-medium">Correct</span>, or <span className="text-red-400 font-medium">Flag</span> the command.</li>
+                <li>Validated commands increase the migration readiness percentage above.</li>
+              </ol>
+            </div>
+          </motion.section>
+
+          {/* Framework Coverage Section */}
+          {
+            benchmark && (
+              <motion.section id="frameworks" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-100px" }} transition={{ duration: 0.5 }} className="scroll-mt-32">
+                <h3 className="text-2xl font-bold text-white mb-6 border-b border-dark-border pb-4">Framework Coverage</h3>
+                <FrameworkCoveragePanel benchmarkId={benchmark.id} benchmarkName={benchmark.name} />
+              </motion.section>
+            )
+          }
+
+        </div > {/* End Main Content */}
+      </div > {/* End Layout Wrap */}
 
       {/* Delete Rule Confirm */}
       <ConfirmDialog

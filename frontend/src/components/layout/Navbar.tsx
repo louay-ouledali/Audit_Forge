@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
     LayoutDashboard,
     Building2,
@@ -56,7 +57,7 @@ export default function Navbar() {
                 </div>
 
                 {/* Navigation Links */}
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 relative">
                     {navItems.map((item) => {
                         const Icon = item.icon;
                         const isActive =
@@ -71,17 +72,28 @@ export default function Navbar() {
                                 key={item.path}
                                 to={item.path}
                                 className={cn(
-                                    'group relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all duration-300',
+                                    'group relative flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors z-10',
                                     isActive
-                                        ? 'bg-ey-yellow/10 text-ey-yellow shadow-[inset_0_0_12px_rgba(255,230,0,0.15)] ring-1 ring-ey-yellow/20'
-                                        : 'text-dark-secondary hover:bg-dark-elevated hover:text-white',
+                                        ? 'text-ey-yellow drop-shadow-[0_0_5px_rgba(255,230,0,0.5)]'
+                                        : 'text-dark-secondary hover:text-white hover:bg-white/5',
                                 )}
                             >
                                 {isActive && (
-                                    <div className="absolute -bottom-1 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-ey-yellow shadow-[0_0_8px_rgba(255,230,0,0.8)]" />
+                                    <motion.div
+                                        layoutId="navbar-active-pill"
+                                        className="absolute inset-0 rounded-full bg-ey-yellow/10 ring-1 ring-ey-yellow/20 shadow-[inset_0_0_12px_rgba(255,230,0,0.15)] -z-10"
+                                        initial={false}
+                                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                                    />
                                 )}
                                 <Icon className={cn('h-4 w-4 transition-transform duration-300 group-hover:scale-110', isActive ? 'text-ey-yellow drop-shadow-[0_0_5px_rgba(255,230,0,0.5)]' : '')} />
-                                <span className={isActive ? 'drop-shadow-[0_0_5px_rgba(255,230,0,0.3)]' : ''}>{item.label}</span>
+                                <span>{item.label}</span>
+                                {isActive && (
+                                    <motion.div
+                                        layoutId="navbar-active-underline"
+                                        className="absolute -bottom-1 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-ey-yellow shadow-[0_0_8px_rgba(255,230,0,0.8)]"
+                                    />
+                                )}
                             </Link>
                         );
                     })}

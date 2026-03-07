@@ -562,7 +562,9 @@ async def _arp_sweep(ips: list[str]) -> dict[str, str]:
             # Linux: read /proc/net/arp (faster than subprocess)
             try:
                 with open("/proc/net/arp", "r") as f:
-                    for line in f:
+                    for line_num, line in enumerate(f):
+                        if line_num == 0:
+                            continue  # skip header row
                         parts = line.split()
                         if len(parts) >= 4 and parts[3] != "00:00:00:00:00:00":
                             ip_addr = parts[0]
@@ -3035,8 +3037,13 @@ def cancel_discovery(discovery_id: str) -> bool:
 async def discover_network(
     subnet: str,
     discovery_id: str | None = None,
+    scan_profile: str = "standard",
 ) -> list[dict[str, Any]]:
     """Scan a subnet and return a list of discovered hosts with open ports.
+
+    When Nmap is installed, delegates to the Nmap engine for superior OS
+    detection and service identification.  Falls back to the built-in
+    pure-Python engine otherwise.
 
     Parameters
     ----------
@@ -3044,11 +3051,20 @@ async def discover_network(
         CIDR (192.168.1.0/24), range (192.168.1.1-254), or single IP.
     discovery_id:
         Optional ID for progress tracking.
+    scan_profile:
+        One of ``quick``, ``standard``, ``thorough`` (Nmap only).
 
     Returns
     -------
     List of dicts with ip, hostname, open_ports, os_guess, connection_methods.
     """
+    # ── Route to Nmap engine if available ────────────────────
+    from backend.core.nmap_discovery import is_nmap_available, nmap_discover_network
+    if is_nmap_available():
+        return await nmap_discover_network(subnet, discovery_id, scan_profile)
+
+    logger.info("Nmap not available — using pure-Python discovery engine")
+
     hosts_to_scan = _parse_subnet(subnet)
     total = len(hosts_to_scan)
 
@@ -3059,6 +3075,8 @@ async def discover_network(
             "total": total,
             "scanned": 0,
             "found": 0,
+            "engine": "python",
+            "subnet": subnet,
         }
 
     logger.info("Starting discovery of %d hosts on %s", total, subnet)

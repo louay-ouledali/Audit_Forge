@@ -164,8 +164,8 @@ export default function MissionOverview({ mission, scans, missionTargets, onScan
           {missionTargets.length === 0 ? (
             <p className="text-sm text-dark-muted border-2 border-dashed border-dark-border rounded-lg p-6 text-center">No targets assigned. Go to the Targets tab to assign targets.</p>
           ) : (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
-              {missionTargets.map(t => (
+            <div className="space-y-2 pr-1">
+              {missionTargets.slice(0, 5).map(t => (
                 <div key={t.id} className="flex items-center gap-3 rounded-lg bg-dark-elevated/50 px-3 py-2 border border-dark-border/50">
                   <div className="h-8 w-8 rounded-lg bg-sky-500/10 flex items-center justify-center shrink-0">
                     <Server className="h-4 w-4 text-sky-400" />
@@ -176,6 +176,13 @@ export default function MissionOverview({ mission, scans, missionTargets, onScan
                   </div>
                 </div>
               ))}
+              {missionTargets.length > 5 && (
+                <div className="text-center pt-2 pb-1">
+                  <span className="text-xs text-dark-muted font-medium">
+                    + {missionTargets.length - 5} more target{missionTargets.length - 5 !== 1 && 's'}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -183,3 +190,4 @@ export default function MissionOverview({ mission, scans, missionTargets, onScan
     </div>
   );
 }
+

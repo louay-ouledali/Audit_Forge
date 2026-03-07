@@ -12,6 +12,7 @@ import {
   Pencil,
   ChevronRight,
   ChevronLeft as NavLeft,
+  Lock,
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import type { Finding } from '@/types';
@@ -73,6 +74,8 @@ export default function FindingDetail() {
 
   // Extract location state for breadcrumbs & navigation context
   const locState = location.state as { fromFindings?: boolean; scanId?: number } | null;
+
+  const isLocked = finding?.mission_locked ?? false;
 
   useEffect(() => {
     if (!id) return;
@@ -228,6 +231,13 @@ export default function FindingDetail() {
         <p className="mt-1 text-sm text-dark-secondary">Scan #{finding.scan_id} {'\u00b7'} Rule #{finding.rule_id}</p>
       </div>
 
+      {/* Lock banner */}
+      {isLocked && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-400">
+          <Lock className="h-3.5 w-3.5 shrink-0" /> Mission is locked — annotations and AI advice generation are read-only.
+        </div>
+      )}
+
       {/* Expected vs Actual — Two-column side-by-side layout */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-dark-border bg-dark-card p-6">
@@ -275,8 +285,9 @@ export default function FindingDetail() {
             {finding.ai_advice && (
               <button
                 onClick={() => handleGetAIAdvice(true)}
-                disabled={aiLoading}
+                disabled={aiLoading || isLocked}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/30 px-3 py-1.5 text-sm font-medium text-purple-400 hover:bg-purple-500/10 disabled:opacity-50"
+                title={isLocked ? 'Mission is locked' : undefined}
               >
                 {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                 Regenerate
@@ -285,8 +296,9 @@ export default function FindingDetail() {
             {!finding.ai_advice && (
               <button
                 onClick={() => handleGetAIAdvice(false)}
-                disabled={aiLoading}
+                disabled={aiLoading || isLocked}
                 className="inline-flex items-center gap-2 rounded-lg bg-purple-500/20 border border-purple-500/30 px-3 py-1.5 text-sm font-medium text-purple-400 hover:bg-purple-500/30 disabled:opacity-50"
+                title={isLocked ? 'Mission is locked' : undefined}
               >
                 {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 {aiLoading ? 'Generating\u2026' : 'Get AI Advice'}
@@ -325,9 +337,10 @@ export default function FindingDetail() {
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-300">Override Status</label>
             <select
-              className="w-full max-w-xs rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30"
+              className="w-full max-w-xs rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 disabled:opacity-50"
               value={override}
               onChange={(e) => setOverride(e.target.value)}
+              disabled={isLocked}
             >
               <option value="">No override</option>
               <option value="confirmed">Confirmed</option>
@@ -347,6 +360,7 @@ export default function FindingDetail() {
               placeholder="Write a custom description for this finding…"
               value={auditorDesc}
               onChange={(e) => setAuditorDesc(e.target.value)}
+              disabled={isLocked}
             />
           </div>
           <div>
@@ -361,6 +375,7 @@ export default function FindingDetail() {
               placeholder="Write custom remediation steps…"
               value={auditorRemediation}
               onChange={(e) => setAuditorRemediation(e.target.value)}
+              disabled={isLocked}
             />
           </div>
           <div>
@@ -371,13 +386,15 @@ export default function FindingDetail() {
               placeholder="Add auditor notes\u2026"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              disabled={isLocked}
             />
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={handleSaveAnnotations}
-              disabled={saving}
+              disabled={saving || isLocked}
               className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50"
+              title={isLocked ? 'Mission is locked' : undefined}
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {saving ? 'Saving\u2026' : 'Save Annotations'}

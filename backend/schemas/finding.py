@@ -35,6 +35,9 @@ class FindingResponse(BaseModel):
     section_number: str | None = None
     rule_title: str | None = None
 
+    # Lock status from parent mission
+    mission_locked: bool = False
+
     model_config = {"from_attributes": True}
 
 

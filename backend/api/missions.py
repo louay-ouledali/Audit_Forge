@@ -11,6 +11,7 @@ from backend.database import get_db
 from backend.models.client import Client
 from backend.models.mission import Mission
 from backend.models.target import Target
+from backend.models.mission_target import MissionTarget
 from backend.schemas.mission import (
     MissionCreate,
     MissionDetailEnvelope,
@@ -46,7 +47,12 @@ def check_mission_lock(mission_id: int | None, db: Session) -> None:
 
 def _target_count(db: Session, mission_id: int) -> int:
     """Efficient target count without loading the full relationship."""
-    return db.query(func.count(Target.id)).filter(Target.mission_id == mission_id).scalar() or 0
+    return (
+        db.query(func.count(MissionTarget.id))
+        .filter(MissionTarget.mission_id == mission_id)
+        .scalar()
+        or 0
+    )
 
 
 def _batch_target_counts(db: Session, mission_ids: list[int]) -> dict[int, int]:
@@ -54,9 +60,9 @@ def _batch_target_counts(db: Session, mission_ids: list[int]) -> dict[int, int]:
     if not mission_ids:
         return {}
     rows = (
-        db.query(Target.mission_id, func.count(Target.id))
-        .filter(Target.mission_id.in_(mission_ids))
-        .group_by(Target.mission_id)
+        db.query(MissionTarget.mission_id, func.count(MissionTarget.id))
+        .filter(MissionTarget.mission_id.in_(mission_ids))
+        .group_by(MissionTarget.mission_id)
         .all()
     )
     return dict(rows)
