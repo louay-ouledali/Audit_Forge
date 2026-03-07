@@ -1,6 +1,18 @@
 version: "3.8"
 
 services:
+  discovery-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    network_mode: host
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    environment:
+      - AUDITFORGE_AGENT_MODE=1
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -20,6 +32,10 @@ services:
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key-change-in-production}
       - DATABASE_URL=sqlite:///data/auditforge.db
       - DOCKER_HOST_MODE=bridge
+      - DISCOVERY_AGENT_HOST=host.docker.internal
+      - DISCOVERY_AGENT_PORT=37120
+    depends_on:
+      - discovery-agent
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     working_dir: /app
 

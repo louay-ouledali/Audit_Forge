@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Network tools for Layer 2 discovery: ping, arp, ip
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iputils-ping net-tools iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Minimal dependencies: only what the discovery engine + agent need
+COPY requirements-agent.txt /app/requirements-agent.txt
+RUN pip install --no-cache-dir -r /app/requirements-agent.txt
+
+# Copy the discovery engine code
+COPY backend/core/network_discovery.py /app/backend/core/network_discovery.py
+COPY discovery_agent.py /app/discovery_agent.py
+
+# Create package __init__.py files for imports
+RUN touch /app/backend/__init__.py /app/backend/core/__init__.py
+
+EXPOSE 37120
+
+CMD ["python", "discovery_agent.py"]

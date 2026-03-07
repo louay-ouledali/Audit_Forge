@@ -1,12 +1,14 @@
-"""Discovery router — transparent bridge between backend and host agent.
+"""Discovery router — transparent bridge between backend and discovery agent.
 
-When running inside Docker, network discovery is limited by NAT:
-no real MACs, no multicast, no ping-only devices.  This module
-detects the environment and routes discovery calls accordingly:
+The discovery agent runs as a Docker sidecar with ``network_mode: host``
+(see ``docker-compose.yml``), giving it direct Layer 2 access to the
+host network — real ARP, real MACs, multicast, everything.
 
-1. **Docker + Agent reachable** → proxy to ``host.docker.internal:37120``
+Routing logic:
+
+1. **Docker + Agent reachable** → proxy to agent (``host.docker.internal:37120``)
 2. **Bare metal (no Docker)** → call ``discover_network()`` directly
-3. **Docker + no agent** → return helpful error message
+3. **Docker + no agent** → fallback with limited results + warning
 
 The rest of the backend (``scans.py``) should import from HERE,
 not directly from ``network_discovery``.
@@ -156,8 +158,8 @@ async def discover_network(
 
         logger.warning(
             "Running in Docker without discovery agent — results will be "
-            "limited (no real MACs, no consumer devices). Start the agent "
-            "on the host: python discovery_agent.py"
+            "limited (no real MACs, no consumer devices). Ensure the "
+            "discovery-agent service is running: docker-compose up -d"
         )
 
     # Direct scan (bare metal or Docker fallback)

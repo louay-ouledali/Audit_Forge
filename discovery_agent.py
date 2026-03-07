@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""AuditForge Discovery Agent — runs on the HOST outside Docker.
+"""AuditForge Discovery Agent — network scanner with real Layer 2 access.
 
-Provides the Docker-contained backend with real Layer 2 network access:
+Runs as a Docker sidecar service with ``network_mode: host``, giving it
+direct access to the host's physical NIC.  On Linux production servers
+this means full ARP, real MACs, multicast, and all UDP probes work.
+
+Capabilities:
   - Real MAC addresses from ARP table (not Docker gateway MACs)
   - ICMP ping that finds phones, TVs, IoT (no ghost responses)
   - Multicast: mDNS (5353) + SSDP (1900) for consumer devices
   - UDP probes: NetBIOS, SNMP, DNS, NTP
   - All 47+ TCP ports with proper service labels
 
-Usage:
-    python discovery_agent.py              # default port 37120
-    python discovery_agent.py --port 9090  # custom port
+Deployment:
+    Automatically started by ``docker-compose up``.
+    See the ``discovery-agent`` service in docker-compose.yml.
 
-The AuditForge backend auto-detects this agent via host.docker.internal.
+The AuditForge backend reaches this agent via host.docker.internal:37120.
 """
 
 from __future__ import annotations

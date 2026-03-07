@@ -352,11 +352,11 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
             <div className="text-xs text-amber-300 space-y-1">
               <p className="font-semibold">Discovery Agent not detected</p>
               <p className="text-amber-400/80">
-                Running in Docker without the host agent — no real MAC addresses, limited device detection (phones, TVs, IoT invisible).
-                Start the agent on the host machine:
+                The discovery-agent service is not responding. Without it, MAC addresses and consumer devices (phones, TVs, IoT) won't be detected.
+                Make sure all services are running:
               </p>
               <code className="block rounded bg-dark-elevated px-2 py-1 text-[10px] text-amber-300 font-mono">
-                python discovery_agent.py
+                docker-compose up -d
               </code>
             </div>
           </div>
