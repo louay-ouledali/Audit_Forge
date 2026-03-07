@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""AuditForge Discovery Agent — runs on the HOST for real network access.
+"""AuditForge Discovery Agent — Docker sidecar with host network access.
 
-Docker Desktop containers (Windows/Mac) are inside a WSL2/Hyper-V VM and
-can NEVER see real MAC addresses or find devices that only respond to ARP.
-This agent runs natively on the host, giving full Layer 2 access.
+Runs as a docker-compose service with ``network_mode: host``, giving it
+direct Layer 2 access to the real network — ARP, MACs, multicast, etc.
+
+Started automatically by ``docker compose up``.
 
 Capabilities:
   - Real MAC addresses from the host's ARP table
@@ -12,12 +13,7 @@ Capabilities:
   - UDP probes: NetBIOS, SNMP, DNS, NTP
   - All 47+ TCP ports with proper service labels
 
-Start methods:
-  - One command:  .\\start.ps1  (starts agent + Docker services)
-  - Manual:       python discovery_agent.py
-  - VS Code:      auto-starts via .vscode/tasks.json
-
-The backend (in Docker) connects via host.docker.internal:37120.
+The backend container connects to this agent on port 37120.
 
 Zero external dependencies — uses only Python stdlib.
 """

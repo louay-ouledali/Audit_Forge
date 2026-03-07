@@ -7,11 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iputils-ping net-tools iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Minimal dependencies: only what the discovery engine + agent need
-COPY requirements-agent.txt /app/requirements-agent.txt
-RUN pip install --no-cache-dir -r /app/requirements-agent.txt
-
-# Copy the discovery engine code
+# Copy the discovery engine code (agent uses stdlib only — zero pip deps)
 COPY backend/core/network_discovery.py /app/backend/core/network_discovery.py
 COPY discovery_agent.py /app/discovery_agent.py
 
