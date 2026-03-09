@@ -15,7 +15,7 @@ from backend.api.missions import check_mission_lock
 from backend.core.discovery_router import (
     cancel_discovery,
     check_agent_health,
-    cleanup_discovery,
+    cleanup_discovery,  # UNUSED — safe to remove
     discover_network,
     get_discovery_engine,
     get_discovery_progress,

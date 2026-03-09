@@ -7,13 +7,6 @@
   @page {
     size: A4;
     margin: 15mm 16mm 18mm 16mm;
-    @top-right {
-      content: "CONFIDENTIAL";
-      font-size: 7px;
-      color: #cbd5e1;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-    }
     @bottom-center {
       content: "{{ company_name | default('AuditForge') }} — Page " counter(page) " of " counter(pages);
       font-size: 7.5px;
@@ -25,26 +18,26 @@
       color: #94a3b8;
     }
   }
-  @page :first { @top-right { content: none; } @bottom-center { content: none; } @bottom-right { content: none; } }
+  @page :first { @bottom-center { content: none; } @bottom-right { content: none; } }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 9.5px; color: #1e293b; line-height: 1.55; orphans: 3; widows: 3; }
 
   /* ── Cover page ── */
   .cover { text-align: center; padding: 80px 40px 50px; page-break-after: always; position: relative; }
-  .cover::before { content: ''; display: block; width: 80px; height: 4px; background: linear-gradient(90deg, #1e40af, #3b82f6, #93c5fd); border-radius: 2px; margin: 0 auto 30px; }
+  .cover::before { content: ''; display: block; width: 80px; height: 4px; background: #eab308; border-radius: 2px; margin: 0 auto 30px; }
   .cover .brand { font-size: 13px; letter-spacing: 3px; text-transform: uppercase; color: #64748b; margin-bottom: 10px; }
   .cover h1 { font-size: 24px; color: #0f172a; margin-bottom: 6px; font-weight: 700; }
   .cover .subtitle { font-size: 13px; color: #475569; margin-bottom: 30px; }
   .cover .meta-block { display: inline-block; text-align: left; border-top: 1px solid #e2e8f0; padding-top: 16px; }
   .cover .meta-line { font-size: 10px; color: #334155; margin: 4px 0; }
   .cover .meta-line strong { color: #0f172a; min-width: 80px; display: inline-block; }
-  .cover::after { content: ''; display: block; width: 60px; height: 3px; background: #3b82f6; border-radius: 2px; margin: 40px auto 0; }
+  .cover::after { content: ''; display: block; width: 60px; height: 3px; background: #eab308; border-radius: 2px; margin: 40px auto 0; }
   .finalized-badge { display: inline-block; margin-top: 18px; padding: 6px 18px; background: #059669; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; border-radius: 4px; }
 
   /* ── Headings with WeasyPrint PDF bookmarks ── */
   h2 {
     font-size: 13px; color: #1e40af; margin: 16px 0 8px;
-    border-bottom: 2px solid #dbeafe; padding-bottom: 4px; letter-spacing: 0.3px;
+    border-bottom: 2px solid #fde68a; padding-bottom: 4px; letter-spacing: 0.3px;
     bookmark-level: 1;
     bookmark-state: open;
   }
@@ -187,39 +180,80 @@
   .fp-stat { background: #fff; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; text-align: center; flex: 1; }
   .fp-stat .val { font-size: 18px; font-weight: 700; }
   .fp-stat .lbl { font-size: 7px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ── Device Profile Cards ── */
+  .device-profile-card { border: 1px solid #e2e8f0; border-left: 4px solid #6366f1; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; page-break-inside: avoid; background: #fff; }
+  .device-profile-card .dp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #f1f5f9; }
+  .device-profile-card .dp-hostname { font-weight: 700; font-size: 11px; color: #0f172a; }
+  .device-profile-card .dp-meta { font-size: 8.5px; color: #475569; }
+  .device-profile-card .dp-meta strong { color: #334155; display: inline-block; min-width: 60px; }
+  .dp-ports-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 8px; }
+  .dp-ports-table th { background: #f1f5f9; padding: 3px 6px; font-weight: 600; color: #475569; font-size: 7.5px; text-transform: uppercase; letter-spacing: 0.3px; border: 1px solid #e2e8f0; }
+  .dp-ports-table td { padding: 3px 6px; border: 1px solid #e2e8f0; }
+  .dp-ports-table tr:nth-child(even) { background: #f8fafc; }
+  .dp-vendor-badge { display: inline-block; background: #ede9fe; color: #5b21b6; padding: 2px 8px; border-radius: 4px; font-size: 8px; font-weight: 600; }
+  .dp-os-badge { display: inline-block; background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 4px; font-size: 8px; font-weight: 600; }
+
+  /* ── Port Risk Boxes (on finding cards) ── */
+  .port-risk-box { background: #fef3c7; border-left: 3px solid #d97706; padding: 6px 10px; margin: 5px 0; border-radius: 0 6px 6px 0; font-size: 8px; color: #78350f; }
+  .port-risk-box .port-risk-header { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 3px; }
+  .port-risk-box .port-chip { display: inline-block; background: #fbbf24; color: #78350f; padding: 1px 7px; border-radius: 4px; font-size: 7.5px; font-weight: 700; }
+  .port-risk-box .port-number { font-size: 7px; color: #92400e; font-weight: 600; }
+  .port-risk-box .port-purpose { font-size: 7px; color: #a16207; font-style: italic; }
+  .port-risk-box .port-risk-body { font-size: 7.5px; line-height: 1.4; margin-top: 2px; }
+  .port-risk-box .port-risk-attacks { font-size: 7px; color: #92400e; margin-top: 2px; }
+  .port-risk-box .port-risk-impact { font-size: 7px; color: #b45309; margin-top: 2px; font-weight: 600; }
+
+  /* ── Business Impact Section (Phase 4) ── */
+  .impact-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; margin: 10px 0; page-break-inside: avoid; }
+  .impact-card.impact-critical { border-left: 4px solid #dc2626; background: #fef2f2; }
+  .impact-card.impact-high { border-left: 4px solid #ea580c; background: #fff7ed; }
+  .impact-card.impact-medium { border-left: 4px solid #d97706; background: #fffbeb; }
+  .impact-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .impact-header h3 { font-size: 10px; margin: 0; color: #1e293b; }
+  .impact-count { font-size: 8px; color: #64748b; padding: 2px 8px; background: #f1f5f9; border-radius: 4px; }
+  .impact-ports { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; font-size: 8px; }
+  .impact-ports strong { color: #92400e; }
+  .impact-ports .port-chip { background: #fde68a; color: #92400e; padding: 1px 7px; border-radius: 4px; font-size: 7.5px; font-weight: 700; }
+  .impact-body { font-size: 8.5px; line-height: 1.5; color: #334155; }
+  .impact-body strong { color: #1e293b; }
+  .impact-regulatory { font-size: 7.5px; color: #6366f1; margin-top: 6px; padding: 4px 8px; background: #eef2ff; border-radius: 4px; }
+  .impact-targets { font-size: 7.5px; color: #64748b; margin-top: 4px; }
 </style>
 </head>
 <body>
 
 <!-- ═══ Cover ═══ -->
 <div class="cover">
-  <div class="brand">{{ company_name | default('AuditForge') }}</div>
   {% if company_logo_base64 %}
-  <div style="margin-bottom: 16px;"><img src="data:image/png;base64,{{ company_logo_base64 }}" alt="Logo" style="max-height: 60px; max-width: 200px;" /></div>
+  <div style="margin-bottom: 12px;"><img src="data:image/png;base64,{{ company_logo_base64 }}" alt="Logo" style="max-height: 60px; max-width: 200px;" /></div>
+  {% elif project_logo_base64 %}
+  <div style="margin-bottom: 12px;"><img src="data:image/png;base64,{{ project_logo_base64 }}" alt="AuditForge" style="max-height: 54px;" /></div>
   {% endif %}
+  <div class="brand">{{ company_name | default('AuditForge') }}</div>
   <h1 style="bookmark-level: none;">{{ title or "Configuration Audit Report" }}</h1>
   <div class="subtitle">{{ mission_name }}</div>
 
-  {# ── Benchmark info block ── #}
-  {% if audit_info %}
-  <div style="margin: 12px auto; display: inline-block; text-align: left; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 16px;">
-    <div style="font-size: 10px; font-weight: 700; color: #1e40af; margin-bottom: 4px;">Benchmark Details</div>
-    <div style="font-size: 9px; color: #334155; margin: 2px 0;"><strong>Name:</strong> {{ audit_info.benchmark_name }}</div>
-    {% if audit_info.benchmark_version %}<div style="font-size: 9px; color: #334155; margin: 2px 0;"><strong>Version:</strong> {{ audit_info.benchmark_version }}</div>{% endif %}
-    {% if audit_info.profile_level %}<div style="font-size: 9px; color: #334155; margin: 2px 0;"><strong>Platform / Profile:</strong> {{ audit_info.profile_level }}</div>{% endif %}
+  <div style="margin: 20px auto; display: inline-block; text-align: left; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 22px; min-width: 280px;">
+    {# ── Benchmark details ── #}
+    {% if audit_info %}
+    <div style="font-size: 10px; font-weight: 700; color: #1e40af; margin-bottom: 6px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">Benchmark</div>
+    <div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Name:</strong> {{ audit_info.benchmark_name }}</div>
+    {% if audit_info.benchmark_version %}<div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Version:</strong> {{ audit_info.benchmark_version }}</div>{% endif %}
+    {% if audit_info.profile_level %}<div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Profile:</strong> {{ audit_info.profile_level }}</div>{% endif %}
+    <div style="margin-top: 8px;"></div>
+    {% endif %}
+    {# ── Audit metadata ── #}
+    <div style="font-size: 10px; font-weight: 700; color: #1e40af; margin-bottom: 6px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">Report Details</div>
+    <div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Client:</strong> {{ client_name }}</div>
+    {% if auditor_name %}<div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Auditor:</strong> {{ auditor_name }}</div>{% endif %}
+    <div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Date Range:</strong> {{ date_range }}</div>
+    <div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Generated:</strong> {{ generated_at }}</div>
+    <div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Total Rules:</strong> {{ summary.total_rules }} &nbsp;|&nbsp; <strong>Compliance:</strong> {{ summary.overall_compliance }}%</div>
+    {% if has_builder and audience %}<div style="font-size: 9px; color: #334155; margin: 3px 0;"><strong>Audience:</strong> <span class="audience-badge audience-{{ audience }}">{{ audience }}</span></div>{% endif %}
   </div>
-  {% endif %}
 
-  <div class="meta-block">
-    <div class="meta-line"><strong>Client:</strong> {{ client_name }}</div>
-    {% if auditor_name %}<div class="meta-line"><strong>Auditor:</strong> {{ auditor_name }}</div>{% endif %}
-    <div class="meta-line"><strong>Date Range:</strong> {{ date_range }}</div>
-    <div class="meta-line"><strong>Generated:</strong> {{ generated_at }}</div>
-    <div class="meta-line"><strong>Total Rules:</strong> {{ summary.total_rules }} &nbsp; | &nbsp; <strong>Compliance:</strong> {{ summary.overall_compliance }}%</div>
-    {% if has_builder and audience %}<div class="meta-line"><strong>Audience:</strong> <span class="audience-badge audience-{{ audience }}">{{ audience }}</span></div>{% endif %}
-  </div>
   {% if is_finalized %}<div class="finalized-badge">✔ Finalized</div>{% endif %}
-  <div style="margin-top: 24px; font-size: 8px; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase;">Confidential — For Authorized Recipients Only</div>
 </div>
 
 <!-- ═══ Table of Contents (with page numbers via WeasyPrint target-counter) ═══ -->
@@ -253,6 +287,11 @@
     <li><a href="#sec-audit-scope">{{ ns.n }}. Audit Scope</a></li>
     {% set ns.n = ns.n + 1 %}
 
+    {% if audience == 'technical' and has_device_profiles is defined and has_device_profiles %}
+    <li><a href="#sec-device-profiles">{{ ns.n }}. Device Profiles</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
+
     {% if by_category or (categories_enriched is defined and categories_enriched) %}
     <li><a href="#sec-by-category">{{ ns.n }}. Rule Categories</a></li>
     {% set ns.n = ns.n + 1 %}
@@ -279,6 +318,13 @@
     {% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
     <li><a href="#sec-fp-analysis">{{ ns.n }}. False Positive Analysis</a></li>
     {% set ns.n = ns.n + 1 %}
+    {% endif %}
+
+    {% if not section_toggles or section_toggles.get('business_impact', false) %}
+    {% if business_impact_groups is defined and business_impact_groups %}
+    <li><a href="#sec-business-impact">{{ ns.n }}. Business Impact Analysis</a></li>
+    {% set ns.n = ns.n + 1 %}
+    {% endif %}
     {% endif %}
 
     {% if has_builder and grouped_findings %}
@@ -333,6 +379,7 @@
     {% if chart_donut %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_donut|safe }}</div>{% endif %}
     {% if chart_severity %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_severity|safe }}</div>{% endif %}
   </div>
+  {% if audience != 'executive' %}
   <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 12px 0;">
     {% if chart_targets %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_targets|safe }}</div>{% endif %}
     {% if chart_categories %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_categories|safe }}</div>{% endif %}
@@ -342,16 +389,19 @@
     {% if chart_group_compliance %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_group_compliance|safe }}</div>{% endif %}
     {% if chart_fp_gauge %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_fp_gauge|safe }}</div>{% endif %}
   </div>
+  {% endif %}
   {# ── Full-width charts ── #}
   {% if chart_risk_heatmap %}
   <div style="margin-top: 12px; text-align: center;">{{ chart_risk_heatmap|safe }}</div>
   {% endif %}
+  {% if audience != 'executive' %}
   <div style="display: flex; gap: 20px; justify-content: center; align-items: flex-start; flex-wrap: wrap; margin: 12px 0;">
     {% if chart_radar %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_radar|safe }}</div>{% endif %}
     {% if chart_waterfall %}<div style="flex: 1; min-width: 200px; max-width: 50%; text-align: center;">{{ chart_waterfall|safe }}</div>{% endif %}
   </div>
   {% if chart_treemap %}
   <div style="margin-top: 12px; text-align: center;">{{ chart_treemap|safe }}</div>
+  {% endif %}
   {% endif %}
 </div>
 {% endif %}
@@ -401,6 +451,24 @@
     <div class="stat-card"><div class="val" style="color:#16a34a">{{ summary.passed }}</div><div class="lbl">Passed</div></div>
     <div class="stat-card"><div class="val" style="color:#dc2626">{{ summary.failed }}</div><div class="lbl">Failed</div></div>
     <div class="stat-card"><div class="val" style="color:#7c3aed">{{ summary.errors }}</div><div class="lbl">Errors</div></div>
+  </div>
+  {% endif %}
+
+  {# ── Device Overview (from discovery data) ── #}
+  {% if audience == 'technical' and has_device_profiles is defined and has_device_profiles %}
+  <div style="margin: 10px 0; padding: 8px 12px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 6px;">
+    <h3 style="font-size: 10px; color: #5b21b6; margin: 0 0 6px;">Discovered Devices</h3>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      {% for dp in device_profiles_list %}
+      <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 5px; padding: 6px 10px; min-width: 140px; flex: 1;">
+        <div style="font-weight: 700; font-size: 9px; color: #0f172a;">{{ dp.hostname or dp.ip_address }}</div>
+        <div style="font-size: 8px; color: #64748b;">{{ dp.ip_address }}</div>
+        {% if dp.os_display or dp.os_guess %}<div style="font-size: 8px;"><span class="dp-os-badge">{{ dp.os_display or dp.os_guess }}</span></div>{% endif %}
+        {% if dp.vendor %}<div style="font-size: 8px;"><span class="dp-vendor-badge">{{ dp.vendor }}</span></div>{% endif %}
+        {% if dp.open_ports %}<div style="font-size: 7.5px; color: #6366f1; margin-top: 2px;">{{ dp.open_ports | length }} port{{ 's' if dp.open_ports | length != 1 else '' }} open</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
   </div>
   {% endif %}
 
@@ -464,9 +532,43 @@
 
 <!-- ═══ Key Findings Summary (for Executive audience when detail is off) ═══ -->
 {% if audience == "executive" and section_toggles and not section_toggles.get('findings_detail', true) %}
+
+{# ── Prefer Business Impact groups if available ── #}
+{% if business_impact_groups is defined and business_impact_groups %}
+<div class="section" id="sec-key-findings-summary">
+  <h2>Key Findings Summary</h2>
+  <p style="font-size: 8.5px; color: #475569; margin-bottom: 10px;">
+    Business-critical security failures grouped by risk theme. {{ business_impact_groups | length }} risk area(s) identified from critical and high severity findings.
+  </p>
+  {% for group in business_impact_groups %}
+  <div class="impact-card impact-{{ group.severity }}" style="margin: 8px 0;">
+    <div class="impact-header">
+      <h3 style="font-size: 10px; margin: 0;">{{ group.theme }}</h3>
+      <span class="badge sev-{{ group.severity }}">{{ group.severity | upper }}</span>
+      <span class="impact-count">{{ group.finding_count }} control(s)</span>
+    </div>
+    {% if group.exposed_ports %}
+    <div class="impact-ports">
+      {% for ep in group.exposed_ports[:6] %}
+      <span class="port-chip">{{ ep.service_name }} :{{ ep.port }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="impact-body">
+      <p style="margin: 2px 0;"><strong>Risk:</strong> {{ group.business_risk }}</p>
+    </div>
+    {% if group.regulatory_refs %}
+    <div class="impact-regulatory">{{ group.regulatory_refs | join(', ') }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+{# ── Fallback: top 10 most severe failed findings ── #}
 {% set key_findings = namespace(items=[]) %}
 {% for f in findings if f.status == "FAIL" %}
-  {% if key_findings.items | length < 15 %}
+  {% if key_findings.items | length < 10 %}
     {% set key_findings.items = key_findings.items + [f] %}
   {% endif %}
 {% endfor %}
@@ -474,7 +576,7 @@
 <div class="section" id="sec-key-findings-summary">
   <h2>Key Findings Summary</h2>
   <p style="font-size: 8.5px; color: #475569; margin-bottom: 8px;">
-    Condensed view of the {{ key_findings.items | length }} highest-priority failures requiring remediation.
+    Top {{ key_findings.items | length }} highest-priority failures requiring remediation.
     Full technical details are available in the Technical report variant.
   </p>
   <table>
@@ -482,10 +584,11 @@
       <tr>
         <th style="width:5%">#</th>
         <th style="width:8%">Section</th>
-        <th style="width:25%">Rule</th>
+        <th style="width:22%">Rule</th>
         <th style="width:8%">Severity</th>
-        <th style="width:12%">Target</th>
-        <th style="width:42%">Recommended Remediation</th>
+        <th style="width:10%">Target</th>
+        <th style="width:12%">Exposed Ports</th>
+        <th style="width:35%">Recommended Remediation</th>
       </tr>
     </thead>
     <tbody>
@@ -496,6 +599,7 @@
         <td>{{ f.rule_title }}</td>
         <td><span class="badge sev-{{ f.severity }}">{{ f.severity | upper }}</span></td>
         <td>{{ f.target_hostname }}</td>
+        <td>{% for rp in f.related_ports|default([]) %}<span class="port-chip" style="font-size:6.5px;">{{ rp.service_name }} :{{ rp.port }}</span> {% endfor %}</td>
         <td style="font-size: 7.5px;">{{ f.remediation[:200] }}{% if f.remediation | length > 200 %}…{% endif %}</td>
       </tr>
       {% endfor %}
@@ -504,8 +608,10 @@
 </div>
 {% endif %}
 {% endif %}
+{% endif %}
 
 <!-- ═══ Audit Scope ═══ -->
+{% if not section_toggles or section_toggles.get('audit_scope', true) %}
 <div class="section" id="sec-audit-scope">
   <h2>Audit Scope</h2>
   <table>
@@ -532,8 +638,68 @@
     </tbody>
   </table>
 </div>
+{% endif %}
+
+<!-- ═══ Device Profiles ═══ -->
+{% if (not section_toggles or section_toggles.get('device_profiles', true)) and has_device_profiles is defined and has_device_profiles %}
+<div class="section" id="sec-device-profiles" style="page-break-before: always;">
+  <h2>Device Profiles</h2>
+  <p style="font-size: 8px; color: #64748b; margin-bottom: 8px;">
+    Target device information and network discovery data. Open ports and connection methods are populated automatically after each audit scan.
+  </p>
+
+  {% for dp in device_profiles_list %}
+  <div class="device-profile-card">
+    <div class="dp-header">
+      <span class="dp-hostname">{{ dp.hostname or dp.ip_address }}</span>
+      <span>
+        {% if dp.os_display or dp.os_guess %}<span class="dp-os-badge">{{ dp.os_display or dp.os_guess }}</span>{% endif %}
+        {% if dp.vendor %}<span class="dp-vendor-badge">{{ dp.vendor }}</span>{% endif %}
+      </span>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 6px;">
+      <div class="dp-meta"><strong>IP:</strong> {{ dp.ip_address }}</div>
+      {% if dp.mac_address %}<div class="dp-meta"><strong>MAC:</strong> {{ dp.mac_address }}</div>{% endif %}
+      {% if dp.domain %}<div class="dp-meta"><strong>Domain:</strong> {{ dp.domain }}</div>{% endif %}
+      {% if dp.device_model %}<div class="dp-meta"><strong>Model:</strong> {{ dp.device_model }}</div>{% endif %}
+      {% if dp.firmware %}<div class="dp-meta"><strong>Firmware:</strong> {{ dp.firmware }}</div>{% endif %}
+      {% if dp.detection_method and dp.detection_method != 'target_info' %}<div class="dp-meta"><strong>Detected via:</strong> {{ dp.detection_method }}</div>{% endif %}
+      {% if dp.confidence %}<div class="dp-meta"><strong>Confidence:</strong> {{ dp.confidence }}%</div>{% endif %}
+      {% if dp.last_seen %}<div class="dp-meta"><strong>Last Seen:</strong> {{ dp.last_seen[:10] }}</div>{% endif %}
+    </div>
+
+    {% if dp.open_ports and dp.open_ports | length > 0 %}
+    <h3 style="font-size: 9px; margin: 6px 0 4px;">Open Ports ({{ dp.open_ports | length }})</h3>
+    <table class="dp-ports-table">
+      <thead><tr><th>Port</th><th>Protocol</th><th>Service</th><th>Purpose / Info</th></tr></thead>
+      <tbody>
+        {% for p in dp.open_ports | sort(attribute='port') %}
+        <tr>
+          <td style="font-weight: 600;">{{ p.port }}</td>
+          <td>{{ p.protocol | default('tcp', true) | upper }}</td>
+          <td>{{ p.service | default('—', true) }}{% if p.product %} <span style="font-size: 7px; color: #64748b;">({{ p.product }}{% if p.version %} {{ p.version }}{% endif %})</span>{% endif %}</td>
+          <td style="font-size: 7.5px; color: #64748b;">{{ p.banner | default(p.banner_snippet | default('', true), true) | truncate(80) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="font-size: 8px; color: #94a3b8; font-style: italic;">No port scan data available yet. Run a new audit scan to populate open port information.</p>
+    {% endif %}
+
+    {% if dp.connection_methods and dp.connection_methods | length > 0 %}
+    <p style="font-size: 8px; margin-top: 4px;"><strong style="color: #475569;">Connection Methods:</strong>
+      {% for cm in dp.connection_methods %}<span style="display: inline-block; background: #f0fdf4; color: #166534; padding: 1px 6px; border-radius: 3px; font-size: 7.5px; margin-right: 3px;">{{ cm }}</span>{% endfor %}
+    </p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <!-- ═══ Rule Categories (enriched CIS section names) ═══ -->
+{% if not section_toggles or section_toggles.get('categories', true) %}
 {% if categories_enriched is defined and categories_enriched %}
 <div class="section" id="sec-by-category">
   <h2>Rule Categories</h2>
@@ -584,8 +750,10 @@
   </table>
 </div>
 {% endif %}
+{% endif %}{# end categories toggle #}
 
 <!-- ═══ Per-Target Breakdown ═══ -->
+{% if not section_toggles or section_toggles.get('per_target', true) %}
 {% if per_target_findings is defined and per_target_findings | length > 1 %}
 <div class="section" id="sec-per-target" style="page-break-before: always;">
   <h2>Per-Target Compliance Breakdown</h2>
@@ -622,8 +790,10 @@
   {% endfor %}
 </div>
 {% endif %}
+{% endif %}{# end per_target toggle #}
 
 <!-- ═══ Audit Methodology ═══ -->
+{% if not section_toggles or section_toggles.get('methodology', true) %}
 <div class="section" id="sec-methodology">
   <h2>Audit Methodology</h2>
   <h3>Approach</h3>
@@ -662,8 +832,10 @@
     Grades: <strong>A</strong> (≥90), <strong>B</strong> (≥80), <strong>C</strong> (≥70), <strong>D</strong> (≥50), <strong>F</strong> (&lt;50).
   </p>
 </div>
+{% endif %}{# end methodology toggle #}
 
 <!-- ═══ Complete Findings Register (master table of ALL rules) ═══ -->
+{% if not section_toggles or section_toggles.get('findings_register', true) %}
 <div class="section" id="sec-findings-register" style="page-break-before: always;">
   <h2>Complete Findings Register <span class="section-count">{{ findings|length }}</span></h2>
   <p style="font-size: 8px; color: #64748b; margin-bottom: 6px;">Comprehensive list of every audited rule, sorted by section number. Click a section number to jump to the detailed finding.</p>
@@ -694,6 +866,7 @@
     </tbody>
   </table>
 </div>
+{% endif %}{# end findings_register toggle #}
 
 <!-- ═══ Prioritized Recommendations ═══ -->
 {% if not section_toggles or section_toggles.get('recommendations', true) %}
@@ -770,8 +943,53 @@
 </div>
 {% endif %}
 
+<!-- ═══ Business Impact Analysis (Phase 4) ═══ -->
+{% if not section_toggles or section_toggles.get('business_impact', false) %}
+{% if business_impact_groups is defined and business_impact_groups %}
+<div class="section" id="sec-business-impact" style="page-break-before: always;">
+  <h2>Business Impact Analysis</h2>
+  <p style="font-size: 9px; color: #475569; margin-bottom: 12px;">Assessment of business risks from failed security controls, correlated with network exposure data. Only critical and high severity failures are included.</p>
+
+  {% for group in business_impact_groups %}
+  <div class="impact-card impact-{{ group.severity }}">
+    <div class="impact-header">
+      <h3>{{ group.theme }}</h3>
+      <span class="badge sev-{{ group.severity }}">{{ group.severity | upper }}</span>
+      <span class="impact-count">{{ group.finding_count }} control(s) failing</span>
+    </div>
+
+    {% if group.exposed_ports %}
+    <div class="impact-ports">
+      <strong>⚠ Exposed Services:</strong>
+      {% for ep in group.exposed_ports %}
+      <span class="port-chip">{{ ep.service_name }} :{{ ep.port }} ({{ ep.target }})</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="impact-body">
+      <p><strong>Finding:</strong> {{ group.summary }}</p>
+      <p><strong>Business Risk:</strong> {{ group.business_risk }}</p>
+    </div>
+
+    {% if group.regulatory_refs %}
+    <div class="impact-regulatory">
+      <strong>Regulatory:</strong> {{ group.regulatory_refs | join(', ') }}
+    </div>
+    {% endif %}
+
+    {% if group.affected_targets %}
+    <div class="impact-targets">
+      <strong>Affected Systems:</strong> {{ group.affected_targets | join(', ') }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+
 {% if has_builder and grouped_findings %}
-<!-- ═══ Builder Mode — Group Overview Summary ═══ -->
 <div class="section">
   <h2>Group Overview</h2>
   <table class="group-overview-tbl">
@@ -889,6 +1107,20 @@
     {% if f.default_value %}<p><span class="field-label">Default Value:</span> <code>{{ f.default_value }}</code></p>{% endif %}
     {% if f.auditor_notes %}<p><span class="field-label">Notes:</span> {{ f.auditor_notes }}</p>{% endif %}
     {% if f.auditor_override %}<p><span class="field-label">Override:</span> {{ f.auditor_override }}</p>{% endif %}
+    {% if f.related_ports is defined and f.related_ports %}
+    {% for rp in f.related_ports %}
+    <div class="port-risk-box">
+      <div class="port-risk-header">
+        <span class="port-chip">{{ rp.service_name }}</span>
+        <span class="port-number">Port {{ rp.port }}</span>
+        <span class="port-purpose">{{ rp.service_purpose }}</span>
+      </div>
+      <div class="port-risk-body"><strong>⚠ Risk:</strong> {{ rp.risk_narrative }}</div>
+      {% if rp.attack_examples %}<div class="port-risk-attacks"><strong>Known Attacks:</strong> {{ rp.attack_examples }}</div>{% endif %}
+      {% if rp.business_impact %}<div class="port-risk-impact"><strong>Business Impact:</strong> {{ rp.business_impact }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
   </div>
   {% endfor %}
   {% endif %}
@@ -955,6 +1187,20 @@
         {% if f.default_value %}<p><span class="field-label">Default Value:</span> <code>{{ f.default_value }}</code></p>{% endif %}
         {% if f.auditor_notes %}<p><span class="field-label">Notes:</span> {{ f.auditor_notes }}</p>{% endif %}
         {% if f.auditor_override %}<p><span class="field-label">Override:</span> {{ f.auditor_override }}</p>{% endif %}
+        {% if f.related_ports is defined and f.related_ports %}
+        {% for rp in f.related_ports %}
+        <div class="port-risk-box">
+          <div class="port-risk-header">
+            <span class="port-chip">{{ rp.service_name }}</span>
+            <span class="port-number">Port {{ rp.port }}</span>
+            <span class="port-purpose">{{ rp.service_purpose }}</span>
+          </div>
+          <div class="port-risk-body"><strong>⚠ Risk:</strong> {{ rp.risk_narrative }}</div>
+          {% if rp.attack_examples %}<div class="port-risk-attacks"><strong>Known Attacks:</strong> {{ rp.attack_examples }}</div>{% endif %}
+          {% if rp.business_impact %}<div class="port-risk-impact"><strong>Business Impact:</strong> {{ rp.business_impact }}</div>{% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -1051,6 +1297,20 @@
       {% if f.default_value %}<p><span class="field-label">Default Value:</span> <code>{{ f.default_value }}</code></p>{% endif %}
       {% if f.auditor_notes %}<p><span class="field-label">Notes:</span> {{ f.auditor_notes }}</p>{% endif %}
       {% if f.auditor_override %}<p><span class="field-label">Override:</span> {{ f.auditor_override }}</p>{% endif %}
+      {% if f.related_ports is defined and f.related_ports %}
+      {% for rp in f.related_ports %}
+      <div class="port-risk-box">
+        <div class="port-risk-header">
+          <span class="port-chip">{{ rp.service_name }}</span>
+          <span class="port-number">Port {{ rp.port }}</span>
+          <span class="port-purpose">{{ rp.service_purpose }}</span>
+        </div>
+        <div class="port-risk-body"><strong>⚠ Risk:</strong> {{ rp.risk_narrative }}</div>
+        {% if rp.attack_examples %}<div class="port-risk-attacks"><strong>Known Attacks:</strong> {{ rp.attack_examples }}</div>{% endif %}
+        {% if rp.business_impact %}<div class="port-risk-impact"><strong>Business Impact:</strong> {{ rp.business_impact }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      {% endif %}
     </div>
     {% endfor %}
     {% endif %}

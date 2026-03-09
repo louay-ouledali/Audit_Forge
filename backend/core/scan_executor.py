@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
+import re  # UNUSED — safe to remove
 import threading
 import time
 from datetime import datetime, timezone
@@ -26,7 +26,8 @@ from backend.connectors import get_connector
 from backend.connectors.base import BaseConnector, CommandResult
 from backend.core.comparison_engine import evaluate as evaluate_expression
 from backend.core.error_patterns import classify_output
-from backend.core.exceptions import ConnectionFailedError, ScanCancelledError
+from backend.core.exceptions import ConnectionFailedError, ScanCancelledError  # UNUSED: 'ConnectionFailedError', 'ScanCancelledError' — safe to remove
+from backend.models.discovery_cache import DiscoveryCache
 from backend.models.finding import Finding
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
@@ -93,6 +94,109 @@ def cancel_scan(scan_id: int) -> bool:
             _cancelled_scans.add(scan_id)
             return True
     return False
+
+
+async def _refresh_target_discovery(target: Target, db: Session) -> None:
+    """Quick TCP port scan on a target and upsert into DiscoveryCache.
+
+    This runs after every audit scan so that device profile data in reports is
+    always up-to-date, even if the user never ran a full network discovery.
+    """
+    from backend.core.network_discovery import (
+        PROBE_PORTS,
+        _probe_port,
+        _grab_banners,
+        _enrich_ports_from_banners,
+        _guess_os,
+        _detect_connection_methods,
+        _reverse_dns,
+        MAX_CONCURRENT_PORTS,
+    )
+
+    ip = target.ip_address
+    if not ip:
+        return
+
+    try:
+        # Quick TCP port scan
+        port_sem = asyncio.Semaphore(MAX_CONCURRENT_PORTS)
+
+        async def _guarded(port: int) -> bool:
+            async with port_sem:
+                return await _probe_port(ip, port, timeout=1.5)
+
+        results = await asyncio.gather(*[_guarded(p) for p, _, _ in PROBE_PORTS])
+
+        open_ports: list[dict] = []
+        for (port, service, hint), is_open in zip(PROBE_PORTS, results):
+            if is_open:
+                open_ports.append({"port": port, "service": service, "platform_hint": hint})
+
+        # Banner grabbing
+        banners: dict[int, str] = {}
+        if open_ports:
+            banners = await _grab_banners(ip, open_ports)
+            _enrich_ports_from_banners(open_ports, banners)
+
+        hostname = await _reverse_dns(ip)
+        os_guess = _guess_os(open_ports) if open_ports else "unknown"
+        conn_methods = _detect_connection_methods(os_guess, open_ports)
+
+        # Upsert into DiscoveryCache
+        now = datetime.now(timezone.utc)
+        mac = (target.mac_address or "").upper() or None
+
+        cached: DiscoveryCache | None = None
+        if mac:
+            cached = (
+                db.query(DiscoveryCache)
+                .filter(DiscoveryCache.mac_address == mac)
+                .order_by(DiscoveryCache.last_seen.desc())
+                .first()
+            )
+        if not cached:
+            cached = (
+                db.query(DiscoveryCache)
+                .filter(DiscoveryCache.ip_address == ip)
+                .order_by(DiscoveryCache.last_seen.desc())
+                .first()
+            )
+
+        if cached:
+            cached.ip_address = ip
+            if mac:
+                cached.mac_address = mac
+            cached.hostname = hostname or cached.hostname
+            cached.os_guess = os_guess if os_guess != "unknown" else cached.os_guess
+            cached.detection_method = "audit_scan"
+            cached.last_seen = now
+            cached.open_ports_json = json.dumps(open_ports)
+            cached.connection_methods_json = json.dumps(conn_methods)
+        else:
+            db.add(DiscoveryCache(
+                ip_address=ip,
+                mac_address=mac,
+                hostname=hostname or target.hostname,
+                os_guess=os_guess if os_guess != "unknown" else None,
+                detection_method="audit_scan",
+                confidence=50,
+                open_ports_json=json.dumps(open_ports),
+                connection_methods_json=json.dumps(conn_methods),
+                first_seen=now,
+                last_seen=now,
+            ))
+
+        db.commit()
+        logger.info(
+            "Discovery refresh for %s: %d open ports",
+            ip, len(open_ports),
+        )
+    except Exception:
+        logger.warning("Discovery refresh failed for %s", ip, exc_info=True)
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 def _decrypt_target_password(target: Target) -> str | None:
@@ -386,6 +490,12 @@ async def execute_network_scan(
             total_checked,
             scan.compliance_percentage,
         )
+
+        # 11. Refresh device discovery cache (ports / OS / connection methods)
+        try:
+            await _refresh_target_discovery(target, db)
+        except Exception:
+            logger.warning("Discovery refresh step failed for scan %s", scan_id, exc_info=True)
 
     except Exception as exc:
         logger.error("Scan %s failed with unexpected error: %s", scan_id, exc)

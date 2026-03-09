@@ -84,7 +84,7 @@ def _subnet_is_external(subnet: str) -> bool:
     TCP-connect workaround.
     """
     import socket
-    import struct
+    import struct  # UNUSED — safe to remove
 
     try:
         # Get the container's own IP address
@@ -423,7 +423,7 @@ async def nmap_discover_network(
         _lookup_oui_vendor,
         _netbios_name_query,
         _parse_subnet,
-        _ping_host,
+        _ping_host,  # UNUSED — safe to remove
         _smb_ntlm_fingerprint,
         _udp_probe_host,
     )

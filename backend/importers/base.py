@@ -20,8 +20,9 @@ class PlatformInfo:
     ip_address: str = ""            # Target IP if detectable
     source_tool: str = ""           # e.g. "nessus", "qualys", "native"
     scheme: str = ""                # e.g. "CIS", "NIST", "custom"
+    open_ports: list[dict] = field(default_factory=list)  # [{port: int, protocol: str}]
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         return {k: v for k, v in self.__dict__.items() if v}
 
 

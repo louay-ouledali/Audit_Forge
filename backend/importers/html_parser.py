@@ -179,6 +179,10 @@ def _parse_findings_from_html(content: str, platform_info: PlatformInfo) -> list
         sec_match = re.match(r"^(\d+(?:\.\d+)+)\s+", raw_title)
         section_number = sec_match.group(1) if sec_match else ""
 
+        # Skip .audit file reference metadata entries (not real compliance checks)
+        if re.search(r"\.audit\s+from\s+", raw_title, re.IGNORECASE):
+            continue
+
         # ── Detail section extraction ─────────────────────────
         sections = _extract_sections(block)
 

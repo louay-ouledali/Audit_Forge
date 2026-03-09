@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from backend.ai.benchmark_ai import detect_benchmark_metadata
-from backend.core.exceptions import BenchmarkTooLargeError, EmptyBenchmarkError, PDFParseError
-from backend.core.rule_categorizer import TAG_KEYWORDS, auto_tag_rule
+from backend.core.exceptions import BenchmarkTooLargeError, EmptyBenchmarkError, PDFParseError  # UNUSED: 'EmptyBenchmarkError' — safe to remove
+from backend.core.rule_categorizer import TAG_KEYWORDS, auto_tag_rule  # UNUSED: 'TAG_KEYWORDS' — safe to remove
 from backend.database import SessionLocal
 from backend.models.benchmark import Benchmark
 from backend.models.rule import Rule

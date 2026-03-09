@@ -42,8 +42,14 @@ logger = logging.getLogger("auditforge.importers.csv_parser")
 # Plugin IDs that indicate compliance check results
 COMPLIANCE_PLUGIN_IDS = {"21156", "21157", "33929", "33930"}
 
-# Plugin IDs to skip (scan info, port scanners, credential checks)
-SKIP_PLUGIN_IDS = {"19506", "34220", "141118", "10180", "11219", "25220"}
+# Plugin IDs to skip (scan info, credential checks, port scanners handled separately)
+SKIP_PLUGIN_IDS = {"19506", "141118", "10180", "11219", "25220"}
+
+# Plugin IDs that carry port scan data (extracted, not skipped)
+PORT_SCAN_PLUGIN_IDS = {"34220"}
+
+# Pattern matching .audit file reference rows (metadata, not real compliance findings)
+_AUDIT_FILE_REF_RE = re.compile(r"\.audit\s+from\s+", re.IGNORECASE)
 
 # Status mapping from Nessus vocabulary to AuditForge vocabulary
 _STATUS_MAP = {
@@ -135,7 +141,19 @@ def parse_nessus_csv(
                 _extract_scan_info(row, field_map, platform_info)
             continue
 
+        # Extract port scan data (Plugin 34220 = Netstat Portscanner)
+        if plugin_id in PORT_SCAN_PLUGIN_IDS:
+            _extract_port_data(row, field_map, platform_info)
+            continue
+
         if compliance_only and plugin_id not in COMPLIANCE_PLUGIN_IDS:
+            continue
+
+        # Filter out .audit file reference metadata rows (Plugin 21156 rows
+        # whose Description is an audit filename, not a real compliance check)
+        description_raw = _get_field(row, field_map, "description", "")
+        if _AUDIT_FILE_REF_RE.search(description_raw[:200]):
+            logger.debug("Row %d: skipped .audit file reference entry", row_index)
             continue
 
         # Extract host
@@ -148,7 +166,6 @@ def parse_nessus_csv(
                 platform_info.hostname = host
 
         # Get the Description mega-field
-        description_raw = _get_field(row, field_map, "description", "")
         if not description_raw.strip():
             logger.debug("Row %d: empty Description, skipping", row_index)
             continue
@@ -241,10 +258,11 @@ def parse_nessus_csv(
             platform_info.ip_address = next(iter(hosts_seen))
 
     logger.info(
-        "Parsed %d compliance findings from Nessus CSV (%d hosts: %s)",
+        "Parsed %d compliance findings from Nessus CSV (%d hosts: %s, %d open ports)",
         len(findings),
         len(hosts_seen),
         ", ".join(sorted(hosts_seen)[:5]),
+        len(platform_info.open_ports),
     )
 
     return findings, platform_info
@@ -330,6 +348,31 @@ def _extract_scan_info(row: dict, field_map: dict[str, str], info: PlatformInfo)
     if os_match:
         os_str = os_match.group(1).strip()
         _detect_platform(os_str, info)
+
+
+def _extract_port_data(row: dict, field_map: dict[str, str], info: PlatformInfo) -> None:
+    """Extract open port data from Plugin 34220 (Netstat Portscanner WMI).
+
+    Each row with a non-zero Port value represents a single open port.
+    The row with Port=0 is the summary line ("found N open ports") — skip it.
+    """
+    port_str = _get_field(row, field_map, "port", "0").strip()
+    protocol = _get_field(row, field_map, "protocol", "").strip().lower()
+
+    try:
+        port_num = int(port_str)
+    except (ValueError, TypeError):
+        return
+
+    if port_num <= 0:
+        return
+
+    # Deduplicate: check if this port+protocol already recorded
+    for existing in info.open_ports:
+        if existing.get("port") == port_num and existing.get("protocol") == protocol:
+            return
+
+    info.open_ports.append({"port": port_num, "protocol": protocol or "tcp"})
 
 
 def _extract_benchmark_from_name(name: str, info: PlatformInfo) -> None:

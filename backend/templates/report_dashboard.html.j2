@@ -11,12 +11,12 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 
 /* ── Header ── */
 .report-header {
-  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #1e40af 100%);
+  background: linear-gradient(135deg, #0f172a 0%, #1a1a2e 50%, #2d2300 100%);
   color: #fff; padding: 32px 40px; position: relative; overflow: hidden;
 }
 .report-header::after {
   content:''; position:absolute; top:0; right:0; width:400px; height:100%;
-  background: radial-gradient(circle at 80% 50%, rgba(59,130,246,0.12) 0%, transparent 70%);
+  background: radial-gradient(circle at 80% 50%, rgba(234,179,8,0.12) 0%, transparent 70%);
 }
 .report-header .brand { font-size: 0.7rem; letter-spacing: 4px; text-transform: uppercase; opacity: 0.55; margin-bottom: 6px; }
 .report-header h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; position: relative; z-index: 1; }
@@ -28,13 +28,13 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 /* ── Section Titles ── */
 .section-title {
   font-size: 1.1rem; font-weight: 700; color: #1e293b; margin: 32px 0 16px;
-  padding-bottom: 8px; border-bottom: 2px solid #3b82f6;
+  padding-bottom: 8px; border-bottom: 2px solid #eab308;
   display: flex; align-items: center; gap: 8px;
 }
 .badge-count {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 26px; height: 22px; border-radius: 11px;
-  background: #3b82f6; color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0 8px;
+  background: #eab308; color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0 8px;
 }
 
 /* ── Stats Grid ── */
@@ -47,7 +47,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
 .stat-card .value { font-size: 2rem; font-weight: 800; line-height: 1.1; }
 .stat-card .label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-top: 4px; }
-.stat-card.compliance .value { color: #1e40af; }
+.stat-card.compliance .value { color: #b45309; }
 .stat-card.pass .value { color: #16a34a; }
 .stat-card.fail .value { color: #dc2626; }
 .stat-card.error .value { color: #7c3aed; }
@@ -74,7 +74,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 
 /* ── AI Summary ── */
 .ai-summary {
-  background: linear-gradient(135deg, #eff6ff, #dbeafe); border-left: 4px solid #1e40af;
+  background: linear-gradient(135deg, #fefce8, #fef9c3); border-left: 4px solid #eab308;
   padding: 20px 24px; border-radius: 0 12px 12px 0; margin-bottom: 24px;
   white-space: pre-wrap; font-size: 0.9rem; line-height: 1.7; color: #334155;
 }
@@ -137,7 +137,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 .group-header { background: linear-gradient(90deg, #f1f5f9, #fff) !important; cursor: pointer; user-select: none; }
 .group-header td {
   padding: 12px 14px !important; font-weight: 700; font-size: 0.88rem; color: #1e293b;
-  border-top: 2px solid #3b82f6 !important;
+  border-top: 2px solid #eab308 !important;
 }
 .group-header .group-count { font-size: 0.72rem; font-weight: 500; color: #64748b; margin-left: 8px; }
 .group-header .toggle { float: right; font-size: 0.75rem; }
@@ -152,7 +152,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 
 /* ── Detail Content ── */
 .detail-content {
-  padding: 16px 20px; border-left: 3px solid #3b82f6; margin: 8px 14px;
+  padding: 16px 20px; border-left: 3px solid #eab308; margin: 8px 14px;
   background: #fff; border-radius: 0 8px 8px 0;
 }
 .detail-content p { margin: 4px 0; font-size: 0.82rem; }
@@ -191,7 +191,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 }
 .group-section-header {
   background: linear-gradient(135deg, #f8fafc, #f1f5f9);
-  padding: 16px 20px; border-bottom: 2px solid #3b82f6;
+  padding: 16px 20px; border-bottom: 2px solid #eab308;
   display: flex; justify-content: space-between; align-items: center;
 }
 .group-section-header h3 {
@@ -206,13 +206,13 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 .group-section-header .pass-badge { background: #dcfce7; color: #166534; }
 .group-section-header .fail-badge { background: #fee2e2; color: #991b1b; }
 .group-summary-box {
-  background: linear-gradient(135deg, #eff6ff, #dbeafe); border-left: 4px solid #3b82f6;
+  background: linear-gradient(135deg, #fefce8, #fef9c3); border-left: 4px solid #eab308;
   padding: 14px 18px; margin: 12px 16px; border-radius: 0 10px 10px 0;
   font-size: 0.85rem; line-height: 1.6; color: #334155; white-space: pre-wrap;
 }
 .group-summary-label {
   font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
-  color: #1e40af; margin-bottom: 6px;
+  color: #92400e; margin-bottom: 6px;
 }
 .group-findings-list { padding: 0 16px 16px; }
 .group-finding-card {
@@ -305,6 +305,52 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
   .filters-bar { gap: 8px; }
   .filters-bar select { max-width: 100%; }
 }
+
+/* ── Device Profile Cards ── */
+.dp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.dp-card { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid #6366f1; border-radius: 12px; padding: 16px 20px; transition: transform 0.15s, box-shadow 0.15s; }
+.dp-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(99,102,241,0.15); }
+.dp-card .dp-name { font-size: 1rem; font-weight: 700; color: #0f172a; }
+.dp-card .dp-ip { font-size: 0.8rem; color: #64748b; }
+.dp-card .dp-badges { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+.dp-card .dp-badge-os { background: #dbeafe; color: #1e40af; padding: 2px 10px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; }
+.dp-card .dp-badge-vendor { background: #ede9fe; color: #5b21b6; padding: 2px 10px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; }
+.dp-card .dp-meta-row { font-size: 0.75rem; color: #475569; margin: 2px 0; }
+.dp-card .dp-meta-row strong { color: #334155; }
+.dp-card .dp-ports-title { font-size: 0.8rem; font-weight: 700; color: #334155; margin: 8px 0 4px; }
+.dp-card .dp-ports-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.dp-card .dp-port-chip { background: #f5f3ff; border: 1px solid #ddd6fe; color: #5b21b6; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; }
+
+/* ── Port Risk Boxes (dashboard finding cards) ── */
+.port-risk-box { background: #fffbeb; border: 1px solid #fbbf24; border-left: 4px solid #f59e0b; border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 8px 0; font-size: 0.78rem; color: #78350f; }
+.port-risk-box .port-risk-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-weight: 700; }
+.port-risk-box .port-chip { display: inline-block; background: #fde68a; color: #92400e; padding: 2px 10px; border-radius: 4px; font-size: 0.72rem; font-weight: 700; }
+.port-risk-box .port-number { font-family: monospace; color: #b45309; }
+.port-risk-box .port-purpose { color: #92400e; font-size: 0.72rem; font-style: italic; margin-bottom: 4px; }
+.port-risk-box .port-risk-body { margin-top: 4px; line-height: 1.5; }
+.port-risk-box .port-risk-body strong { color: #92400e; }
+.port-risk-box .port-risk-attacks { color: #b45309; font-size: 0.72rem; margin-top: 2px; }
+.port-risk-box .port-risk-impact { background: #fef3c7; padding: 4px 8px; border-radius: 4px; margin-top: 4px; font-size: 0.72rem; color: #78350f; }
+/* ── Exposed Ports Badge (group headers) ── */
+.exposed-ports-badge { display: inline-block; background: #fef3c7; border: 1px solid #fbbf24; color: #92400e; padding: 3px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 600; margin: 6px 0; }
+
+/* ── Business Impact Cards (Phase 4) ── */
+.impact-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px 18px; margin: 12px 0; transition: box-shadow 0.15s; }
+.impact-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+.impact-card.impact-critical { border-left: 5px solid #dc2626; background: linear-gradient(135deg, #fef2f2 0%, #fff 100%); }
+.impact-card.impact-high { border-left: 5px solid #ea580c; background: linear-gradient(135deg, #fff7ed 0%, #fff 100%); }
+.impact-card.impact-medium { border-left: 5px solid #d97706; background: linear-gradient(135deg, #fffbeb 0%, #fff 100%); }
+.impact-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.impact-header h3 { font-size: 1rem; margin: 0; color: #1e293b; }
+.impact-count { font-size: 0.75rem; color: #64748b; padding: 2px 10px; background: #f1f5f9; border-radius: 6px; }
+.impact-ports { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; font-size: 0.78rem; }
+.impact-ports strong { color: #92400e; }
+.impact-ports .port-chip { background: #fde68a; color: #92400e; padding: 2px 10px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; }
+.impact-body { font-size: 0.85rem; line-height: 1.6; color: #334155; }
+.impact-body p { margin: 4px 0; }
+.impact-body strong { color: #1e293b; }
+.impact-regulatory { font-size: 0.78rem; color: #6366f1; margin-top: 8px; padding: 6px 10px; background: #eef2ff; border-radius: 6px; }
+.impact-targets { font-size: 0.78rem; color: #64748b; margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -371,6 +417,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
       {{ chart_severity|safe }}
     </div>
     {% endif %}
+    {% if audience != 'executive' %}
     {% if chart_targets %}
     <div class="chart-card">
       <h3>Compliance by Target</h3>
@@ -389,12 +436,14 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
       {{ chart_group_compliance|safe }}
     </div>
     {% endif %}
+    {% endif %}{# end non-executive charts #}
     {% if chart_risk_heatmap %}
     <div class="chart-card" style="grid-column: 1 / -1;">
       <h3>Risk Heatmap</h3>
       {{ chart_risk_heatmap|safe }}
     </div>
     {% endif %}
+    {% if audience != 'executive' %}
     {% if chart_fp_gauge %}
     <div class="chart-card">
       <h3>False Positive Analysis</h3>
@@ -419,6 +468,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
       {{ chart_waterfall|safe }}
     </div>
     {% endif %}
+    {% endif %}{# end non-executive charts #}
   </div>
   {% endif %}{# end charts toggle #}
 
@@ -461,7 +511,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
   {% endif %}
 
   <!-- ═══ False Positive Analysis ═══ -->
-  {% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
+  {% if (not section_toggles or section_toggles.get('false_positives', true)) and fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
   <div class="section-title">⚠ False Positive Analysis <span class="badge-count">{{ fp_summary.total_suspects }}</span></div>
   <div class="fp-section">
     <p style="font-size:0.85rem;margin-bottom:14px;color:#475569;">
@@ -490,10 +540,55 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
   </div>
   {% endif %}
 
+  <!-- ═══ Business Impact Analysis (Phase 4) ═══ -->
+  {% if not section_toggles or section_toggles.get('business_impact', false) %}
+  {% if business_impact_groups is defined and business_impact_groups %}
+  <div class="section-title">Business Impact Analysis</div>
+  <p style="font-size: 0.82rem; color: #475569; margin-bottom: 12px;">Assessment of business risks from failed security controls, correlated with network exposure data. Only critical and high severity failures are included.</p>
+
+  {% for group in business_impact_groups %}
+  <div class="impact-card impact-{{ group.severity }}">
+    <div class="impact-header">
+      <h3>{{ group.theme }}</h3>
+      <span class="badge sev-{{ group.severity }}">{{ group.severity | upper }}</span>
+      <span class="impact-count">{{ group.finding_count }} control(s) failing</span>
+    </div>
+
+    {% if group.exposed_ports %}
+    <div class="impact-ports">
+      <strong>⚠ Exposed Services:</strong>
+      {% for ep in group.exposed_ports %}
+      <span class="port-chip">{{ ep.service_name }} :{{ ep.port }} ({{ ep.target }})</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="impact-body">
+      <p><strong>Finding:</strong> {{ group.summary }}</p>
+      <p><strong>Business Risk:</strong> {{ group.business_risk }}</p>
+    </div>
+
+    {% if group.regulatory_refs %}
+    <div class="impact-regulatory">
+      <strong>Regulatory:</strong> {{ group.regulatory_refs | join(', ') }}
+    </div>
+    {% endif %}
+
+    {% if group.affected_targets %}
+    <div class="impact-targets">
+      <strong>Affected Systems:</strong> {{ group.affected_targets | join(', ') }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+  {% endif %}
+
   <!-- ═══ Grouped Findings (Report Builder Phase 2) ═══ -->
   {% if has_builder and grouped_findings %}
 
   <!-- Audit Scope (grouped mode) -->
+  {% if not section_toggles or section_toggles.get('audit_scope', true) %}
   <div class="section-title">Audit Scope</div>
   <table class="data-table">
     <thead>
@@ -517,6 +612,39 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}{# end audit_scope toggle (grouped) #}
+
+  <!-- ═══ Device Profiles (grouped mode) ═══ -->
+  {% if (not section_toggles or section_toggles.get('device_profiles', true)) and has_device_profiles is defined and has_device_profiles %}
+  <div class="section-title">Device Profiles <span class="badge-count">{{ device_profiles_list | length }}</span></div>
+  <div class="dp-grid">
+    {% for dp in device_profiles_list %}
+    <div class="dp-card">
+      <div class="dp-name">{{ dp.hostname or dp.ip_address }}</div>
+      <div class="dp-ip">{{ dp.ip_address }}{% if dp.mac_address %} &middot; {{ dp.mac_address }}{% endif %}</div>
+      <div class="dp-badges">
+        {% if dp.os_display or dp.os_guess %}<span class="dp-badge-os">{{ dp.os_display or dp.os_guess }}</span>{% endif %}
+        {% if dp.vendor %}<span class="dp-badge-vendor">{{ dp.vendor }}</span>{% endif %}
+      </div>
+      {% if dp.domain %}<div class="dp-meta-row"><strong>Domain:</strong> {{ dp.domain }}</div>{% endif %}
+      {% if dp.device_model %}<div class="dp-meta-row"><strong>Model:</strong> {{ dp.device_model }}</div>{% endif %}
+      {% if dp.detection_method and dp.detection_method != 'target_info' %}<div class="dp-meta-row"><strong>Detected via:</strong> {{ dp.detection_method }}</div>{% endif %}
+      {% if dp.confidence %}<div class="dp-meta-row"><strong>Confidence:</strong> {{ dp.confidence }}%</div>{% endif %}
+      {% if dp.last_seen %}<div class="dp-meta-row"><strong>Last seen:</strong> {{ dp.last_seen[:10] }}</div>{% endif %}
+      {% if dp.open_ports and dp.open_ports | length > 0 %}
+      <div class="dp-ports-title">Open Ports ({{ dp.open_ports | length }})</div>
+      <div class="dp-ports-list">
+        {% for p in dp.open_ports | sort(attribute='port') %}
+        <span class="dp-port-chip" title="{{ p.banner | default('', true) }}">{{ p.service | default(p.port, true) }}:{{ p.port }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="dp-meta-row" style="color:#94a3b8; font-style:italic;">No port scan data yet — run a new audit scan to populate.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% if not section_toggles or section_toggles.get('findings_detail', true) %}
   <div class="section-title">Findings by Section <span class="badge-count">{{ grouped_findings|length }} sections</span></div>
@@ -598,6 +726,10 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
     </div>
     {% endif %}
 
+    {% if group.exposed_ports_summary %}
+    <div class="exposed-ports-badge">⚠ {{ group.exposed_ports_summary }}</div>
+    {% endif %}
+
     {% if group.summary %}
     <div class="group-summary-box">
       <div class="group-summary-label">AI Section Summary</div>
@@ -635,7 +767,23 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
           <p><span class="field-lbl">Actual:</span> <code>{{ f.actual_output_display|default(f.actual_output, true) }}</code>{% if f.actual_output_truncated %}<span style="color:#64748b; font-style:italic; font-size:0.75rem;"> ({{ f.actual_output_length }} chars{% if f.actual_output_lines_hidden %}, {{ f.actual_output_lines_hidden }} lines hidden{% endif %})</span>{% endif %}</p>
           {% if f.evaluation_explanation %}<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Evaluation:</strong> {{ f.evaluation_explanation }}</p>{% endif %}
           {% if f.remediation and (not section_toggles or section_toggles.get('recommendations', true)) %}<p><span class="field-lbl">Remediation:</span> {{ f.remediation }}</p>{% endif %}
-          {% if f.ai_advice %}<p style="background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> {{ f.ai_advice }}</p>{% endif %}
+          {% if f.ai_advice %}<p style="background:#fefce8;border-left:3px solid #eab308;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> {{ f.ai_advice }}</p>{% endif %}
+          {% if f.related_ports %}
+          {% for rp in f.related_ports %}
+          <div class="port-risk-box">
+            <div class="port-risk-header">
+              <span class="port-chip">{{ rp.service_name }}</span>
+              <span class="port-number">Port {{ rp.port }}</span>
+            </div>
+            {% if rp.service_purpose %}<div class="port-purpose">{{ rp.service_purpose }}</div>{% endif %}
+            <div class="port-risk-body">
+              <strong>⚠ Risk:</strong> {{ rp.risk_narrative }}
+              {% if rp.attack_examples %}<div class="port-risk-attacks"><strong>Known Attacks:</strong> {{ rp.attack_examples }}</div>{% endif %}
+              {% if rp.business_impact %}<div class="port-risk-impact"><strong>Business Impact:</strong> {{ rp.business_impact }}</div>{% endif %}
+            </div>
+          </div>
+          {% endfor %}
+          {% endif %}
         </div>
       </div>
       {% endfor %}
@@ -648,6 +796,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
   {# ═══ Original Flat Findings (no builder groups) ═══ #}
 
   <!-- ═══ Audit Scope ═══ -->
+  {% if not section_toggles or section_toggles.get('audit_scope', true) %}
   <div class="section-title">Audit Scope</div>
   <table class="data-table">
     <thead>
@@ -671,8 +820,42 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
       {% endfor %}
     </tbody>
   </table>
+  {% endif %}{# end audit_scope toggle (flat) #}
+
+  <!-- ═══ Device Profiles (flat mode) ═══ -->
+  {% if (not section_toggles or section_toggles.get('device_profiles', true)) and has_device_profiles is defined and has_device_profiles %}
+  <div class="section-title">Device Profiles <span class="badge-count">{{ device_profiles_list | length }}</span></div>
+  <div class="dp-grid">
+    {% for dp in device_profiles_list %}
+    <div class="dp-card">
+      <div class="dp-name">{{ dp.hostname or dp.ip_address }}</div>
+      <div class="dp-ip">{{ dp.ip_address }}{% if dp.mac_address %} &middot; {{ dp.mac_address }}{% endif %}</div>
+      <div class="dp-badges">
+        {% if dp.os_display or dp.os_guess %}<span class="dp-badge-os">{{ dp.os_display or dp.os_guess }}</span>{% endif %}
+        {% if dp.vendor %}<span class="dp-badge-vendor">{{ dp.vendor }}</span>{% endif %}
+      </div>
+      {% if dp.domain %}<div class="dp-meta-row"><strong>Domain:</strong> {{ dp.domain }}</div>{% endif %}
+      {% if dp.device_model %}<div class="dp-meta-row"><strong>Model:</strong> {{ dp.device_model }}</div>{% endif %}
+      {% if dp.detection_method and dp.detection_method != 'target_info' %}<div class="dp-meta-row"><strong>Detected via:</strong> {{ dp.detection_method }}</div>{% endif %}
+      {% if dp.confidence %}<div class="dp-meta-row"><strong>Confidence:</strong> {{ dp.confidence }}%</div>{% endif %}
+      {% if dp.last_seen %}<div class="dp-meta-row"><strong>Last seen:</strong> {{ dp.last_seen[:10] }}</div>{% endif %}
+      {% if dp.open_ports and dp.open_ports | length > 0 %}
+      <div class="dp-ports-title">Open Ports ({{ dp.open_ports | length }})</div>
+      <div class="dp-ports-list">
+        {% for p in dp.open_ports | sort(attribute='port') %}
+        <span class="dp-port-chip" title="{{ p.banner | default('', true) }}">{{ p.service | default(p.port, true) }}:{{ p.port }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="dp-meta-row" style="color:#94a3b8; font-style:italic;">No port scan data yet — run a new audit scan to populate.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <!-- ═══ Findings ═══ -->
+  {% if not section_toggles or section_toggles.get('findings_detail', true) %}
   <div class="section-title">Detailed Findings <span class="badge-count" id="findingCount">{{ findings|length }}</span></div>
 
   <div class="filters-bar">
@@ -708,6 +891,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
     </thead>
     <tbody id="findingsBody"></tbody>
   </table>
+  {% endif %}{# end findings_detail toggle (flat) #}
 
 {% endif %}{# end has_builder / flat findings conditional #}
 
@@ -715,7 +899,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 
 <div class="report-footer">
   <div style="margin-bottom:8px;">
-    <button onclick="window.print()" style="background:#3b82f6;color:#fff;border:none;padding:8px 20px;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='#2563eb'" onmouseout="this.style.background='#3b82f6'">&#128424; Print / Save as PDF</button>
+    <button onclick="window.print()" style="background:#eab308;color:#fff;border:none;padding:8px 20px;border-radius:8px;font-size:0.82rem;font-weight:600;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background='#ca8a04'" onmouseout="this.style.background='#eab308'">&#128424; Print / Save as PDF</button>
   </div>
   Generated by <strong>{{ company_name | default('AuditForge') }}</strong> &mdash; {{ generated_at }} &mdash; Fully self-contained, no external dependencies
 </div>
@@ -796,6 +980,25 @@ if ($('findingsBody')) {
     return copy;
   }
 
+  function buildPortRiskHtml(f) {
+    if (!f.related_ports || !f.related_ports.length) return '';
+    var html = '';
+    f.related_ports.forEach(function(rp) {
+      html += '<div class="port-risk-box">' +
+        '<div class="port-risk-header">' +
+          '<span class="port-chip">' + esc(rp.service_name || 'Service') + '</span>' +
+          '<span class="port-number">Port ' + esc(String(rp.port)) + '</span>' +
+        '</div>' +
+        (rp.service_purpose ? '<div class="port-purpose">' + esc(rp.service_purpose) + '</div>' : '') +
+        '<div class="port-risk-body">' +
+          '<strong>⚠ Risk:</strong> ' + esc(rp.risk_narrative || '') +
+          (rp.attack_examples ? '<div class="port-risk-attacks"><strong>Known Attacks:</strong> ' + esc(rp.attack_examples) + '</div>' : '') +
+          (rp.business_impact ? '<div class="port-risk-impact"><strong>Business Impact:</strong> ' + esc(rp.business_impact) + '</div>' : '') +
+        '</div></div>';
+    });
+    return html;
+  }
+
   function buildRow(f, idx, groupAttr) {
     var ga = groupAttr ? ' data-group="' + groupAttr + '"' : '';
     var fpBadge = '';
@@ -829,10 +1032,11 @@ if ($('findingsBody')) {
           '<p><span class="field-label">Actual:</span> <code>' + esc(f.actual_output_display || f.actual_output) + '</code>' + (f.actual_output_truncated ? '<span style="color:#64748b;font-style:italic;font-size:0.75rem"> (' + f.actual_output_length + ' chars' + (f.actual_output_lines_hidden ? ', ' + f.actual_output_lines_hidden + ' lines hidden' : '') + ')</span>' : '') + '</p>' +
           (f.evaluation_explanation ? '<p style="background:#f0fdf4;border-left:3px solid #22c55e;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>Evaluation:</strong> ' + esc(f.evaluation_explanation) + '</p>' : '') +
           (f.remediation ? '<p><span class="field-label">Remediation:</span> ' + esc(f.remediation) + '</p>' : '') +
-          (f.ai_advice ? '<p style="background:#eff6ff;border-left:3px solid #3b82f6;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> ' + esc(f.ai_advice) + '</p>' : '') +
+          (f.ai_advice ? '<p style="background:#fefce8;border-left:3px solid #eab308;padding:6px 10px;margin:6px 0;border-radius:0 4px 4px 0"><strong>AI Advice:</strong> ' + esc(f.ai_advice) + '</p>' : '') +
           (f.default_value ? '<p><span class="field-label">Default Value:</span> <code>' + esc(f.default_value) + '</code></p>' : '') +
           (f.auditor_notes ? '<p><span class="field-label">Notes:</span> ' + esc(f.auditor_notes) + '</p>' : '') +
           (f.auditor_override ? '<p><span class="field-label">Override:</span> ' + esc(f.auditor_override) + '</p>' : '') +
+          buildPortRiskHtml(f) +
         '</div></td>' +
       '</tr>';
   }

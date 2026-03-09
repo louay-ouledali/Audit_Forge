@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session  # UNUSED — safe to remove
 
 from backend.ai.benchmark_ai import generate_commands_for_batch
 from backend.core.exceptions import LLMTimeoutError, LLMUnavailableError

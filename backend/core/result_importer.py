@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import re
+import re  # UNUSED — safe to remove
 from datetime import datetime, timezone
 from typing import Any
 

@@ -13,12 +13,12 @@ from sqlalchemy.orm import Session
 
 from backend.config import PROJECT_ROOT
 from backend.core.phase1_parser import compute_pdf_hash, run_phase1
-from backend.core.phase2_enricher import is_paused, request_pause, run_phase2
+from backend.core.phase2_enricher import is_paused, request_pause, run_phase2  # UNUSED: 'is_paused' — safe to remove
 from backend.core.phase3_validator import (
     apply_corrections as phase3_apply,
-    clear_pause as phase3_clear_pause,
+    clear_pause as phase3_clear_pause,  # UNUSED — safe to remove
     dismiss_corrections as phase3_dismiss,
-    is_paused as phase3_is_paused,
+    is_paused as phase3_is_paused,  # UNUSED — safe to remove
     request_pause as phase3_request_pause,
     run_phase3,
 )
@@ -47,13 +47,13 @@ from backend.schemas.benchmark import (
     AIRuleCreateResponse,
     BulkGenerateRequest,
     BulkGenerateResponse,
-    BenchmarkExportResponse,
+    BenchmarkExportResponse,  # UNUSED — safe to remove
     RuleTestRequest,
     RuleTestResponse,
     RuleValidateRequest,
     MigrationReadinessResponse,
-    ScanComparisonItem,
-    ScanComparisonResponse,
+    ScanComparisonItem,  # UNUSED — safe to remove
+    ScanComparisonResponse,  # UNUSED — safe to remove
 )
 from backend.schemas.rule import VerificationReportResponse, VerificationResultsResponse, RuleResponse, RuleFullUpdate
 

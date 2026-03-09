@@ -647,6 +647,7 @@ export interface ReportGenerateRequest {
   audience?: string;
   sections?: Record<string, boolean>;
   group_summaries?: Record<string, string>;
+  severity_filter?: string[];
 }
 
 export interface AISummaryRequest {
@@ -688,6 +689,7 @@ export interface BuilderPreviewRequest {
   audience?: string;
   sections?: Record<string, boolean>;
   group_summaries?: Record<string, string>;
+  severity_filter?: string[];
 }
 
 // ── Phase 2: Grouping & Audience ─────────────────────────────

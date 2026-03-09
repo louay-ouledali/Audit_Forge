@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models.client import Client
 from backend.models.mission import Mission
-from backend.models.target import Target
+from backend.models.target import Target  # UNUSED — safe to remove
 from backend.models.mission_target import MissionTarget
 from backend.schemas.mission import (
     MissionCreate,

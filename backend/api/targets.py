@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import asyncio  # UNUSED — safe to remove
 import logging
 import time
 from datetime import datetime, timezone

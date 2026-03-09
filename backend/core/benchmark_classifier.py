@@ -11,7 +11,7 @@ benchmark PDFs after Phase 1 parsing.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field  # UNUSED: 'field' — safe to remove
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

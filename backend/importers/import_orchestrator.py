@@ -389,6 +389,10 @@ class ImportOrchestrator:
         if mission_id:
             self._ensure_mission_target(mission_id, target.id)
 
+        # ── Step 4b: Store open ports from import ────────────
+        if platform_info.open_ports:
+            self._upsert_discovery_cache_ports(platform_info, target)
+
         # ── Step 5: Create scan ──────────────────────────────
         scan = Scan(
             target_id=target.id,
@@ -545,6 +549,69 @@ class ImportOrchestrator:
         if not exists:
             self.db.add(MissionTarget(mission_id=mission_id, target_id=target_id))
             self.db.flush()
+
+    def _upsert_discovery_cache_ports(
+        self,
+        info: PlatformInfo,
+        target: Target,
+    ) -> None:
+        """Create or update a DiscoveryCache entry with open port data from import.
+
+        Keyed on IP address so the report generator can find it during
+        device-profile building (which looks up DiscoveryCache by MAC then IP).
+        """
+        from backend.models.discovery_cache import DiscoveryCache
+
+        ip = info.ip_address or target.ip_address
+        if not ip:
+            logger.debug("No IP address available — skipping port cache upsert")
+            return
+
+        cache_row = (
+            self.db.query(DiscoveryCache)
+            .filter(DiscoveryCache.ip_address == ip)
+            .first()
+        )
+
+        if cache_row:
+            # Merge imported ports with any existing port data
+            existing = cache_row.open_ports
+            existing_set = {(p["port"], p.get("protocol", "tcp")) for p in existing}
+            for p in info.open_ports:
+                key = (p["port"], p.get("protocol", "tcp"))
+                if key not in existing_set:
+                    existing.append(p)
+                    existing_set.add(key)
+            cache_row.open_ports = existing
+            cache_row.last_seen = datetime.now(timezone.utc)
+        else:
+            # Build os_version without duplicating the platform prefix
+            _os_ver = (info.os_version or "").strip()
+            _os_platform = (info.platform or "").strip()
+            if _os_ver and _os_platform and _os_ver.lower().startswith(_os_platform.lower()):
+                # os_version already contains the platform name
+                _final_os_ver = _os_ver
+            elif _os_ver and _os_platform:
+                _final_os_ver = f"{_os_platform} {_os_ver}"
+            else:
+                _final_os_ver = _os_ver or _os_platform or None
+
+            cache_row = DiscoveryCache(
+                ip_address=ip,
+                hostname=info.hostname or target.hostname,
+                os_guess=info.platform or None,
+                os_version=_final_os_ver,
+                detection_method="nessus_import",
+                confidence=70,
+            )
+            cache_row.open_ports = info.open_ports
+            self.db.add(cache_row)
+
+        self.db.flush()
+        logger.info(
+            "Stored %d open ports in DiscoveryCache for %s",
+            len(info.open_ports), ip,
+        )
 
     def _create_findings(
         self,

@@ -25,6 +25,7 @@ from backend.core.false_positive_detector import enrich_findings_with_fp
 from backend.core.text_utils import normalize_unicode, smart_truncate
 from backend.models.benchmark import Benchmark
 from backend.models.client import Client
+from backend.models.discovery_cache import DiscoveryCache
 from backend.models.finding import Finding
 from backend.models.mission import Mission
 from backend.models.rule import Rule
@@ -34,6 +35,10 @@ from backend.models.target import Target
 logger = logging.getLogger("auditforge.reports")
 
 TEMPLATES_DIR = str(__import__("pathlib").Path(__file__).resolve().parent.parent / "templates")
+
+# Project logo (transparent 128×128 PNG) embedded as base64 for PDF cover
+_PROJECT_LOGO_PATH = __import__("pathlib").Path(__file__).resolve().parent / "_project_logo_b64.txt"
+_PROJECT_LOGO_B64 = _PROJECT_LOGO_PATH.read_text().strip() if _PROJECT_LOGO_PATH.exists() else ""
 
 
 def _md_to_html(text: str) -> str:
@@ -61,6 +66,528 @@ SEVERITY_FILLS = {
 
 
 # ---------------------------------------------------------------------------
+# Service-to-port keyword mapping for finding ↔ discovery linkage
+# ---------------------------------------------------------------------------
+
+# Maps keywords (found in rule title/description) → sets of port numbers.
+# When a finding's rule text matches a keyword AND the target has that port
+# open in its discovery data, an informational note is attached.
+_SERVICE_PORT_MAP: dict[str, set[int]] = {
+    "ssh": {22},
+    "rdp": {3389},
+    "remote desktop": {3389},
+    "winrm": {5985, 5986},
+    "smb": {139, 445},
+    "server message block": {139, 445},
+    "netbios": {135, 137, 139},
+    "telnet": {23},
+    "ftp": {21},
+    "http": {80, 8080, 8000, 8443, 8888, 9090},
+    "https": {443, 8443},
+    "dns": {53},
+    "ldap": {389, 636},
+    "kerberos": {88},
+    "snmp": {161},
+    "smtp": {25},
+    "imap": {143},
+    "pop3": {110},
+    "vnc": {5900},
+    "mssql": {1433},
+    "sql server": {1433},
+    "mysql": {3306},
+    "postgresql": {5432},
+    "oracle": {1521},
+    "redis": {6379},
+    "mongodb": {27017},
+    "nfs": {2049},
+    "sip": {5060},
+    "syslog": {514},
+    "printing": {631, 9100},
+    "printer": {631, 9100},
+}
+
+
+# ---------------------------------------------------------------------------
+# Service Risk Knowledge Base — static, deterministic, no AI required.
+# Maps port number → human-readable service metadata + generic risk text.
+# ---------------------------------------------------------------------------
+
+_SERVICE_RISK_KB: dict[int, dict] = {
+    21: {
+        "name": "FTP (File Transfer Protocol)",
+        "purpose": "Unencrypted file transfer between systems",
+        "risk_when_rule_fails": "FTP transmits credentials and data in cleartext. If this control is misconfigured and FTP is exposed, attackers can intercept credentials via network sniffing or brute-force FTP logins to access sensitive files.",
+        "attack_examples": "Credential sniffing, anonymous FTP access, brute-force attacks",
+        "business_impact": "Unauthorized file access, data leakage, credential theft",
+    },
+    22: {
+        "name": "SSH (Secure Shell)",
+        "purpose": "Encrypted remote command-line access to servers and network devices",
+        "risk_when_rule_fails": "If SSH is exposed and this security control is misconfigured, attackers could exploit weak authentication, outdated ciphers, or missing access controls to gain remote shell access with full command execution capability.",
+        "attack_examples": "Brute-force login, credential stuffing, CVE-2024-6387 (regreSSHion)",
+        "business_impact": "Full system compromise, unauthorized data access, lateral movement into the internal network",
+    },
+    23: {
+        "name": "Telnet",
+        "purpose": "Unencrypted remote terminal access (legacy protocol)",
+        "risk_when_rule_fails": "Telnet sends all data including credentials in cleartext. Combined with a misconfigured security control, this allows trivial credential interception and unauthorized system access.",
+        "attack_examples": "Cleartext credential capture, man-in-the-middle attacks, brute-force login",
+        "business_impact": "Complete credential exposure, unauthorized system control, compliance violations",
+    },
+    25: {
+        "name": "SMTP (Simple Mail Transfer Protocol)",
+        "purpose": "Email transmission between mail servers",
+        "risk_when_rule_fails": "Exposed SMTP with misconfigured controls enables open relay abuse, phishing email injection, and email header manipulation for social engineering attacks.",
+        "attack_examples": "Open relay abuse, phishing campaigns, email spoofing",
+        "business_impact": "Reputation damage from spam relaying, phishing attacks targeting employees and partners",
+    },
+    53: {
+        "name": "DNS (Domain Name System)",
+        "purpose": "Name resolution translating domain names to IP addresses",
+        "risk_when_rule_fails": "Exposed DNS with security misconfigurations enables DNS cache poisoning, zone transfer leakage, and DNS amplification attacks that can redirect traffic or leak internal network topology.",
+        "attack_examples": "DNS cache poisoning, zone transfer enumeration, DNS amplification DDoS",
+        "business_impact": "Traffic interception, internal network mapping exposure, service disruption",
+    },
+    80: {
+        "name": "HTTP (Web Server)",
+        "purpose": "Unencrypted web service delivery",
+        "risk_when_rule_fails": "Unencrypted HTTP combined with failed security controls exposes web applications to session hijacking, credential theft, and content injection attacks.",
+        "attack_examples": "Session hijacking, credential interception, cross-site scripting",
+        "business_impact": "Data theft via web applications, customer-facing service compromise",
+    },
+    88: {
+        "name": "Kerberos",
+        "purpose": "Active Directory authentication protocol",
+        "risk_when_rule_fails": "Kerberos exposure with misconfigured authentication controls enables Kerberoasting, AS-REP roasting, and ticket-based attacks that can compromise domain credentials without brute-forcing.",
+        "attack_examples": "Kerberoasting, AS-REP roasting, Golden Ticket, Silver Ticket attacks",
+        "business_impact": "Active Directory domain compromise, privilege escalation to Domain Admin, full organizational takeover",
+    },
+    110: {
+        "name": "POP3 (Post Office Protocol)",
+        "purpose": "Email retrieval from mail servers (often unencrypted)",
+        "risk_when_rule_fails": "POP3 without TLS transmits email credentials in cleartext. Combined with security misconfigurations, this enables credential capture and unauthorized mailbox access.",
+        "attack_examples": "Credential sniffing, brute-force attacks, mailbox enumeration",
+        "business_impact": "Email account compromise, sensitive communication exposure",
+    },
+    135: {
+        "name": "MS-RPC (Microsoft Remote Procedure Call)",
+        "purpose": "Windows inter-process communication and remote service management",
+        "risk_when_rule_fails": "RPC exposure enables remote enumeration of system services, user accounts, and shares. Combined with misconfigured controls, it provides attack reconnaissance and exploitation vectors.",
+        "attack_examples": "RPC endpoint enumeration, DCOM exploitation, remote service abuse",
+        "business_impact": "Internal network reconnaissance, remote code execution on Windows systems",
+    },
+    139: {
+        "name": "NetBIOS Session Service",
+        "purpose": "Legacy Windows network file and printer sharing protocol",
+        "risk_when_rule_fails": "NetBIOS exposure combined with misconfigured SMB/sharing policies enables null session enumeration, credential capture via NTLM relay, and exploitation of legacy protocol weaknesses.",
+        "attack_examples": "Null session enumeration, NTLM relay attacks, Responder/LLMNR poisoning",
+        "business_impact": "Internal network reconnaissance, credential theft, lateral movement leading to domain compromise",
+    },
+    143: {
+        "name": "IMAP (Internet Message Access Protocol)",
+        "purpose": "Email access and management on mail servers",
+        "risk_when_rule_fails": "IMAP without TLS exposes email credentials during authentication. A misconfigured control increases the risk of unauthorized mailbox access and email data exfiltration.",
+        "attack_examples": "Credential interception, brute-force attacks, email data exfiltration",
+        "business_impact": "Email account compromise, sensitive business communication exposure",
+    },
+    161: {
+        "name": "SNMP (Simple Network Management Protocol)",
+        "purpose": "Network device monitoring and management",
+        "risk_when_rule_fails": "SNMP with default or weak community strings allows attackers to read device configurations, extract credentials, and modify network device settings remotely.",
+        "attack_examples": "Community string brute-force, configuration extraction, SNMP-based reconnaissance",
+        "business_impact": "Network infrastructure compromise, configuration exposure, device takeover",
+    },
+    389: {
+        "name": "LDAP (Lightweight Directory Access Protocol)",
+        "purpose": "Directory services for user authentication and organizational data",
+        "risk_when_rule_fails": "Unencrypted LDAP exposure with misconfigured controls allows credential capture during bind operations, directory enumeration of all user accounts, and LDAP injection attacks.",
+        "attack_examples": "LDAP bind credential capture, directory enumeration, LDAP injection",
+        "business_impact": "Mass credential exposure, complete Active Directory user enumeration, authentication bypass",
+    },
+    443: {
+        "name": "HTTPS (Secure Web Server)",
+        "purpose": "Encrypted web service delivery",
+        "risk_when_rule_fails": "Even over TLS, web services with failed security controls may be vulnerable to certificate validation bypasses, weak cipher exploitation, or application-layer attacks.",
+        "attack_examples": "TLS downgrade attacks, certificate validation bypass, web application exploitation",
+        "business_impact": "Customer-facing data exposure, secure communication interception",
+    },
+    445: {
+        "name": "SMB (Server Message Block)",
+        "purpose": "Windows file sharing, printer sharing, and inter-process communication",
+        "risk_when_rule_fails": "SMB exposure with a failed security control is one of the most dangerous combinations in Windows environments. Historical exploits like EternalBlue (MS17-010) and ongoing NTLM relay attacks directly target this port.",
+        "attack_examples": "EternalBlue/WannaCry, PetNotPetya, NTLM relay with ntlmrelayx, CobaltStrike SMB beacon",
+        "business_impact": "Organization-wide ransomware spread, mass data exfiltration from file shares, Active Directory domain takeover via relay attacks",
+    },
+    514: {
+        "name": "Syslog",
+        "purpose": "Centralized logging and event collection",
+        "risk_when_rule_fails": "Exposed syslog services can be flooded to hide malicious activity or injected with false log entries to mislead incident response and forensic investigations.",
+        "attack_examples": "Log injection, log flooding, evidence tampering",
+        "business_impact": "Loss of audit trail integrity, impaired incident detection and response",
+    },
+    636: {
+        "name": "LDAPS (LDAP over SSL)",
+        "purpose": "Encrypted directory services for user authentication",
+        "risk_when_rule_fails": "Even with TLS, misconfigurations in directory service controls can enable authentication bypass, certificate trust issues, or enumeration of directory objects.",
+        "attack_examples": "Certificate validation bypass, directory enumeration over encrypted channel",
+        "business_impact": "Authenticated access to directory services, user account enumeration",
+    },
+    1433: {
+        "name": "MS-SQL (Microsoft SQL Server)",
+        "purpose": "Microsoft relational database service",
+        "risk_when_rule_fails": "Exposed SQL Server with security misconfigurations enables direct database access, SQL injection against stored procedures, and potential remote code execution via xp_cmdshell.",
+        "attack_examples": "SQL brute-force, xp_cmdshell RCE, SQL injection, credential theft from databases",
+        "business_impact": "Direct database compromise, mass data exfiltration, regulatory breach (GDPR, PCI-DSS)",
+    },
+    1521: {
+        "name": "Oracle DB",
+        "purpose": "Oracle relational database service",
+        "risk_when_rule_fails": "Exposed Oracle database services with security gaps enable TNS listener attacks, database credential brute-forcing, and direct access to sensitive enterprise data.",
+        "attack_examples": "TNS listener exploitation, Oracle database brute-force, privilege escalation",
+        "business_impact": "Enterprise database compromise, sensitive financial/HR data exposure",
+    },
+    2049: {
+        "name": "NFS (Network File System)",
+        "purpose": "Unix/Linux network file sharing",
+        "risk_when_rule_fails": "NFS exposure with misconfigured export permissions allows unauthorized mounting of file systems, data exfiltration, and potentially root-level compromise via UID spoofing.",
+        "attack_examples": "NFS share enumeration, unauthorized file system mounting, UID spoofing",
+        "business_impact": "Unauthorized access to shared files and directories, data leakage",
+    },
+    3306: {
+        "name": "MySQL",
+        "purpose": "MySQL relational database service",
+        "risk_when_rule_fails": "Exposed MySQL with misconfigured controls enables database credential brute-forcing, unauthorized data access, and potential command execution via user-defined functions.",
+        "attack_examples": "MySQL brute-force, UDF exploitation, data exfiltration via SELECT INTO OUTFILE",
+        "business_impact": "Database compromise, customer data theft, application backend takeover",
+    },
+    3389: {
+        "name": "RDP (Remote Desktop Protocol)",
+        "purpose": "Graphical remote access to Windows desktops and servers",
+        "risk_when_rule_fails": "With RDP exposed and this security control failing, the system is vulnerable to credential brute-forcing, pass-the-hash attacks, and exploitation of RDP protocol vulnerabilities. Attackers gain full interactive desktop access.",
+        "attack_examples": "BlueKeep exploit (CVE-2019-0708), brute-force with Hydra/Crowbar, RDP session hijacking",
+        "business_impact": "Ransomware deployment via remote desktop, unauthorized access to sensitive desktop applications, keylogging and screen capture",
+    },
+    5060: {
+        "name": "SIP (Session Initiation Protocol)",
+        "purpose": "Voice over IP (VoIP) call signaling",
+        "risk_when_rule_fails": "Exposed SIP with security misconfigurations enables toll fraud, call interception, and denial-of-service attacks against telephony infrastructure.",
+        "attack_examples": "SIP registration hijacking, toll fraud, VoIP eavesdropping",
+        "business_impact": "Financial loss from toll fraud, privacy violation from call interception",
+    },
+    5432: {
+        "name": "PostgreSQL",
+        "purpose": "PostgreSQL relational database service",
+        "risk_when_rule_fails": "Exposed PostgreSQL with misconfigured controls allows database brute-forcing, unauthorized data access, and potential OS command execution via COPY TO/FROM PROGRAM.",
+        "attack_examples": "Database brute-force, COPY PROGRAM RCE, pg_read_file data extraction",
+        "business_impact": "Database compromise, sensitive data exfiltration, backend system takeover",
+    },
+    5900: {
+        "name": "VNC (Virtual Network Computing)",
+        "purpose": "Remote graphical desktop access (often weakly authenticated)",
+        "risk_when_rule_fails": "VNC frequently uses weak or no authentication. Exposure combined with security misconfigurations provides direct graphical access to the target system.",
+        "attack_examples": "VNC authentication bypass, weak password brute-force, session hijacking",
+        "business_impact": "Full remote desktop access, visual surveillance of user activity",
+    },
+    5985: {
+        "name": "WinRM HTTP (Windows Remote Management)",
+        "purpose": "PowerShell-based remote administration of Windows systems",
+        "risk_when_rule_fails": "WinRM exposure enables remote PowerShell execution. With failed security controls, attackers can execute arbitrary commands, deploy malware, and move laterally across the Windows environment.",
+        "attack_examples": "Evil-WinRM, Pass-the-Hash via WinRM, PowerShell Empire, lateral movement",
+        "business_impact": "Remote code execution across Windows fleet, mass malware deployment, domain-wide compromise",
+    },
+    5986: {
+        "name": "WinRM HTTPS (Windows Remote Management over SSL)",
+        "purpose": "Encrypted PowerShell-based remote administration of Windows systems",
+        "risk_when_rule_fails": "Even over TLS, WinRM with misconfigured controls allows authenticated remote PowerShell execution. Stolen or relayed credentials grant full administrative access.",
+        "attack_examples": "Certificate-based WinRM abuse, credential relay, encrypted C2 channel via WinRM",
+        "business_impact": "Stealthy remote administration abuse, difficult to detect lateral movement",
+    },
+    6379: {
+        "name": "Redis",
+        "purpose": "In-memory data store and cache (often unauthenticated by default)",
+        "risk_when_rule_fails": "Redis defaults to no authentication. Exposure allows data extraction, key manipulation, and can escalate to remote code execution via Lua scripting or module loading.",
+        "attack_examples": "Unauthenticated data access, Redis RCE via Lua eval, SSH key injection via CONFIG SET",
+        "business_impact": "Cache poisoning, session hijacking, server-side RCE",
+    },
+    8080: {
+        "name": "HTTP Alternate (Web Proxy/Application)",
+        "purpose": "Alternative web service or application server port",
+        "risk_when_rule_fails": "Alternate HTTP ports often run management interfaces, development servers, or proxies with weaker security controls than production web servers.",
+        "attack_examples": "Admin interface exploitation, default credentials on management consoles",
+        "business_impact": "Administrative access to web infrastructure, application compromise",
+    },
+    8443: {
+        "name": "HTTPS Alternate",
+        "purpose": "Alternative encrypted web service or management port",
+        "risk_when_rule_fails": "Often used for management consoles (vSphere, iLO, DRAC). Misconfigured controls may allow unauthorized access to hypervisor or hardware management interfaces.",
+        "attack_examples": "Management console exploitation, default credential attacks",
+        "business_impact": "Hypervisor/hardware takeover, infrastructure-wide compromise",
+    },
+    9090: {
+        "name": "Web Management Console",
+        "purpose": "Administrative web interfaces for servers and appliances",
+        "risk_when_rule_fails": "Management consoles on port 9090 (Cockpit, Prometheus, etc.) with failed security controls may expose system administration capabilities to unauthorized users.",
+        "attack_examples": "Default credential attacks, admin panel exploitation",
+        "business_impact": "System administration takeover, configuration manipulation",
+    },
+    9100: {
+        "name": "Network Printing (JetDirect)",
+        "purpose": "Direct network printing protocol",
+        "risk_when_rule_fails": "Exposed print services can be abused for data exfiltration via print jobs, printer memory extraction, and as pivot points into segmented networks.",
+        "attack_examples": "PRET exploitation, print job interception, printer-based pivoting",
+        "business_impact": "Document data leakage, network segmentation bypass",
+    },
+    27017: {
+        "name": "MongoDB",
+        "purpose": "NoSQL document database service",
+        "risk_when_rule_fails": "MongoDB historically defaults to no authentication. Exposure allows direct database access, data exfiltration, and potential ransomware-style data deletion.",
+        "attack_examples": "Unauthenticated database access, MongoDB ransom attacks, data exfiltration",
+        "business_impact": "Mass data theft or destruction, customer data exposure, regulatory breach",
+    },
+}
+
+
+def _safe_json_loads(raw: str, default):
+    """Parse a JSON string, returning *default* on any error."""
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return default
+
+
+def _parse_os_details(raw: str) -> dict:
+    """Parse target.os_details which may be a JSON dict or a plain string."""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return {"os": raw}
+
+
+def _build_os_display(os_guess: str, os_version: str) -> str:
+    """Build a clean, non-redundant OS display string from guess + version.
+
+    Avoids duplication like "Windows Server Windows Server 10" by detecting
+    when os_version already contains the os_guess text.
+    """
+    g = os_guess.strip()
+    v = os_version.strip()
+    if not g and not v:
+        return ""
+    if not v:
+        return g
+    if not g:
+        return v
+    # If os_version already starts with os_guess, just use os_version
+    if v.lower().startswith(g.lower()):
+        return v
+    # If os_guess is fully contained in os_version, just use os_version
+    if g.lower() in v.lower():
+        return v
+    return f"{g} {v}"
+
+
+def _build_device_profiles(
+    targets_map: dict[int, dict],
+    _targets_bulk: dict,
+    db: Session,
+) -> dict[int, dict]:
+    """Build a device profile for every target.
+
+    Uses DiscoveryCache when available (full port/OS data).  Falls back to
+    the target's own ``os_details`` JSON so that device profiles always
+    appear in technical reports even before a port scan has been run.
+    """
+    profiles: dict[int, dict] = {}
+
+    for tid, tdata in targets_map.items():
+        target_obj = _targets_bulk.get(tid)
+        if not target_obj:
+            continue
+
+        # Look up by MAC first (most reliable), then by IP
+        cache_row: DiscoveryCache | None = None
+        if target_obj.mac_address:
+            cache_row = (
+                db.query(DiscoveryCache)
+                .filter(DiscoveryCache.mac_address == target_obj.mac_address)
+                .order_by(DiscoveryCache.last_seen.desc())
+                .first()
+            )
+        if not cache_row and target_obj.ip_address:
+            cache_row = (
+                db.query(DiscoveryCache)
+                .filter(DiscoveryCache.ip_address == target_obj.ip_address)
+                .order_by(DiscoveryCache.last_seen.desc())
+                .first()
+            )
+
+        if cache_row:
+            open_ports = cache_row.open_ports  # parsed JSON list
+            _os_g = (cache_row.os_guess or "").strip()
+            _os_v = (cache_row.os_version or "").strip()
+            _os_display = _build_os_display(_os_g, _os_v)
+            profiles[tid] = {
+                "hostname": cache_row.hostname or tdata.get("hostname", ""),
+                "ip_address": cache_row.ip_address or tdata.get("ip_address", ""),
+                "mac_address": cache_row.mac_address or "",
+                "os_guess": _os_g,
+                "os_version": _os_v,
+                "os_display": _os_display,
+                "vendor": cache_row.vendor or "",
+                "device_model": cache_row.device_model or "",
+                "firmware": cache_row.firmware or "",
+                "domain": cache_row.domain or "",
+                "detection_method": cache_row.detection_method or "",
+                "confidence": cache_row.confidence or 0,
+                "open_ports": open_ports,
+                "connection_methods": cache_row.connection_methods,
+                "first_seen": cache_row.first_seen.isoformat() if cache_row.first_seen else "",
+                "last_seen": cache_row.last_seen.isoformat() if cache_row.last_seen else "",
+                "has_data": True,
+                "has_port_data": bool(open_ports),
+            }
+        else:
+            # Fallback: build a basic profile from Target's own data
+            os_info = _parse_os_details(target_obj.os_details or "")
+            _os_g = os_info.get("os", "")
+            _os_v = os_info.get("os_version", "")
+            profiles[tid] = {
+                "hostname": tdata.get("hostname", "") or target_obj.hostname or "",
+                "ip_address": tdata.get("ip_address", "") or target_obj.ip_address or "",
+                "mac_address": (target_obj.mac_address or ""),
+                "os_guess": _os_g,
+                "os_version": _os_v,
+                "os_display": _build_os_display(_os_g, _os_v),
+                "vendor": "",
+                "device_model": "",
+                "firmware": "",
+                "domain": "",
+                "detection_method": "target_info",
+                "confidence": 0,
+                "open_ports": [],
+                "connection_methods": [],
+                "first_seen": "",
+                "last_seen": "",
+                "has_data": True,
+                "has_port_data": False,
+            }
+
+    return profiles
+
+
+# ---------------------------------------------------------------------------
+# Port entry enrichment — backfill service names from the Risk KB
+# ---------------------------------------------------------------------------
+
+# Reverse lookup: port number → canonical service name from _SERVICE_RISK_KB
+_PORT_TO_SERVICE: dict[int, str] = {
+    port: meta["name"].split("(")[0].strip()
+    for port, meta in _SERVICE_RISK_KB.items()
+}
+
+
+def _enrich_port_entries(profiles: dict[int, dict]) -> None:
+    """Enrich open_ports entries that are missing service/product/banner.
+
+    Operates in-place.  For each port entry lacking a 'service' key (or
+    having an empty one), fills in service name, purpose, and a concise
+    info line from ``_SERVICE_RISK_KB``.
+    """
+    for profile in profiles.values():
+        for p in profile.get("open_ports", []):
+            port_num = p.get("port")
+            if not port_num:
+                continue
+            kb = _SERVICE_RISK_KB.get(port_num)
+            # Fill missing service name
+            if not p.get("service"):
+                if kb:
+                    p["service"] = kb["name"].split("(")[0].strip()
+                else:
+                    p["service"] = f"PORT-{port_num}"
+            # Fill missing banner/info with purpose
+            if not p.get("banner_snippet") and not p.get("banner") and kb:
+                p["banner"] = kb["purpose"]
+
+
+def _link_findings_to_services(
+    findings_rows: list[dict],
+    device_profiles: dict[int, dict],
+    scans_map: dict[int, "Scan"],
+) -> None:
+    """Annotate each finding with enriched port-risk data from discovery.
+
+    Uses *_SERVICE_RISK_KB* to produce human-readable service names, risk
+    narratives, attack examples and business-impact text for each related
+    port.  Falls back to a generic message when a port is not in the KB.
+
+    Mutates *findings_rows* in-place (adds ``related_ports`` list).
+    """
+    for f in findings_rows:
+        f["related_ports"] = []
+        scan_obj = scans_map.get(f.get("scan_id"))
+        if not scan_obj:
+            continue
+        profile = device_profiles.get(scan_obj.target_id)
+        if not profile or not profile.get("has_data"):
+            continue
+
+        open_port_numbers = {p.get("port") for p in profile.get("open_ports", []) if p.get("port")}
+        if not open_port_numbers:
+            continue
+
+        # Build a searchable text blob from rule title + description (lowercase)
+        text_blob = (f.get("rule_title", "") + " " + f.get("description", "")).lower()
+
+        matched: list[dict] = []
+        for keyword, ports in _SERVICE_PORT_MAP.items():
+            if keyword in text_blob:
+                for port_num in ports & open_port_numbers:
+                    # Raw Nmap service name
+                    svc_raw = next(
+                        (p.get("service", str(port_num)) for p in profile["open_ports"] if p.get("port") == port_num),
+                        str(port_num),
+                    )
+                    # Enrich from _SERVICE_RISK_KB
+                    kb = _SERVICE_RISK_KB.get(port_num)
+                    if kb:
+                        matched.append({
+                            "port": port_num,
+                            "service_raw": svc_raw,
+                            "service_name": kb["name"],
+                            "service_purpose": kb["purpose"],
+                            "matched_keyword": keyword,
+                            "risk_narrative": kb["risk_when_rule_fails"],
+                            "attack_examples": kb.get("attack_examples", ""),
+                            "business_impact": kb.get("business_impact", ""),
+                        })
+                    else:
+                        # Fallback: port not in KB — still show it, but with generic text
+                        matched.append({
+                            "port": port_num,
+                            "service_raw": svc_raw,
+                            "service_name": svc_raw,
+                            "service_purpose": f"Network service on port {port_num}",
+                            "matched_keyword": keyword,
+                            "risk_narrative": f"This service ({svc_raw}) was found open on the target. The combination of an open port and a failed security control increases the exploitability of this finding.",
+                            "attack_examples": "",
+                            "business_impact": "",
+                        })
+
+        # Deduplicate by port
+        seen_ports: set[int] = set()
+        for m in matched:
+            if m["port"] not in seen_ports:
+                f["related_ports"].append(m)
+                seen_ports.add(m["port"])
+
+
+# ---------------------------------------------------------------------------
 # Data aggregation
 # ---------------------------------------------------------------------------
 
@@ -70,10 +597,12 @@ def aggregate_report_data(
     scan_ids: list[int] | None,
     db: Session,
     excluded_rule_ids: list[int] | None = None,
+    severity_filter: list[str] | None = None,
 ) -> dict:
     """Query the database and return a normalised report data dict."""
     scans: list[Scan] = []
     _excluded = set(excluded_rule_ids) if excluded_rule_ids else set()
+    _sev_filter = set(s.lower() for s in severity_filter) if severity_filter else None
 
     if scope == "scan":
         scan = (
@@ -151,11 +680,19 @@ def aggregate_report_data(
         if not target_obj:
             continue
         if target_obj.id not in targets_map:
+            # Parse os_details (may be JSON from get_system_info or a plain string)
+            _os_raw = target_obj.os_details or ""
+            _os_parsed = _parse_os_details(_os_raw)
+            _os_display = _os_parsed.get("os", _os_raw) or ""
+            if _os_parsed.get("os_version") and _os_parsed["os_version"] not in _os_display:
+                _os_display = f"{_os_display} ({_os_parsed['os_version']})"
+            if _os_parsed.get("architecture") and _os_parsed["architecture"] not in _os_display:
+                _os_display = f"{_os_display} [{_os_parsed['architecture']}]"
             targets_map[target_obj.id] = {
-                "hostname": target_obj.hostname or "",
-                "ip_address": target_obj.ip_address or "",
+                "hostname": target_obj.hostname or _os_parsed.get("hostname", ""),
+                "ip_address": target_obj.ip_address or _os_parsed.get("ip", ""),
                 "target_type": target_obj.target_type or "",
-                "os_details": target_obj.os_details or "",
+                "os_details": _os_display.strip(),
                 "scans": [],
             }
         benchmark = _bench_bulk.get(scan.benchmark_id)
@@ -218,10 +755,15 @@ def aggregate_report_data(
             sev = (f.severity or (rule.severity if rule else "medium") or "medium").lower()
             status = (f.status or "").upper()
 
+            # Skip findings outside the severity filter
+            if _sev_filter and sev not in _sev_filter:
+                continue
+
             findings_rows.append({
                 "_rule_id": f.rule_id,
                 "scan_id": f.scan_id,
                 "target_hostname": target_obj.hostname if target_obj else "",
+                "target_type": target_obj.target_type if target_obj else "",
                 "benchmark_name": benchmark.name if benchmark else "",
                 "section_number": rule.section_number if rule else "",
                 "rule_title": normalize_unicode(rule.title) if rule else "",
@@ -237,6 +779,8 @@ def aggregate_report_data(
                 "ai_advice": normalize_unicode(f.ai_advice or ""),
                 "auditor_notes": normalize_unicode(f.auditor_notes or ""),
                 "auditor_override": normalize_unicode(f.auditor_override or ""),
+                "security_themes": _safe_json_loads(rule.security_themes_json, []) if rule and rule.security_themes_json else [],
+                "framework_mappings": _safe_json_loads(rule.framework_mappings, {}) if rule and rule.framework_mappings else {},
             })
 
             total_rules += 1
@@ -325,6 +869,16 @@ def aggregate_report_data(
     # ── False-positive detection ──
     findings_rows, fp_summary = enrich_findings_with_fp(findings_rows)
 
+    # ── Device profiles from DiscoveryCache ──
+    device_profiles = _build_device_profiles(targets_map, _targets_bulk, db)
+
+    # ── Enrich bare port entries with service names from Risk KB ──
+    _enrich_port_entries(device_profiles)
+
+    # ── Link findings to open services (informational only) ──
+    _scans_map_for_link = {s.id: s for s in scans}
+    _link_findings_to_services(findings_rows, device_profiles, _scans_map_for_link)
+
     # Derive a top-level benchmark_name from the first scan's benchmark
     _first_bench = next(
         (b for b in _bench_bulk.values()), None
@@ -371,6 +925,7 @@ def aggregate_report_data(
         "by_category": by_category,
         "categories_enriched": _build_enriched_categories({"by_category": by_category, "findings": findings_rows}),
         "fp_summary": fp_summary,
+        "device_profiles": device_profiles,
         "audit_info": audit_info,
         "ai_summary": None,
         "is_finalized": is_finalized,
@@ -409,6 +964,22 @@ def _enrich_group(name: str, finds: list[dict], summary_text: str) -> dict:
         if s_total > 0:
             sev_detail[sev] = {"total": s_total, "passed": s_pass, "failed": s_fail}
 
+    # Exposed ports summary (from port-risk engine)
+    exposed_ports: list[dict] = []
+    _seen_ep: set[int] = set()
+    for f in finds:
+        for rp in f.get("related_ports", []):
+            if rp["port"] not in _seen_ep:
+                exposed_ports.append({
+                    "port": rp["port"],
+                    "service_name": rp.get("service_name", rp.get("service_raw", str(rp["port"]))),
+                })
+                _seen_ep.add(rp["port"])
+    exposed_ports_summary = ""
+    if exposed_ports:
+        names = ", ".join(ep["service_name"] for ep in exposed_ports)
+        exposed_ports_summary = f"{len(exposed_ports)} exposed service(s): {names}"
+
     return {
         "name": name,
         "findings": finds_sorted,
@@ -420,7 +991,206 @@ def _enrich_group(name: str, finds: list[dict], summary_text: str) -> dict:
         "compliance_pct": compliance_pct,
         "sev_counts": sev_counts,
         "sev_detail": sev_detail,
+        "exposed_ports": exposed_ports,
+        "exposed_ports_summary": exposed_ports_summary,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Business Impact Section (templated, no AI)
+# ---------------------------------------------------------------------------
+
+_THEME_DISPLAY = {
+    "remote_access": "Remote Access Exposure",
+    "authentication": "Authentication & Password Weaknesses",
+    "audit_logging": "Audit Trail Gaps",
+    "network_security": "Network Security & Firewall",
+    "data_protection": "Data Protection & Encryption",
+    "privilege_escalation": "Privilege Escalation Risks",
+    "system_integrity": "System Integrity",
+}
+
+_THEME_TEMPLATES: dict[str, dict[str, str]] = {
+    "remote_access": {
+        "summary": "{count} remote access security control(s) are failing across {target_count} system(s). {port_context}",
+        "port_context_with": "Combined with open {port_list} port(s), this creates a direct path for unauthorized remote access to {target_desc}.",
+        "port_context_without": "While no corresponding remote access ports were detected as open, the misconfiguration should still be remediated to prevent future exposure.",
+        "business_risk": "Unauthorized remote access to {target_desc}. Attackers could deploy ransomware, exfiltrate sensitive data, or establish persistent access to the corporate network.",
+    },
+    "authentication": {
+        "summary": "{count} authentication/password control(s) are failing across {target_count} system(s). {port_context}",
+        "port_context_with": "With {port_list} exposed, credential-based attacks (brute-force, password spraying) can be conducted remotely.",
+        "port_context_without": "Even without direct network exposure, weak authentication policies enable insider threats and credential-based attacks.",
+        "business_risk": "Weak authentication policies allow unauthorized account access. This may lead to data breaches, regulatory non-compliance ({reg_refs}), and compromise of privileged accounts.",
+    },
+    "audit_logging": {
+        "summary": "{count} audit/logging control(s) are failing across {target_count} system(s). {port_context}",
+        "port_context_with": "With {port_list} exposed, attackers can operate undetected on systems lacking proper audit trails.",
+        "port_context_without": "Insufficient logging reduces the ability to detect and investigate security incidents.",
+        "business_risk": "Loss of audit trail integrity impairs incident detection. Regulatory frameworks ({reg_refs}) require comprehensive logging for compliance. A breach without logs may increase liability.",
+    },
+    "network_security": {
+        "summary": "{count} network/firewall control(s) are failing across {target_count} system(s). {port_context}",
+        "port_context_with": "Combined with open {port_list} port(s), the attack surface is significantly expanded.",
+        "port_context_without": "Misconfigured network controls may allow lateral movement within the internal network.",
+        "business_risk": "Weakened network defenses expose {target_desc} to lateral movement and network-based attacks. Ransomware and worm propagation are the primary business risks.",
+    },
+    "data_protection": {
+        "summary": "{count} data protection/encryption control(s) are failing across {target_count} system(s). {port_context}",
+        "port_context_with": "With {port_list} exposed, unencrypted data in transit or at rest is vulnerable to interception.",
+        "port_context_without": "Unencrypted storage or weak TLS configurations expose data to physical theft and insider threats.",
+        "business_risk": "Sensitive data exposure risk — customer PII, financial records, or credentials may be compromised. Regulatory penalties ({reg_refs}) for data protection failures can be substantial.",
+    },
+    "privilege_escalation": {
+        "summary": "{count} privilege/access control(s) are failing across {target_count} system(s). {port_context}",
+        "port_context_with": "With {port_list} exposed, attackers who gain initial access can quickly escalate privileges.",
+        "port_context_without": "Overly permissive privileges allow insider threats and post-compromise escalation.",
+        "business_risk": "Privilege escalation enables attackers to gain administrative control over {target_desc}. This is a precondition for data exfiltration, domain compromise, and persistent backdoor installation.",
+    },
+    "system_integrity": {
+        "summary": "{count} system integrity control(s) are failing across {target_count} system(s). {port_context}",
+        "port_context_with": "With {port_list} exposed, attackers can exploit unpatched vulnerabilities or tamper with boot configuration.",
+        "port_context_without": "Missing integrity controls (updates, code signing, secure boot) increase susceptibility to malware and rootkits.",
+        "business_risk": "Compromised system integrity undermines trust in the computing environment. Malware persistence, ransomware, and supply-chain attacks become feasible.",
+    },
+}
+
+# Keywords to auto-detect themes from rule titles/descriptions when security_themes_json is empty
+_THEME_KEYWORDS: dict[str, list[str]] = {
+    "remote_access": ["rdp", "remote desktop", "ssh", "vnc", "winrm", "remote access", "remote management", "terminal service"],
+    "authentication": ["password", "account lockout", "credential", "logon", "kerberos", "authentication", "smart card", "brute"],
+    "audit_logging": ["audit", "event log", "logging", "log size", "log retention", "security log"],
+    "network_security": ["firewall", "smb", "netbios", "network access", "icmp", "ip source routing", "tcp/ip", "wifi", "wlan"],
+    "data_protection": ["bitlocker", "encrypt", "tls", "ssl", "certificate", "data recovery", "drive encryption"],
+    "privilege_escalation": ["uac", "admin approval", "privilege", "elevation", "run as", "installer detection", "user rights", "access control"],
+    "system_integrity": ["update", "windows update", "code signing", "device guard", "secure boot", "wdac", "applocker", "defender"],
+}
+
+
+def _detect_themes(finding: dict) -> list[str]:
+    """Auto-detect themes from rule title and description when security_themes_json is empty."""
+    text = f"{finding.get('rule_title', '')} {finding.get('description', '')}".lower()
+    themes = []
+    for theme, keywords in _THEME_KEYWORDS.items():
+        if any(kw in text for kw in keywords):
+            themes.append(theme)
+    return themes
+
+
+def _generate_business_impact(findings: list[dict]) -> list[dict]:
+    """Generate business impact groups from failed critical/high findings, clustered by theme."""
+    # Only consider failed findings with critical or high severity
+    relevant = [f for f in findings if f.get("status") == "FAIL" and f.get("severity") in ("critical", "high")]
+    if not relevant:
+        return []
+
+    # Cluster findings by theme
+    theme_buckets: dict[str, list[dict]] = {}
+    for f in relevant:
+        themes = f.get("security_themes", []) or _detect_themes(f)
+        if not themes:
+            themes = ["system_integrity"]  # fallback bucket
+        for theme in themes:
+            theme_buckets.setdefault(theme, []).append(f)
+
+    # Build business impact groups
+    groups = []
+    for theme, theme_findings in theme_buckets.items():
+        templates = _THEME_TEMPLATES.get(theme, _THEME_TEMPLATES["system_integrity"])
+        display_name = _THEME_DISPLAY.get(theme, theme.replace("_", " ").title())
+
+        # Determine worst severity
+        worst_sev = "high"
+        if any(f.get("severity") == "critical" for f in theme_findings):
+            worst_sev = "critical"
+
+        # Collect affected targets
+        targets_set: set[str] = set()
+        target_types: set[str] = set()
+        for f in theme_findings:
+            if f.get("target_hostname"):
+                targets_set.add(f["target_hostname"])
+            if f.get("target_type"):
+                target_types.add(f["target_type"])
+
+        target_desc = "critical infrastructure"
+        if target_types:
+            parts = []
+            for tt in sorted(target_types):
+                count = sum(1 for f in theme_findings if f.get("target_type") == tt)
+                parts.append(f"{tt}s" if count > 1 else f"a {tt}")
+            target_desc = ", ".join(parts)
+
+        # Collect exposed ports from related_ports
+        exposed_ports: list[dict] = []
+        _seen_port_target: set[tuple] = set()
+        for f in theme_findings:
+            hostname = f.get("target_hostname", "")
+            for rp in f.get("related_ports", []):
+                key = (rp["port"], hostname)
+                if key not in _seen_port_target:
+                    exposed_ports.append({
+                        "port": rp["port"],
+                        "service_name": rp.get("service_name", str(rp["port"])),
+                        "target": hostname,
+                    })
+                    _seen_port_target.add(key)
+
+        # Build port list string
+        port_list = ", ".join(f"{ep['service_name']} ({ep['port']})" for ep in exposed_ports[:8])
+
+        # Build port context
+        if exposed_ports:
+            port_context = templates["port_context_with"].format(
+                port_list=port_list, target_desc=target_desc
+            )
+        else:
+            port_context = templates["port_context_without"]
+
+        # Collect regulatory references
+        reg_refs: list[str] = []
+        for f in theme_findings:
+            fm = f.get("framework_mappings", {})
+            if isinstance(fm, dict):
+                for framework, refs in fm.items():
+                    if isinstance(refs, list):
+                        for ref in refs:
+                            tag = f"{framework.replace('_', ' ')}: {ref}"
+                            if tag not in reg_refs:
+                                reg_refs.append(tag)
+        reg_refs = reg_refs[:6]  # cap for readability
+
+        reg_refs_str = ", ".join(reg_refs) if reg_refs else "applicable security frameworks"
+
+        # Build summary
+        summary = templates["summary"].format(
+            count=len(theme_findings),
+            target_count=len(targets_set) or 1,
+            port_context=port_context,
+        )
+
+        # Build business risk
+        business_risk = templates["business_risk"].format(
+            target_desc=target_desc,
+            reg_refs=reg_refs_str,
+        )
+
+        groups.append({
+            "theme": display_name,
+            "theme_key": theme,
+            "severity": worst_sev,
+            "finding_count": len(theme_findings),
+            "affected_targets": sorted(targets_set),
+            "exposed_ports": exposed_ports,
+            "summary": summary,
+            "business_risk": business_risk,
+            "regulatory_refs": reg_refs,
+            "findings": theme_findings,
+        })
+
+    # Sort by severity (critical first), then by finding count descending
+    groups.sort(key=lambda g: (0 if g["severity"] == "critical" else 1, -g["finding_count"]))
+    return groups
 
 
 def _build_grouped_findings(data: dict, findings: list[dict]) -> list[dict] | None:
@@ -744,6 +1514,7 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
     data["company_name"] = _wl.get("company_name", "AuditForge")
     data["company_logo_base64"] = _wl.get("company_logo_base64", "")
     data["auditor_name"] = _wl.get("auditor_name", "")
+    data["project_logo_base64"] = _PROJECT_LOGO_B64
 
     # Phase 2: grouped findings & builder metadata for template
     grouped_findings = _build_grouped_findings(data, data["findings"])
@@ -772,12 +1543,20 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
     # ── Build per-target findings breakdown ──
     data["per_target_findings"] = _build_per_target_findings(data)
 
+    # ── Build device profiles list for template ──
+    dp = data.get("device_profiles", {})
+    data["device_profiles_list"] = list(dp.values())
+    data["has_device_profiles"] = len(data["device_profiles_list"]) > 0
+
     # Build top-N remediation items for the Recommendations section
     _sev_prio = {"critical": 0, "high": 1, "medium": 2, "low": 3, "informational": 4}
     failed_for_recs = [f for f in data["findings"] if f.get("status") == "FAIL"]
     failed_for_recs.sort(key=lambda f: (_sev_prio.get(f.get("severity", "medium"), 5),
                                          f.get("section_number", "")))
     data["recommendations"] = failed_for_recs  # template will use this for a dedicated section
+
+    # Phase 4: Business Impact Section
+    data["business_impact_groups"] = _generate_business_impact(data["findings"])
 
     html_string = template.render(**data, include_passed=include_passed)
 
@@ -851,6 +1630,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
         "Scan ID", "Target", "Benchmark", "Section", "Rule Title",
         "Severity", "Status", "Description", "Actual Output", "Expected Output",
         "Remediation", "Evaluation", "AI Advice", "Auditor Notes", "Auditor Override",
+        "Related Services",
     ]
     ws2.append(columns)
     for col_idx in range(1, len(columns) + 1):
@@ -882,6 +1662,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
             _clean(f.get("ai_advice", "")),
             _clean(f.get("auditor_notes", "")),
             _clean(f.get("auditor_override", "")),
+            ", ".join(f"{rp['service']}:{rp['port']}" for rp in f.get("related_ports", [])) or "",
         ])
         # Color-code severity
         sev_fill = SEVERITY_FILLS.get(f["severity"])
@@ -1018,6 +1799,46 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     ws2.column_dimensions["K"].width = 35  # Remediation
     ws2.column_dimensions["L"].width = 30  # Evaluation
     ws2.column_dimensions["M"].width = 30  # AI Advice
+    ws2.column_dimensions["P"].width = 25  # Related Services
+
+    # ── Sheet: Device Profiles (from discovery data) ──
+    device_profiles = data.get("device_profiles", {})
+    dp_list = list(device_profiles.values())
+    if dp_list:
+        _FILL_DP_HEADER = PatternFill(start_color="EDE9FE", end_color="EDE9FE", fill_type="solid")
+        ws_dp = wb.create_sheet("Device Profiles")
+        dp_cols = ["Hostname", "IP Address", "MAC Address", "OS", "OS Version",
+                   "Vendor", "Model", "Domain", "Confidence", "Open Ports",
+                   "Detection Method", "Last Seen"]
+        ws_dp.append(dp_cols)
+        for col_idx in range(1, len(dp_cols) + 1):
+            c = ws_dp.cell(row=1, column=col_idx)
+            c.font = label_font
+            c.fill = _FILL_DP_HEADER
+
+        for dp in dp_list:
+            ports_str = ", ".join(
+                f"{p.get('service', p.get('port', '?'))}:{p.get('port', '?')}"
+                for p in dp.get("open_ports", [])
+            )
+            ws_dp.append([
+                dp.get("hostname", ""),
+                dp.get("ip_address", ""),
+                dp.get("mac_address", ""),
+                dp.get("os_guess", ""),
+                dp.get("os_version", ""),
+                dp.get("vendor", ""),
+                dp.get("device_model", ""),
+                dp.get("domain", ""),
+                dp.get("confidence", 0),
+                ports_str,
+                dp.get("detection_method", ""),
+                dp.get("last_seen", "")[:10] if dp.get("last_seen") else "",
+            ])
+
+        for col_idx in range(1, len(dp_cols) + 1):
+            ws_dp.column_dimensions[get_column_letter(col_idx)].width = 20
+        ws_dp.column_dimensions["J"].width = 40  # Open Ports
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -1097,8 +1918,16 @@ def generate_html_report(data: dict, include_passed: bool, db: Session | None = 
     # ── Per-target findings breakdown (parity with PDF) ──
     per_target_findings = _build_per_target_findings(data)
 
+    # ── Device profiles list (parity with PDF) ──
+    dp = data.get("device_profiles", {})
+    device_profiles_list = list(dp.values())
+    has_device_profiles = len(device_profiles_list) > 0
+
     # ── Convert AI summary from Markdown to HTML ──
     ai_summary_html = _md_to_html(data.get("ai_summary", ""))
+
+    # ── Phase 4: Business Impact Section ──
+    business_impact_groups = _generate_business_impact(findings)
 
     # ── Findings JSON for JS filtering/sorting engine ──
     findings_json = json.dumps(findings, default=str).replace("</", "<\\/")
@@ -1137,7 +1966,11 @@ def generate_html_report(data: dict, include_passed: bool, db: Session | None = 
         has_builder=has_builder,
         is_finalized=data.get("is_finalized", False),
         audit_info=data.get("audit_info", {}),
+        device_profiles=data.get("device_profiles", {}),
+        device_profiles_list=device_profiles_list,
+        has_device_profiles=has_device_profiles,
         include_passed=include_passed,
+        business_impact_groups=business_impact_groups,
         **charts,
     )
 

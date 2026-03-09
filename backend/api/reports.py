@@ -28,7 +28,7 @@ from backend.schemas.report import (
     GroupSummaryRequest,
     GroupSummaryResponse,
     ReportGenerateRequest,
-    RuleGroup,
+    RuleGroup,  # UNUSED — safe to remove
 )
 
 logger = logging.getLogger("auditforge.api.reports")
@@ -90,7 +90,8 @@ async def generate_report(payload: ReportGenerateRequest, db: Session = Depends(
         raise HTTPException(status_code=400, detail="scan_ids is required for custom scope")
 
     data = aggregate_report_data(payload.scope, payload.scope_id, payload.scan_ids, db,
-                                  excluded_rule_ids=payload.excluded_rule_ids)
+                                  excluded_rule_ids=payload.excluded_rule_ids,
+                                  severity_filter=payload.severity_filter)
 
     if not data or not data.get("scans"):
         raise HTTPException(status_code=404, detail="No scans found for the given scope")
@@ -236,6 +237,7 @@ def builder_preview(payload: BuilderPreviewRequest, db: Session = Depends(get_db
     data = aggregate_report_data(
         "custom", None, payload.scan_ids, db,
         excluded_rule_ids=payload.excluded_rule_ids,
+        severity_filter=getattr(payload, 'severity_filter', None),
     )
 
     if not data or not data.get("scans"):

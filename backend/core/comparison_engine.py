@@ -32,7 +32,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from backend.core.text_utils import normalize_unicode
+from backend.core.text_utils import normalize_unicode  # UNUSED — safe to remove (BUG: should be applied to inputs)
 
 logger = logging.getLogger("auditforge.comparison")
 

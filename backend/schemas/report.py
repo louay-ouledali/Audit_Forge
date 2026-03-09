@@ -23,6 +23,7 @@ class ReportGenerateRequest(BaseModel):
     audience: str = "technical"
     sections: dict[str, bool] | None = None
     group_summaries: dict[str, str] | None = None
+    severity_filter: list[str] | None = None
 
 
 class AISummaryRequest(BaseModel):
@@ -48,6 +49,7 @@ class BuilderPreviewRequest(BaseModel):
     audience: str = "technical"
     sections: dict[str, bool] | None = None
     group_summaries: dict[str, str] | None = None
+    severity_filter: list[str] | None = None
 
 
 class BuilderFindingsRequest(BaseModel):

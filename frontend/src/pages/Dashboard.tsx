@@ -44,6 +44,7 @@ export default function Dashboard() {
   const [stats, setStats] = useState({ clients: 0, active_missions: 0, benchmarks: 0, scans: 0 });
   const [totalMissions, setTotalMissions] = useState(0);
   const [recentScans, setRecentScans] = useState<ScanDetail[]>([]);
+  const [allCompletedScans, setAllCompletedScans] = useState<ScanDetail[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const location = useLocation();
@@ -62,6 +63,7 @@ export default function Dashboard() {
         const sortedScans = scansData.data
           .filter(s => s.status === 'completed' && s.completed_at)
           .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime());
+        setAllCompletedScans(sortedScans);
         setRecentScans(sortedScans.slice(0, 5));
       })
       .catch(() => {
@@ -81,29 +83,32 @@ export default function Dashboard() {
 
   // Generate chart data from recent scans — only real data, no fabrication
   const chartData = useMemo(() => {
-    if (!recentScans.length) return [];
+    if (!allCompletedScans.length) return [];
 
-    // Group by date
-    const dailyScores: Record<string, { total: number; count: number }> = {};
+    // Group by date using all completed scans
+    const dailyScores: Record<string, { total: number; count: number; sortKey: number }> = {};
 
-    recentScans.forEach(scan => {
+    allCompletedScans.forEach(scan => {
       if (scan.completed_at && scan.compliance_percentage !== null) {
-        const date = new Date(scan.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        if (!dailyScores[date]) dailyScores[date] = { total: 0, count: 0 };
+        const dt = new Date(scan.completed_at);
+        const date = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        if (!dailyScores[date]) dailyScores[date] = { total: 0, count: 0, sortKey: dt.getTime() };
         dailyScores[date].total += scan.compliance_percentage;
         dailyScores[date].count += 1;
       }
     });
 
     const entries = Object.entries(dailyScores);
-    // Require at least 3 real data points for a meaningful chart
-    if (entries.length < 3) return [];
+    // Require at least 2 real data points for a chart
+    if (entries.length < 2) return [];
 
-    return entries.map(([date, v]) => ({
-      date,
-      compliance: Math.round(v.total / v.count),
-    }));
-  }, [recentScans]);
+    return entries
+      .sort(([, a], [, b]) => a.sortKey - b.sortKey)
+      .map(([date, v]) => ({
+        date,
+        compliance: Math.round(v.total / v.count),
+      }));
+  }, [allCompletedScans]);
 
   const cards = [
     { label: 'Clients', value: stats.clients, icon: Building2, accent: 'text-ey-yellow', bg: 'bg-ey-yellow/10', link: '/clients', progress: 100 },
@@ -230,7 +235,7 @@ export default function Dashboard() {
               <div className="flex h-full flex-col items-center justify-center gap-2">
                 <BarChart3 className="h-8 w-8 text-dark-muted" />
                 <p className="text-dark-muted text-sm">Not enough data to display a trend chart</p>
-                <p className="text-xs text-dark-muted">At least 3 scans on different days are needed.</p>
+                <p className="text-xs text-dark-muted">At least 2 scans on different days are needed.</p>
               </div>
             )}
           </div>

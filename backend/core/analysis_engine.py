@@ -1,7 +1,7 @@
 """Post-mission AI analysis engine (Module 12)."""
 from __future__ import annotations
 
-import json
+import json  # UNUSED — safe to remove
 import logging
 from typing import Any
 

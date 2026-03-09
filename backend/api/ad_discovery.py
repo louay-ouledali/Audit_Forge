@@ -30,7 +30,7 @@ from backend.models.benchmark import Benchmark
 from backend.models.client import Client
 from backend.models.mission import Mission
 from backend.models.target import Target
-from backend.utils.encryption import decrypt_value, encrypt_value
+from backend.utils.encryption import decrypt_value, encrypt_value  # UNUSED: 'encrypt_value' — safe to remove
 
 logger = logging.getLogger(__name__)
 

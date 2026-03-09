@@ -42,7 +42,7 @@ import re
 import socket
 import ssl
 import struct
-import subprocess
+import subprocess  # UNUSED — safe to remove
 import sys
 import time
 from dataclasses import dataclass, field

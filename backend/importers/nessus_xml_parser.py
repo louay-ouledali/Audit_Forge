@@ -143,6 +143,16 @@ def parse_nessus_xml(
                 severity_attr = item.get("severity", "0")
                 is_compliance = plugin_id in COMPLIANCE_PLUGIN_IDS
 
+                # Extract port scan data from Plugin 34220
+                if plugin_id == "34220":
+                    _extract_port_from_xml_item(item, platform_info)
+                    continue
+
+                # Also collect open ports from ANY ReportItem with port > 0
+                _item_port = item.get("port", "0")
+                if _item_port and _item_port != "0":
+                    _extract_port_from_xml_item(item, platform_info)
+
                 if is_compliance and include_compliance:
                     finding = _parse_compliance_item(item, plugin_id, host_props)
                     if finding:
@@ -179,6 +189,36 @@ def _parse_host_properties(host_elem: ET.Element) -> dict[str, str]:
             if name:
                 props[name] = value
     return props
+
+
+def _extract_port_from_xml_item(item: ET.Element, info: PlatformInfo) -> None:
+    """Extract an open port from a ReportItem element.
+
+    Captures the Nessus ``svc_name`` attribute so the report can display
+    a meaningful service name instead of just "tcp" / "udp".
+    """
+    port_str = item.get("port", "0")
+    protocol = item.get("protocol", "tcp").lower()
+    try:
+        port_num = int(port_str)
+    except (ValueError, TypeError):
+        return
+    if port_num <= 0:
+        return
+    svc_name = (item.get("svc_name", "") or "").strip()
+    # Skip uninformative generic labels
+    if svc_name in ("", "?", "general"):
+        svc_name = ""
+    for existing in info.open_ports:
+        if existing.get("port") == port_num and existing.get("protocol") == protocol:
+            # Upgrade service name if we now have one and the existing entry doesn't
+            if svc_name and not existing.get("service"):
+                existing["service"] = svc_name.upper()
+            return
+    entry: dict[str, object] = {"port": port_num, "protocol": protocol}
+    if svc_name:
+        entry["service"] = svc_name.upper()
+    info.open_ports.append(entry)
 
 
 _CM_NS = "{http://www.nessus.org/cm}"
@@ -225,6 +265,10 @@ def _parse_compliance_item(
     if m:
         section_number = m.group(1)
         title = m.group(2)
+
+    # Skip .audit file reference metadata entries
+    if re.search(r"\.audit\s+from\s+", check_name, re.IGNORECASE):
+        return None
 
     # Parse framework references
     framework_mappings: dict[str, list[str]] = {}

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import io
-import json
+import io  # UNUSED — safe to remove
+import json  # UNUSED — safe to remove
 import logging
 import shutil
 import tempfile
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text  # UNUSED: 'inspect' — safe to remove
 from sqlalchemy.orm import Session
 
 from backend.config import settings as app_config
@@ -18,7 +18,7 @@ from backend.core.exceptions import BackupError
 from backend.database import Base, get_db, engine
 from backend.models.app_settings import AppSettings
 from backend.schemas.settings import (
-    BackupResponse,
+    BackupResponse,  # UNUSED — safe to remove
     RestoreResponse,
     SettingsResponse,
     SettingsUpdate,

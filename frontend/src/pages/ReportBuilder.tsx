@@ -84,22 +84,38 @@ const MIME: Record<string, string> = {
 };
 
 const AUDIENCES = [
-  { value: 'executive', label: 'Executive', icon: '📊', desc: 'High-level risk overview', secs: { executive_summary: true, charts: true, findings_detail: false, recommendations: true } },
-  { value: 'technical', label: 'Technical', icon: '🔧', desc: 'Full technical detail', secs: { executive_summary: true, charts: true, findings_detail: true, recommendations: true } },
-  { value: 'compliance', label: 'Compliance', icon: '📋', desc: 'Control mapping focus', secs: { executive_summary: true, charts: true, findings_detail: true, recommendations: true } },
+  { value: 'executive', label: 'Executive', icon: '📊', desc: 'Summaries, charts, business impact & top recommendations — no raw findings', secs: { executive_summary: true, charts: true, business_impact: true, findings_register: false, findings_detail: false, recommendations: true, device_profiles: false, audit_scope: true, categories: false, per_target: false, methodology: false, false_positives: false } },
+  { value: 'technical', label: 'Technical', icon: '🔧', desc: 'Everything — device profiles, methodology, FP analysis, all findings', secs: { executive_summary: true, charts: true, business_impact: false, findings_register: true, findings_detail: true, recommendations: true, device_profiles: true, audit_scope: true, categories: true, per_target: true, methodology: true, false_positives: true } },
+  { value: 'compliance', label: 'Compliance', icon: '📋', desc: 'All controls & evidence — categories, per-target, methodology, no device profiles', secs: { executive_summary: true, charts: true, business_impact: false, findings_register: true, findings_detail: true, recommendations: true, device_profiles: false, audit_scope: true, categories: true, per_target: true, methodology: true, false_positives: true } },
 ] as const;
 
 const REPORT_PRESETS = [
-  { id: 'exec', label: 'Executive Board', icon: '👔', audience: 'executive', format: 'pdf', includePassed: false, aiSummary: true },
-  { id: 'tech', label: 'Technical Deep-Dive', icon: '💻', audience: 'technical', format: 'html', includePassed: true, aiSummary: false },
-  { id: 'comp', label: 'Compliance Audit', icon: '📋', audience: 'compliance', format: 'pdf', includePassed: true, aiSummary: true },
+  { id: 'exec', label: 'Executive Board', icon: '👔', desc: 'Summaries, charts & top critical/high risks only', audience: 'executive', format: 'pdf', includePassed: false, aiSummary: true, severityFilter: 'critical,high' },
+  { id: 'tech', label: 'Technical Deep-Dive', icon: '💻', desc: 'Everything — all severities, full detail, device profiles', audience: 'technical', format: 'html', includePassed: true, aiSummary: false, severityFilter: 'all' },
+  { id: 'comp', label: 'Compliance Audit', icon: '📋', desc: 'Full evidence for every control — all severities', audience: 'compliance', format: 'pdf', includePassed: true, aiSummary: true, severityFilter: 'all' },
 ] as const;
+
+/* Section toggle groups — used by the Customize tab to render grouped toggles */
+const SEC_GROUPS: { label: string; icon: string; keys: string[] }[] = [
+  { label: 'Core', icon: '📊', keys: ['executive_summary', 'charts', 'audit_scope'] },
+  { label: 'Findings', icon: '📝', keys: ['findings_register', 'findings_detail', 'recommendations'] },
+  { label: 'Analysis', icon: '🔍', keys: ['business_impact', 'false_positives', 'per_target'] },
+  { label: 'Technical', icon: '🔧', keys: ['device_profiles', 'categories', 'methodology'] },
+];
 
 const SEC_LABELS: Record<string, string> = {
   executive_summary: 'Executive Summary',
-  charts: 'Charts & Graphs',
+  charts: 'Charts & Diagrams',
+  business_impact: 'Business Impact Analysis',
+  findings_register: 'Findings Register',
   findings_detail: 'Detailed Findings',
   recommendations: 'Recommendations',
+  device_profiles: 'Device Profiles & Ports',
+  audit_scope: 'Audit Scope',
+  categories: 'Rule Categories',
+  per_target: 'Per-Target Breakdown',
+  methodology: 'Audit Methodology',
+  false_positives: 'False Positive Analysis',
 };
 
 const QUICK_FILTERS = [
@@ -154,7 +170,9 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
   /* ── Audience & AI ────────────────────────────────────────── */
   const [audience, setAudience] = useState('technical');
   const [sections, setSections] = useState<Record<string, boolean>>({
-    executive_summary: true, charts: true, findings_detail: true, recommendations: true,
+    executive_summary: true, charts: true, business_impact: false, findings_register: true,
+    findings_detail: true, recommendations: true, device_profiles: true, audit_scope: true,
+    categories: true, per_target: true, methodology: true, false_positives: true,
   });
   const [groupSummaries, setGroupSummaries] = useState<Record<string, string>>({});
   const [loadingSummaryFor, setLoadingSummaryFor] = useState<string | null>(null);
@@ -346,7 +364,16 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
   }
 
   /* ── Audience & AI ────────────────────────────────────────── */
-  function applyAudience(preset: typeof AUDIENCES[number]) { setAudience(preset.value); setSections({ ...preset.secs }); }
+  function applyAudience(preset: typeof AUDIENCES[number]) {
+    setAudience(preset.value);
+    setSections({ ...preset.secs });
+    // Reset filter settings from corresponding preset to avoid stale state
+    const matchingPreset = REPORT_PRESETS.find(p => p.audience === preset.value);
+    if (matchingPreset) {
+      setIncludePassedRules(matchingPreset.includePassed);
+      setSeverityFilter(matchingPreset.severityFilter);
+    }
+  }
   function applyPreset(preset: typeof REPORT_PRESETS[number]) {
     setAudience(preset.audience);
     const audObj = AUDIENCES.find(a => a.value === preset.audience);
@@ -354,6 +381,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
     setExportFormat(preset.format);
     setIncludePassedRules(preset.includePassed);
     setIncludeAiSummary(preset.aiSummary);
+    setSeverityFilter(preset.severityFilter);
     setSuccess(`Applied ${preset.label} preset`);
   }
   function toggleSection(key: string) { setSections(prev => ({ ...prev, [key]: !prev[key] })); }
@@ -406,10 +434,11 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
         groups: groups.length > 0 ? groups : undefined,
         audience, sections,
         group_summaries: Object.keys(groupSummaries).length > 0 ? groupSummaries : undefined,
+        severity_filter: severityFilter !== 'all' ? severityFilter.split(',') : undefined,
       });
       setPreviewHtml(html);
     } catch { setError('Failed to generate preview'); } finally { setLoadingPreview(false); }
-  }, [selectedScanIds, excludedRuleIds, includePassedRules, customTitle, groups, audience, sections, groupSummaries]);
+  }, [selectedScanIds, excludedRuleIds, includePassedRules, customTitle, groups, audience, sections, groupSummaries, severityFilter]);
 
   useEffect(() => {
     if (selectedScanIds.length === 0) return;
@@ -430,6 +459,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
         groups: groups.length > 0 ? groups : undefined,
         audience, sections,
         group_summaries: Object.keys(groupSummaries).length > 0 ? groupSummaries : undefined,
+        severity_filter: severityFilter !== 'all' ? severityFilter.split(',') : undefined,
       };
       const blob = await api.generateReport(payload);
       const ext = FILE_EXT[exportFormat] || 'bin';
@@ -716,6 +746,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                 </div>
                 {REPORT_PRESETS.map(preset => (
                   <button key={preset.id} onClick={() => applyPreset(preset)}
+                    title={preset.desc}
                     className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-1.5 border border-dark-border rounded-lg bg-dark-elevated hover:bg-dark-overlay hover:border-dark-secondary transition-colors">
                     <span>{preset.icon}</span>
                     <span className="text-xs font-medium text-white">{preset.label}</span>
@@ -990,16 +1021,33 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                               </div>
                             </div>
 
-                            {/* Section Toggles */}
+                            {/* Section Toggles — grouped */}
                             <div>
                               <h3 className="text-sm font-semibold text-white mb-3">Report Sections</h3>
-                              <div className="space-y-1.5">
-                                {Object.entries(SEC_LABELS).map(([key, label]) => (
-                                  <button key={key} onClick={() => toggleSection(key)}
-                                    className="w-full flex items-center justify-between rounded-lg border border-dark-border bg-dark-elevated px-3 py-2.5 transition-colors hover:border-dark-secondary">
-                                    <span className="text-sm text-white">{label}</span>
-                                    {sections[key] ? <ToggleRight className="h-5 w-5 text-ey-yellow" /> : <ToggleLeft className="h-5 w-5 text-dark-muted" />}
-                                  </button>
+                              <div className="space-y-4">
+                                {SEC_GROUPS.map(group => (
+                                  <div key={group.label}>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                      <span className="text-xs font-semibold uppercase tracking-wider text-dark-secondary">{group.label}</span>
+                                      <button onClick={() => {
+                                        const allOn = group.keys.every(k => sections[k]);
+                                        const patch: Record<string, boolean> = {};
+                                        group.keys.forEach(k => { patch[k] = !allOn; });
+                                        setSections(prev => ({ ...prev, ...patch }));
+                                      }} className="text-[10px] text-dark-muted hover:text-ey-yellow transition-colors">
+                                        {group.keys.every(k => sections[k]) ? 'Deselect all' : 'Select all'}
+                                      </button>
+                                    </div>
+                                    <div className="space-y-1">
+                                      {group.keys.map(key => (
+                                        <button key={key} onClick={() => toggleSection(key)}
+                                          className="w-full flex items-center justify-between rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 transition-colors hover:border-dark-secondary">
+                                          <span className="text-sm text-white">{SEC_LABELS[key]}</span>
+                                          {sections[key] ? <ToggleRight className="h-5 w-5 text-ey-yellow" /> : <ToggleLeft className="h-5 w-5 text-dark-muted" />}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
                                 ))}
                               </div>
                             </div>

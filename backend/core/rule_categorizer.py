@@ -10,7 +10,7 @@ Improvements over v1:
 
 from __future__ import annotations
 
-import re
+import re  # UNUSED — safe to remove
 
 # ── Weight multipliers per source field ──
 WEIGHT_TITLE = 3

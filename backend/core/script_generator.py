@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.benchmark import Benchmark
 from backend.models.rule import Rule
-from backend.models.rule_command import RuleCommand
+from backend.models.rule_command import RuleCommand  # UNUSED — safe to remove
 from backend.models.rule_tag import RuleTag
 from backend.models.scan_preset import ScanPreset
 

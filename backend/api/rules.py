@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models.rule import Rule
-from backend.models.rule_command import RuleCommand
+from backend.models.rule_command import RuleCommand  # UNUSED — safe to remove
 from backend.models.rule_tag import RuleTag
 from backend.models.verification_report import VerificationReport
 from backend.schemas.rule import (
