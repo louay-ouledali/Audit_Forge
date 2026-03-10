@@ -149,6 +149,8 @@ def _insert_rule(db: Session, benchmark_id: int, rule_data: PreloadedRule) -> Ru
         severity=rule_data.severity,
         cis_controls=rule_data.cis_controls,
         enabled=rule_data.enabled,
+        # Multi-framework support (schema v2.0)
+        framework_ref=rule_data.framework_ref,
         # Pre-loaded intelligence fields on Rule
         narrative_group=rule_data.narrative_group,
         security_themes_json=_json_dumps(rule_data.security_themes),
@@ -228,6 +230,7 @@ def load_pack(pack_path: Path, db: Session, *, pack_hash: str | None = None) -> 
         version=meta.version,
         platform=meta.platform,
         platform_family=meta.platform_family,
+        framework=getattr(meta, "framework", "cis"),
         pdf_hash=meta.cis_pdf_hash.removeprefix("sha256:") if meta.cis_pdf_hash else None,
         total_rules=meta.total_rules,
         # Pre-loaded benchmarks skip the Phase 1/2/3 pipeline entirely
@@ -298,6 +301,7 @@ def upgrade_pack(
     existing_benchmark.version = meta.version
     existing_benchmark.platform = meta.platform
     existing_benchmark.platform_family = meta.platform_family
+    existing_benchmark.framework = getattr(meta, "framework", "cis")
     existing_benchmark.total_rules = meta.total_rules
     existing_benchmark.pack_hash = pack_hash
     existing_benchmark.preloaded_version = meta.version

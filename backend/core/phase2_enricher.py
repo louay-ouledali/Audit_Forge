@@ -69,6 +69,24 @@ async def run_phase2(benchmark_id: int) -> None:
             db.delete(fc)
         db.commit()
 
+        # ── Smart cache acceleration: query cache FIRST ──
+        cache_stats = {"auto_imported": 0, "flagged": 0, "skipped": 0}
+        try:
+            from backend.core.command_cache_manager import (
+                lookup_commands_for_benchmark,
+                apply_cached_commands,
+            )
+            matches = lookup_commands_for_benchmark(db, benchmark_id, min_confidence=0.5, cross_framework=True)
+            if matches:
+                cache_stats = apply_cached_commands(db, matches, auto_import_threshold=0.9, flag_threshold=0.7)
+                db.commit()
+                logger.info(
+                    "Phase 2 cache acceleration for benchmark %d: %d auto-imported, %d flagged, %d skipped",
+                    benchmark_id, cache_stats["auto_imported"], cache_stats["flagged"], cache_stats["skipped"],
+                )
+        except Exception as cache_exc:
+            logger.warning("Cache acceleration failed (non-fatal): %s", cache_exc)
+
         # Get rules that don't have commands yet (includes just-deleted failed ones)
         rules_without_commands = (
             db.query(Rule)
@@ -251,8 +269,23 @@ async def run_phase2(benchmark_id: int) -> None:
             "processed": processed,
             "template_matched": template_count,
             "llm_generated": llm_count,
+            "cache_auto_imported": cache_stats.get("auto_imported", 0),
+            "cache_flagged": cache_stats.get("flagged", 0),
         })
         db.commit()
+
+        # ── Populate command cache from this benchmark ──
+        try:
+            from backend.core.command_cache_manager import populate_cache_from_benchmark
+            pop_stats = populate_cache_from_benchmark(db, benchmark_id)
+            db.commit()
+            logger.info(
+                "Phase 2 cache population for benchmark %d: %d inserted, %d skipped",
+                benchmark_id, pop_stats["inserted"], pop_stats["skipped"],
+            )
+        except Exception as pop_exc:
+            logger.warning("Cache population failed (non-fatal): %s", pop_exc)
+
         logger.info("Phase 2 completed for benchmark %d", benchmark_id)
 
     except Exception as exc:

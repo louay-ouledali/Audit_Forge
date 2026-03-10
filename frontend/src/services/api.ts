@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo, ADConnectionTestResult, ADDiscoverResponse, ADWinRMCheckResult, ADBulkCreateResult } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo, ADConnectionTestResult, ADDiscoverResponse, ADWinRMCheckResult, ADBulkCreateResult, BenchmarkVersionItem, BenchmarkGroupResponse, VersionDiffResponse, CacheAccelerationStats } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -162,6 +162,37 @@ export async function importBenchmark(file: File): Promise<{ benchmark_id: numbe
 
 export async function deleteBenchmark(id: number): Promise<void> {
   await api.delete(`/benchmarks/${id}`);
+}
+
+// Version Groups & Diff
+export async function getBenchmarkGroups(): Promise<{ data: BenchmarkGroupResponse[]; total: number }> {
+  const { data } = await api.get('/benchmarks/groups');
+  return data;
+}
+
+export async function getBenchmarkGroup(groupId: number): Promise<BenchmarkGroupResponse> {
+  const { data } = await api.get(`/benchmarks/groups/${groupId}`);
+  return data;
+}
+
+export async function getBenchmarkVersions(benchmarkId: number): Promise<{ versions: BenchmarkVersionItem[]; current_id: number; group_id?: number }> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/versions`);
+  return data;
+}
+
+export async function getBenchmarkDiff(benchmarkId: number, otherId: number): Promise<VersionDiffResponse> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/diff/${otherId}`);
+  return data;
+}
+
+export async function setBenchmarkBaseline(benchmarkId: number): Promise<{ message: string; benchmark_id: number }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/set-baseline`);
+  return data;
+}
+
+export async function getBenchmarkCacheStats(benchmarkId: number): Promise<CacheAccelerationStats> {
+  const { data } = await api.get(`/benchmarks/${benchmarkId}/cache-stats`);
+  return data;
 }
 
 // Phase 2: Custom Benchmark + AI Rule Creation
@@ -655,6 +686,9 @@ export interface SmartImportPreviewResponse {
   scheme?: string;
   source_tool?: string;
   message?: string;
+  // Unknown format fields
+  is_unknown?: boolean;
+  ai_parseable?: boolean;
 }
 
 export async function smartImportPreview(file: File, clientId?: number | null): Promise<SmartImportPreviewResponse> {
@@ -687,6 +721,71 @@ export async function smartImport(
   const { data } = await api.post('/scans/smart-import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+  return data;
+}
+
+// ── Unknown Benchmark Import (AI reverse engineering) ────────
+
+export interface UnknownImportPlatformDetection {
+  platform: string;
+  platform_family: string;
+  confidence: number;
+  reasoning: string;
+  benchmark_title: string;
+  version: string;
+}
+
+export interface UnknownImportExtractedRule {
+  section_number: string;
+  title: string;
+  description: string;
+  severity: string;
+  has_cache_match: boolean;
+  cache_confidence: number;
+}
+
+export interface UnknownImportResult {
+  job_id: string;
+  status: string;
+  platform_detection: UnknownImportPlatformDetection | null;
+  extracted_rules: UnknownImportExtractedRule[];
+  total_rules: number;
+  cache_matches: number;
+  cache_match_percent: number;
+  error: string | null;
+}
+
+export interface UnknownImportConfirmResponse {
+  message: string;
+  benchmark_id: number;
+  benchmark_name: string;
+  total_rules: number;
+  commands_auto_imported: number;
+  commands_flagged: number;
+}
+
+export async function startUnknownImport(file: File): Promise<UnknownImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await api.post('/benchmarks/import/unknown', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function getUnknownImportStatus(jobId: string): Promise<UnknownImportResult> {
+  const { data } = await api.get(`/benchmarks/import/unknown/status/${jobId}`);
+  return data;
+}
+
+export async function confirmUnknownImport(payload: {
+  job_id: string;
+  platform: string;
+  platform_family?: string;
+  benchmark_title?: string;
+  version?: string;
+}): Promise<UnknownImportConfirmResponse> {
+  const { data } = await api.post('/benchmarks/import/unknown/confirm', payload);
   return data;
 }
 

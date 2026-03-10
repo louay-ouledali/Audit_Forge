@@ -249,7 +249,8 @@ def _decrypt_target_password(target: Target) -> str | None:
     if target.ssh_password_encrypted:
         try:
             return decrypt_value(target.ssh_password_encrypted, settings.SECRET_KEY)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to decrypt password for target %d: %s", target.id, exc)
             return None
     return None
 

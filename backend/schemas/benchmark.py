@@ -62,6 +62,8 @@ class EnrichStatusResponse(BaseModel):
     processed: int = 0
     template_matched: int = 0
     llm_generated: int = 0
+    cache_auto_imported: int = 0
+    cache_flagged: int = 0
     status: str = "pending"
 
 
@@ -235,3 +237,113 @@ class ScanComparisonResponse(BaseModel):
     rules_new: int = 0
     rules_removed: int = 0
     items: list[ScanComparisonItem] = []
+
+
+# ── Version Grouping & Diff ──
+
+
+class BenchmarkVersionItem(BaseModel):
+    """A single benchmark version within a group."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    version: str
+    platform: str
+    total_rules: int = 0
+    phase2_status: str = "pending"
+    is_baseline: bool = False
+    import_date: datetime | None = None
+    framework: str = "cis"
+
+
+class BenchmarkGroupResponse(BaseModel):
+    """A group of benchmark versions for the same product/platform."""
+    id: int
+    canonical_name: str
+    platform: str
+    platform_family: str
+    framework: str = "cis"
+    versions: list[BenchmarkVersionItem] = []
+
+
+class BenchmarkGroupListResponse(BaseModel):
+    data: list[BenchmarkGroupResponse]
+    total: int
+
+
+class DiffRuleItem(BaseModel):
+    """A single rule diff entry."""
+    section_number: str
+    title: str
+    severity: str | None = None
+    status: str  # added | removed | modified | unchanged
+    changed_fields: list[str] = []
+
+
+class VersionDiffResponse(BaseModel):
+    """Diff between two benchmark versions."""
+    base_id: int
+    base_name: str
+    compare_id: int
+    compare_name: str
+    added: list[DiffRuleItem] = []
+    removed: list[DiffRuleItem] = []
+    modified: list[DiffRuleItem] = []
+    unchanged_count: int = 0
+    total_base: int = 0
+    total_compare: int = 0
+
+
+class CacheAccelerationStats(BaseModel):
+    """Stats from smart cache acceleration during Phase 2."""
+    total_rules: int = 0
+    cache_hits: int = 0
+    auto_imported: int = 0
+    flagged_for_review: int = 0
+    remaining_for_llm: int = 0
+    coverage_percent: float = 0.0
+
+
+# ── Unknown Benchmark Import ──
+
+
+class UnknownImportPlatformDetection(BaseModel):
+    """LLM-detected platform information for an unknown benchmark."""
+    platform: str = "unknown"
+    platform_family: str = "other"
+    confidence: float = 0.0
+    reasoning: str = ""
+    benchmark_title: str = "Unknown Benchmark"
+    version: str = "unknown"
+
+
+class UnknownImportExtractedRule(BaseModel):
+    """A single rule extracted from an unknown benchmark by the LLM."""
+    section_number: str
+    title: str
+    description: str = ""
+    severity: str = "medium"
+    has_cache_match: bool = False
+    cache_confidence: float = 0.0
+
+
+class UnknownImportResultResponse(BaseModel):
+    """Full result of an unknown benchmark import analysis."""
+    job_id: str
+    status: str = "pending"  # pending | detecting_platform | extracting_rules | matching_cache | completed | failed
+    platform_detection: UnknownImportPlatformDetection | None = None
+    extracted_rules: list[UnknownImportExtractedRule] = []
+    total_rules: int = 0
+    cache_matches: int = 0
+    cache_match_percent: float = 0.0
+    error: str | None = None
+
+
+class UnknownImportConfirmRequest(BaseModel):
+    """User confirms or corrects the detected platform for an unknown import."""
+    job_id: str
+    platform: str
+    platform_family: str = "other"
+    benchmark_title: str | None = None
+    version: str | None = None

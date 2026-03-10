@@ -309,6 +309,47 @@ def _refine_from_name(name: str, info: PlatformInfo) -> None:
         _detect_os(stig_match.group(1), info)
         return
 
+    # DISA STIG without version
+    stig_no_ver = re.search(
+        r"(?:DISA\s+)?STIG\s+(.*?)(?:\s+Benchmark|\s+v\d|\s*$)",
+        name,
+        re.IGNORECASE,
+    )
+    if stig_no_ver and not stig_match:
+        product = stig_no_ver.group(1).strip()
+        if product:
+            info.benchmark_name = f"STIG {product}"
+            info.scheme = "STIG"
+            _detect_os(product, info)
+            return
+
+    # NIST SP 800-53 pattern
+    nist_match = re.search(
+        r"NIST\s+(?:SP\s+)?800-53\s*(?:Rev\.?\s*(\d+))?\s*(?:v?([\d.]+))?",
+        name,
+        re.IGNORECASE,
+    )
+    if nist_match:
+        rev = nist_match.group(1) or "5"
+        info.benchmark_name = f"NIST SP 800-53 Rev {rev}"
+        if nist_match.group(2):
+            info.benchmark_version = nist_match.group(2)
+        info.scheme = "NIST"
+        return
+
+    # ISO 27001/27002 pattern
+    iso_match = re.search(
+        r"ISO\s+(?:IEC\s+)?2700[12](?::(\d{4}))?",
+        name,
+        re.IGNORECASE,
+    )
+    if iso_match:
+        year = iso_match.group(1) or "2022"
+        info.benchmark_name = f"ISO 27001:{year}"
+        info.benchmark_version = year
+        info.scheme = "ISO"
+        return
+
     # Audit filename pattern: CIS_MS_SERVER_2012_R2_Level_1_v2.6.0.audit
     # Already normalised by callers but handle common underscore format too
     audit_match = re.search(

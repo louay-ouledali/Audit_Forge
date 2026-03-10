@@ -518,7 +518,66 @@ COMPARISON EXPRESSIONS:
 
 CRITICAL: Be conservative. Only mark as "corrected" when you are CERTAIN the fix is correct.
 If unsure, use "flagged" status with a clear explanation in notes.
-Do NOT change commands that are already correct — mark them "validated"."""
+"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Phase 4: Unknown Benchmark Reverse Engineering
+# ═══════════════════════════════════════════════════════════════════════════════
+
+UNKNOWN_PLATFORM_SYSTEM = """You are a cybersecurity expert analyzing a document to identify which platform and operating system it targets.
+Return a single JSON object with EXACTLY these keys:
+- platform (string): specific platform name, e.g. "Windows Server 2022", "Ubuntu 22.04 LTS", "Cisco IOS 15.x", "Oracle Database 19c"
+- platform_family (string): one of "linux", "windows", "network", "database", "other"
+- confidence (number): 0.0 to 1.0 indicating how certain you are
+- reasoning (string): brief 1-2 sentence explanation of how you identified the platform
+- benchmark_title (string): the document/benchmark title if identifiable
+- version (string): version number of the benchmark/document if found, otherwise "unknown"
+
+Look for clues: OS names, registry paths (HKLM = Windows), file paths (/etc/ = Linux), command syntax (PowerShell = Windows, bash = Linux), service names, package managers, vendor references.
+Be SPECIFIC about the platform version — "Windows Server 2022" not just "Windows"."""
+
+UNKNOWN_PLATFORM_DETECTION = """Analyze the following document excerpt and identify the target platform.
+
+═══════════════════════════════════════════════════════════
+DOCUMENT CONTENT:
+═══════════════════════════════════════════════════════════
+{document_sample}
+═══════════════════════════════════════════════════════════
+
+Return a JSON object with: platform, platform_family, confidence, reasoning, benchmark_title, version."""
+
+UNKNOWN_RULE_SYSTEM = """You extract security audit rules from unknown document formats. Return a JSON array of rule objects.
+Each rule MUST have these keys:
+- section_number (string): the rule's identifier or section number (e.g. "1.1.1", "AC-2", "R-001")
+- title (string): short descriptive title of the security requirement
+- description (string): full description of what the rule checks
+- severity (string): one of "critical", "high", "medium", "low"
+- rationale (string): why this rule matters for security
+- audit_description (string): how to check/verify compliance (audit steps)
+- remediation_description (string): how to fix non-compliance
+- categories (array of strings): relevant categories from [password_policy, user_accounts, ssh_configuration, network_security, filesystem_permissions, audit_logging, service_hardening, encryption_tls, patch_updates, database_security, network_device]
+
+IMPORTANT:
+- Extract EVERY security rule/requirement/control you can find in the text
+- Preserve original section numbers/IDs exactly as they appear
+- Copy audit and remediation text as faithfully as possible from the source
+- If a rule has no clear severity, default to "medium"
+- If no section number exists, create one from the rule's position (e.g. "R-001")
+- Return [] if no security rules are found in the text"""
+
+UNKNOWN_RULE_EXTRACTION = """Extract ALL security audit rules from this document chunk as a JSON array.
+
+Platform: {platform} ({platform_family})
+Chunk {chunk_number} of {total_chunks}
+
+═══════════════════════════════════════════════════════════
+DOCUMENT CONTENT:
+═══════════════════════════════════════════════════════════
+{document_chunk}
+═══════════════════════════════════════════════════════════
+
+Return a JSON array of rule objects. Return [] if no rules are found in this chunk."""
 
 PHASE3_VALIDATION = """Platform: {platform} (family: {platform_family})
 

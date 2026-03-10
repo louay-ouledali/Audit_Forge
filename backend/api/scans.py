@@ -1575,8 +1575,8 @@ async def _execute_scan_batch(
                 batch.status = "failed"
                 batch.completed_at = datetime.now(timezone.utc)
                 db.commit()
-        except Exception:
-            pass
+        except Exception as mark_exc:
+            logger.warning("Failed to mark batch %d as failed: %s", batch_id, mark_exc)
     finally:
         db.close()
 

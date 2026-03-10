@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from backend.models.app_settings import AppSettings
 from backend.models.benchmark import Benchmark
+from backend.models.benchmark_group import BenchmarkGroup
 from backend.models.client import Client
+from backend.models.command_cache import CommandCache
 from backend.models.discovery_cache import DiscoveryCache
 from backend.models.finding import Finding
 from backend.models.import_record import ImportRecord
@@ -23,7 +25,9 @@ from backend.models.verification_report import VerificationReport
 __all__ = [
     "AppSettings",
     "Benchmark",
+    "BenchmarkGroup",
     "Client",
+    "CommandCache",
     "DiscoveryCache",
     "Finding",
     "ImportRecord",

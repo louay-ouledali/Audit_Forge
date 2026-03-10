@@ -267,7 +267,7 @@ def _rule_body_score(body: str) -> int:
 _TITLE_STOP_PATTERN = re.compile(
     r"^\s*(?:Profile\s+Applicability|Description|Rationale|Impact|"
     r"Audit|Remediation|Default\s+Value|References|CIS\s+Controls|"
-    r"Additional\s+Information)\s*:?\s*$",
+    r"Additional\s+Information)\s*(?::|\s*$)",
     re.IGNORECASE,
 )
 

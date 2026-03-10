@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
@@ -7,8 +8,26 @@ from pydantic_settings import BaseSettings
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _generate_secret_key() -> str:
+    """Generate a persistent secret key and store it in .env.
+
+    On first run (no SECRET_KEY in env or .env), writes a random
+    256-bit key to `.env` so the same key is used on subsequent starts.
+    """
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("SECRET_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    key = secrets.token_urlsafe(32)
+    # Append to .env so it persists across restarts
+    with open(env_path, "a", encoding="utf-8") as f:
+        f.write(f"\nSECRET_KEY={key}\n")
+    return key
+
+
 class Settings(BaseSettings):
-    SECRET_KEY: str = "dev-secret-key-change-in-production"
+    SECRET_KEY: str = _generate_secret_key()
     DATABASE_URL: str = "sqlite:///data/auditforge.db"
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:8000"]
     LLM_OLLAMA_URL: str = "http://host.docker.internal:11434"

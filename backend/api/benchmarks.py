@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from backend.core.phase3_validator import (
 from backend.core.verification_engine import run_verification
 from backend.database import get_db
 from backend.models.benchmark import Benchmark
+from backend.models.benchmark_group import BenchmarkGroup
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
 from backend.models.rule_tag import RuleTag
@@ -54,6 +56,16 @@ from backend.schemas.benchmark import (
     MigrationReadinessResponse,
     ScanComparisonItem,  # UNUSED — safe to remove
     ScanComparisonResponse,  # UNUSED — safe to remove
+    BenchmarkVersionItem,
+    BenchmarkGroupResponse,
+    BenchmarkGroupListResponse,
+    DiffRuleItem,
+    VersionDiffResponse,
+    CacheAccelerationStats,
+    UnknownImportResultResponse,
+    UnknownImportPlatformDetection,
+    UnknownImportExtractedRule,
+    UnknownImportConfirmRequest,
 )
 from backend.schemas.rule import VerificationReportResponse, VerificationResultsResponse, RuleResponse, RuleFullUpdate
 
@@ -63,6 +75,10 @@ router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 
 BENCHMARKS_DIR = PROJECT_ROOT / "benchmarks"
 BENCHMARKS_DIR.mkdir(exist_ok=True)
+
+# ── In-memory store for unknown import jobs ──
+# Maps job_id → job state dict. Cleaned up periodically.
+_unknown_import_jobs: dict[str, dict] = {}
 
 
 @router.get("/catalog")
@@ -90,6 +106,9 @@ def get_benchmark_catalog(db: Session = Depends(get_db)):
             "is_ready": b.is_ready or False,
             "source": b.source or "user_imported",
             "import_date": b.import_date.isoformat() if b.import_date else None,
+            "framework": b.framework or "cis",
+            "group_id": b.group_id,
+            "is_baseline": b.is_baseline or False,
         })
     return build_catalog(benchmark_dicts)
 
@@ -147,6 +166,266 @@ async def import_benchmark(
     background_tasks.add_task(run_phase1, benchmark.id, pdf_path)
 
     return BenchmarkImportResponse(benchmark_id=benchmark.id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Unknown Benchmark Import (AI-powered reverse engineering)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def _run_unknown_import(job_id: str, content: str, db_factory):
+    """Background task: detect platform, extract rules, match cache."""
+    from backend.importers.unknown_parser import (
+        detect_platform_from_content,
+        extract_rules_from_unknown,
+        build_platform_info,
+    )
+    from backend.core.command_cache_manager import strict_platform_lookup
+
+    job = _unknown_import_jobs.get(job_id)
+    if not job:
+        return
+
+    try:
+        # Step 1: Platform detection
+        job["status"] = "detecting_platform"
+        detection = await detect_platform_from_content(content)
+        job["platform_detection"] = detection
+
+        # Step 2: Rule extraction
+        job["status"] = "extracting_rules"
+        rules = await extract_rules_from_unknown(
+            content,
+            detection["platform"],
+            detection["platform_family"],
+        )
+        job["extracted_rules"] = [
+            {
+                "section_number": r.section_number,
+                "title": r.title,
+                "description": r.description,
+                "severity": r.severity,
+            }
+            for r in rules
+        ]
+        job["total_rules"] = len(rules)
+
+        # Step 3: Cache matching (strict platform)
+        job["status"] = "matching_cache"
+        if detection["platform"].lower() != "unknown" and detection["confidence"] >= 0.3:
+            db = db_factory()
+            try:
+                rule_dicts = [
+                    {"section_number": r.section_number, "title": r.title}
+                    for r in rules
+                ]
+                cache_matches = strict_platform_lookup(db, detection["platform"], rule_dicts)
+
+                # Annotate rules with cache match info
+                matched_sections = {m["section_number"] for m in cache_matches}
+                for rule_dict in job["extracted_rules"]:
+                    if rule_dict["section_number"] in matched_sections:
+                        rule_dict["has_cache_match"] = True
+                        match = next(
+                            m for m in cache_matches
+                            if m["section_number"] == rule_dict["section_number"]
+                        )
+                        rule_dict["cache_confidence"] = match["confidence"]
+
+                job["cache_matches"] = len(cache_matches)
+                job["cache_match_percent"] = round(
+                    len(cache_matches) / len(rules) * 100, 1
+                ) if rules else 0.0
+            finally:
+                db.close()
+
+        job["status"] = "completed"
+
+    except Exception as exc:
+        logger.exception("Unknown import job %s failed", job_id)
+        job["status"] = "failed"
+        job["error"] = str(exc)
+
+
+@router.post("/import/unknown", response_model=UnknownImportResultResponse)
+async def start_unknown_import(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
+    """Start an AI-powered analysis of an unrecognized benchmark file.
+
+    Returns a job_id for polling status via GET /import/unknown/status/{job_id}.
+    """
+    raw = await file.read()
+    try:
+        content = raw.decode("utf-8", errors="replace")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read file as text")
+
+    if len(content.strip()) < 50:
+        raise HTTPException(status_code=400, detail="File is too small to analyse")
+
+    job_id = str(uuid.uuid4())
+    _unknown_import_jobs[job_id] = {
+        "status": "pending",
+        "platform_detection": None,
+        "extracted_rules": [],
+        "total_rules": 0,
+        "cache_matches": 0,
+        "cache_match_percent": 0.0,
+        "error": None,
+        "content": content,  # kept for confirm step
+    }
+
+    from backend.database import SessionLocal
+    background_tasks.add_task(_run_unknown_import, job_id, content, SessionLocal)
+
+    return UnknownImportResultResponse(job_id=job_id, status="pending")
+
+
+@router.get("/import/unknown/status/{job_id}", response_model=UnknownImportResultResponse)
+def get_unknown_import_status(job_id: str):
+    """Poll the status of an unknown benchmark import job."""
+    job = _unknown_import_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    detection = job.get("platform_detection")
+    rules = job.get("extracted_rules", [])
+
+    return UnknownImportResultResponse(
+        job_id=job_id,
+        status=job["status"],
+        platform_detection=UnknownImportPlatformDetection(**detection) if detection else None,
+        extracted_rules=[
+            UnknownImportExtractedRule(
+                section_number=r["section_number"],
+                title=r["title"],
+                description=r.get("description", ""),
+                severity=r.get("severity", "medium"),
+                has_cache_match=r.get("has_cache_match", False),
+                cache_confidence=r.get("cache_confidence", 0.0),
+            )
+            for r in rules
+        ],
+        total_rules=job.get("total_rules", 0),
+        cache_matches=job.get("cache_matches", 0),
+        cache_match_percent=job.get("cache_match_percent", 0.0),
+        error=job.get("error"),
+    )
+
+
+@router.post("/import/unknown/confirm")
+def confirm_unknown_import(
+    payload: UnknownImportConfirmRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Confirm platform and create benchmark from an unknown import job.
+
+    The user confirms or corrects the detected platform, then we create
+    the benchmark and its rules in the database.
+    """
+    job = _unknown_import_jobs.get(payload.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail=f"Job not ready (status: {job['status']})")
+
+    detection = job.get("platform_detection", {})
+    rules = job.get("extracted_rules", [])
+
+    # Use user-confirmed or detected values
+    platform = payload.platform or detection.get("platform", "unknown")
+    platform_family = payload.platform_family or detection.get("platform_family", "other")
+    bench_title = payload.benchmark_title or detection.get("benchmark_title", "Unknown Benchmark")
+    version = payload.version or detection.get("version", "unknown")
+
+    # Create benchmark
+    benchmark = Benchmark(
+        name=bench_title,
+        version=version,
+        platform=platform,
+        platform_family=platform_family,
+        source="ai_reverse_engineered",
+        framework="custom",
+        phase1_status="completed",
+        phase2_status="pending",
+        total_rules=len(rules),
+        import_date=datetime.now(timezone.utc),
+    )
+    db.add(benchmark)
+    db.flush()
+
+    # Auto-group
+    from backend.models.benchmark_group import BenchmarkGroup
+    group = (
+        db.query(BenchmarkGroup)
+        .filter(BenchmarkGroup.platform == platform)
+        .first()
+    )
+    if not group:
+        group = BenchmarkGroup(
+            canonical_name=bench_title,
+            platform=platform,
+            platform_family=platform_family,
+            framework="custom",
+        )
+        db.add(group)
+        db.flush()
+    benchmark.group_id = group.id
+
+    # Create rules
+    from backend.core.command_cache_manager import strict_platform_lookup, apply_cached_commands
+
+    created_rules = []
+    for rule_data in rules:
+        rule = Rule(
+            benchmark_id=benchmark.id,
+            section_number=rule_data["section_number"],
+            title=rule_data["title"],
+            description=rule_data.get("description", ""),
+            severity=rule_data.get("severity", "medium"),
+            framework_ref=rule_data["section_number"],
+        )
+        db.add(rule)
+        created_rules.append(rule)
+
+    db.flush()
+
+    # Apply cached commands if available
+    cache_applied = {"auto_imported": 0, "flagged": 0, "skipped": 0}
+    if created_rules:
+        rule_dicts = [
+            {"section_number": r.section_number, "title": r.title}
+            for r in created_rules
+        ]
+        cache_matches = strict_platform_lookup(db, platform, rule_dicts)
+        if cache_matches:
+            # Add rule_id to matches
+            rule_by_section = {r.section_number: r.id for r in created_rules}
+            for match in cache_matches:
+                match["rule_id"] = rule_by_section.get(match["section_number"])
+            cache_matches = [m for m in cache_matches if m.get("rule_id")]
+            cache_applied = apply_cached_commands(
+                db, cache_matches,
+                auto_import_threshold=0.7,  # Lower threshold for unknown benchmarks
+                flag_threshold=0.5,
+            )
+
+    db.commit()
+
+    # Clean up job
+    _unknown_import_jobs.pop(payload.job_id, None)
+
+    return {
+        "message": "Benchmark created from unknown import",
+        "benchmark_id": benchmark.id,
+        "benchmark_name": benchmark.name,
+        "total_rules": len(created_rules),
+        "commands_auto_imported": cache_applied.get("auto_imported", 0),
+        "commands_flagged": cache_applied.get("flagged", 0),
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -583,7 +862,8 @@ async def test_rule_command(
         try:
             from backend.utils.crypto import decrypt_value
             target._decrypted_password = decrypt_value(target.ssh_password_encrypted)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Failed to decrypt password for target %d: %s", target.id, exc)
             target._decrypted_password = None
 
     # Get connector and execute
@@ -821,6 +1101,259 @@ def _update_migration_readiness(benchmark_id: int, db: Session):
     stats = _compute_migration_readiness(benchmark, db)
     benchmark.migration_readiness = stats.readiness_percentage
     db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Version Groups & Diff
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/groups", response_model=BenchmarkGroupListResponse)
+def list_benchmark_groups(db: Session = Depends(get_db)):
+    """List all benchmark groups with their versions."""
+    groups = db.query(BenchmarkGroup).order_by(BenchmarkGroup.canonical_name).all()
+    result = []
+    for g in groups:
+        versions = [
+            BenchmarkVersionItem(
+                id=b.id,
+                name=b.name,
+                version=b.version,
+                platform=b.platform,
+                total_rules=b.total_rules or 0,
+                phase2_status=b.phase2_status or "pending",
+                is_baseline=b.is_baseline or False,
+                import_date=b.import_date,
+                framework=b.framework or "cis",
+            )
+            for b in sorted(g.benchmarks, key=lambda x: x.version or "", reverse=True)
+        ]
+        result.append(BenchmarkGroupResponse(
+            id=g.id,
+            canonical_name=g.canonical_name,
+            platform=g.platform,
+            platform_family=g.platform_family or "",
+            framework=g.framework or "cis",
+            versions=versions,
+        ))
+    return BenchmarkGroupListResponse(data=result, total=len(result))
+
+
+@router.get("/groups/{group_id}", response_model=BenchmarkGroupResponse)
+def get_benchmark_group(group_id: int, db: Session = Depends(get_db)):
+    """Get a single group with all its versions."""
+    g = db.query(BenchmarkGroup).filter(BenchmarkGroup.id == group_id).first()
+    if not g:
+        raise HTTPException(status_code=404, detail="Benchmark group not found")
+    versions = [
+        BenchmarkVersionItem(
+            id=b.id,
+            name=b.name,
+            version=b.version,
+            platform=b.platform,
+            total_rules=b.total_rules or 0,
+            phase2_status=b.phase2_status or "pending",
+            is_baseline=b.is_baseline or False,
+            import_date=b.import_date,
+            framework=b.framework or "cis",
+        )
+        for b in sorted(g.benchmarks, key=lambda x: x.version or "", reverse=True)
+    ]
+    return BenchmarkGroupResponse(
+        id=g.id,
+        canonical_name=g.canonical_name,
+        platform=g.platform,
+        platform_family=g.platform_family or "",
+        framework=g.framework or "cis",
+        versions=versions,
+    )
+
+
+@router.get("/{benchmark_id}/versions")
+def get_benchmark_versions(benchmark_id: int, db: Session = Depends(get_db)):
+    """Get sibling versions of a benchmark (same group)."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    if not benchmark.group_id:
+        return {"versions": [], "current_id": benchmark_id}
+
+    siblings = (
+        db.query(Benchmark)
+        .filter(Benchmark.group_id == benchmark.group_id)
+        .order_by(Benchmark.version.desc())
+        .all()
+    )
+    return {
+        "versions": [
+            BenchmarkVersionItem(
+                id=b.id,
+                name=b.name,
+                version=b.version,
+                platform=b.platform,
+                total_rules=b.total_rules or 0,
+                phase2_status=b.phase2_status or "pending",
+                is_baseline=b.is_baseline or False,
+                import_date=b.import_date,
+                framework=b.framework or "cis",
+            )
+            for b in siblings
+        ],
+        "current_id": benchmark_id,
+        "group_id": benchmark.group_id,
+    }
+
+
+@router.get("/{benchmark_id}/diff/{other_id}", response_model=VersionDiffResponse)
+def diff_benchmark_versions(benchmark_id: int, other_id: int, db: Session = Depends(get_db)):
+    """Diff two benchmark versions: added, removed, modified, unchanged rules."""
+    base = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    compare = db.query(Benchmark).filter(Benchmark.id == other_id).first()
+    if not base or not compare:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    base_rules = db.query(Rule).filter(Rule.benchmark_id == benchmark_id).all()
+    compare_rules = db.query(Rule).filter(Rule.benchmark_id == other_id).all()
+
+    base_map = {r.section_number: r for r in base_rules}
+    compare_map = {r.section_number: r for r in compare_rules}
+
+    added: list[DiffRuleItem] = []
+    removed: list[DiffRuleItem] = []
+    modified: list[DiffRuleItem] = []
+    unchanged_count = 0
+
+    # Rules in compare but not in base = added
+    for sec, rule in compare_map.items():
+        if sec not in base_map:
+            added.append(DiffRuleItem(
+                section_number=sec,
+                title=rule.title,
+                severity=rule.severity,
+                status="added",
+            ))
+
+    # Rules in base but not in compare = removed
+    for sec, rule in base_map.items():
+        if sec not in compare_map:
+            removed.append(DiffRuleItem(
+                section_number=sec,
+                title=rule.title,
+                severity=rule.severity,
+                status="removed",
+            ))
+
+    # Rules in both — check for modifications
+    for sec in base_map:
+        if sec not in compare_map:
+            continue
+        br = base_map[sec]
+        cr = compare_map[sec]
+        changes: list[str] = []
+        if (br.title or "") != (cr.title or ""):
+            changes.append("title")
+        if (br.description or "") != (cr.description or ""):
+            changes.append("description")
+        if (br.severity or "") != (cr.severity or ""):
+            changes.append("severity")
+        if (br.rationale or "") != (cr.rationale or ""):
+            changes.append("rationale")
+        if (br.remediation_description_raw or "") != (cr.remediation_description_raw or ""):
+            changes.append("remediation")
+        if (br.audit_description_raw or "") != (cr.audit_description_raw or ""):
+            changes.append("audit")
+
+        if changes:
+            modified.append(DiffRuleItem(
+                section_number=sec,
+                title=cr.title,
+                severity=cr.severity,
+                status="modified",
+                changed_fields=changes,
+            ))
+        else:
+            unchanged_count += 1
+
+    return VersionDiffResponse(
+        base_id=base.id,
+        base_name=base.name,
+        compare_id=compare.id,
+        compare_name=compare.name,
+        added=added,
+        removed=removed,
+        modified=modified,
+        unchanged_count=unchanged_count,
+        total_base=len(base_rules),
+        total_compare=len(compare_rules),
+    )
+
+
+@router.post("/{benchmark_id}/set-baseline")
+def set_baseline(benchmark_id: int, db: Session = Depends(get_db)):
+    """Mark a version as the baseline for its group."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+    if not benchmark.group_id:
+        raise HTTPException(status_code=400, detail="Benchmark is not in a version group")
+
+    # Clear existing baseline in the group
+    db.query(Benchmark).filter(
+        Benchmark.group_id == benchmark.group_id,
+        Benchmark.is_baseline == True,
+    ).update({"is_baseline": False})
+
+    benchmark.is_baseline = True
+    db.commit()
+    return {"message": f"Benchmark {benchmark_id} set as baseline", "benchmark_id": benchmark_id}
+
+
+@router.get("/{benchmark_id}/cache-stats", response_model=CacheAccelerationStats)
+def get_benchmark_cache_stats(benchmark_id: int, db: Session = Depends(get_db)):
+    """Get command cache acceleration stats for a benchmark."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    total_rules = db.query(func.count(Rule.id)).filter(Rule.benchmark_id == benchmark_id).scalar() or 0
+
+    inherited = (
+        db.query(func.count(RuleCommand.id))
+        .join(Rule)
+        .filter(Rule.benchmark_id == benchmark_id, RuleCommand.source.in_(["cache_auto", "cache_review"]))
+        .scalar()
+    ) or 0
+
+    auto_imported = (
+        db.query(func.count(RuleCommand.id))
+        .join(Rule)
+        .filter(Rule.benchmark_id == benchmark_id, RuleCommand.source == "cache_auto")
+        .scalar()
+    ) or 0
+
+    flagged = (
+        db.query(func.count(RuleCommand.id))
+        .join(Rule)
+        .filter(Rule.benchmark_id == benchmark_id, RuleCommand.source == "cache_review")
+        .scalar()
+    ) or 0
+
+    no_command = (
+        db.query(func.count(Rule.id))
+        .outerjoin(RuleCommand)
+        .filter(Rule.benchmark_id == benchmark_id, RuleCommand.id.is_(None))
+        .scalar()
+    ) or 0
+
+    return CacheAccelerationStats(
+        total_rules=total_rules,
+        cache_hits=inherited,
+        auto_imported=auto_imported,
+        flagged_for_review=flagged,
+        remaining_for_llm=no_command,
+        coverage_percent=round((inherited / total_rules * 100) if total_rules > 0 else 0.0, 1),
+    )
 
 
 @router.get("/{benchmark_id}", response_model=BenchmarkDetailEnvelope)
@@ -1276,6 +1809,8 @@ def get_enrichment_status(benchmark_id: int, db: Session = Depends(get_db)):
         processed=stats.get("processed", 0),
         template_matched=stats.get("template_matched", 0),
         llm_generated=stats.get("llm_generated", 0),
+        cache_auto_imported=stats.get("cache_auto_imported", 0),
+        cache_flagged=stats.get("cache_flagged", 0),
         status=benchmark.phase2_status or "pending",
     )
 

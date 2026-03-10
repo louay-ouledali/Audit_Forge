@@ -227,12 +227,15 @@ export interface CatalogBenchmark {
   is_ready: boolean;
   source: string;
   import_date: string | null;
+  framework?: string;
 }
 
 export interface ProductLine {
   name: string;
   icon: string;
   benchmarks: CatalogBenchmark[];
+  version_count?: number;
+  frameworks?: string[];
 }
 
 export interface CatalogVendor {
@@ -267,6 +270,8 @@ export interface EnrichStatus {
   processed: number;
   template_matched: number;
   llm_generated: number;
+  cache_auto_imported: number;
+  cache_flagged: number;
   status: string;
 }
 
@@ -870,4 +875,57 @@ export interface BackupInfo {
   filename: string;
   size_mb: number;
   created_at: string;
+}
+
+// ── Version Grouping & Diff ──────────────────────────────────
+
+export interface BenchmarkVersionItem {
+  id: number;
+  name: string;
+  version: string;
+  platform: string;
+  total_rules: number;
+  phase2_status: string;
+  is_baseline: boolean;
+  import_date: string | null;
+  framework: string;
+}
+
+export interface BenchmarkGroupResponse {
+  id: number;
+  canonical_name: string;
+  platform: string;
+  platform_family: string;
+  framework: string;
+  versions: BenchmarkVersionItem[];
+}
+
+export interface DiffRuleItem {
+  section_number: string;
+  title: string;
+  severity: string | null;
+  status: 'added' | 'removed' | 'modified' | 'unchanged';
+  changed_fields: string[];
+}
+
+export interface VersionDiffResponse {
+  base_id: number;
+  base_name: string;
+  compare_id: number;
+  compare_name: string;
+  added: DiffRuleItem[];
+  removed: DiffRuleItem[];
+  modified: DiffRuleItem[];
+  unchanged_count: number;
+  total_base: number;
+  total_compare: number;
+}
+
+export interface CacheAccelerationStats {
+  total_rules: number;
+  cache_hits: number;
+  auto_imported: number;
+  flagged_for_review: number;
+  remaining_for_llm: number;
+  coverage_percent: number;
 }

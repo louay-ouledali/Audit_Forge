@@ -7,6 +7,9 @@ from sqlalchemy.orm import relationship
 
 from backend.database import Base
 
+# Ensure BenchmarkGroup is importable for FK resolution
+from backend.models.benchmark_group import BenchmarkGroup  # noqa: F401
+
 
 class Benchmark(Base):
     __tablename__ = "benchmarks"
@@ -41,5 +44,11 @@ class Benchmark(Base):
     migration_readiness = Column(Float, nullable=True)   # % of rules with validated commands
     source_details = Column(Text, nullable=True)         # JSON: {import_source, auto_detected, platform_info}
 
+    # ── Version grouping & multi-framework fields ──
+    group_id = Column(Integer, ForeignKey("benchmark_groups.id", ondelete="SET NULL"), nullable=True)
+    framework = Column(String, default="cis")            # cis/nist/iso/stig/disa/custom/unknown
+    is_baseline = Column(Boolean, default=False)         # Primary version in a group for comparison
+
+    group = relationship("BenchmarkGroup", back_populates="benchmarks", foreign_keys=[group_id])
     rules = relationship("Rule", back_populates="benchmark", cascade="all, delete-orphan",
                          foreign_keys="[Rule.benchmark_id]")

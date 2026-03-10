@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Shield, Pencil } from 'lucide-react';
+import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Shield, Pencil, GitCompare, Database } from 'lucide-react';
 import { motion } from 'framer-motion';
-import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse, MigrationReadiness } from '@/types';
+import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse, MigrationReadiness, BenchmarkVersionItem, VersionDiffResponse, CacheAccelerationStats } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
 import RuleEditor from '@/components/benchmark/RuleEditor';
@@ -102,6 +102,13 @@ export default function BenchmarkDetail() {
   const rulesImportRef = useRef<HTMLInputElement>(null);
   const commandsImportRef = useRef<HTMLInputElement>(null);
   const [migrationReadiness, setMigrationReadiness] = useState<MigrationReadiness | null>(null);
+  const [versions, setVersions] = useState<BenchmarkVersionItem[]>([]);
+  const [showVersionDropdown, setShowVersionDropdown] = useState(false);
+  const [versionDiff, setVersionDiff] = useState<VersionDiffResponse | null>(null);
+  const [diffBadges, setDiffBadges] = useState<Record<string, 'added' | 'modified'>>({});
+  const [showDiffBadges, setShowDiffBadges] = useState(false);
+  const [cacheStats, setCacheStats] = useState<CacheAccelerationStats | null>(null);
+  const versionDropdownRef = useRef<HTMLDivElement>(null);
 
   const scrollToSection = (id: string) => {
     const el = document.getElementById(id);
@@ -132,6 +139,10 @@ export default function BenchmarkDetail() {
       api.getSeverityEnrichStatus(benchmarkId).then(s => setMediumRuleCount(s.medium_count)).catch(() => { });
       // Fetch migration readiness (silently fail if not available)
       api.getMigrationReadiness(benchmarkId).then(setMigrationReadiness).catch(() => { });
+      // Fetch sibling versions
+      api.getBenchmarkVersions(benchmarkId).then(v => setVersions(v.versions)).catch(() => { });
+      // Fetch cache stats
+      api.getBenchmarkCacheStats(benchmarkId).then(setCacheStats).catch(() => { });
     } catch {
       setError('Failed to load benchmark');
     } finally {
@@ -183,6 +194,18 @@ export default function BenchmarkDetail() {
     const timer = setTimeout(() => setSuccessMsg(''), 5000);
     return () => clearTimeout(timer);
   }, [successMsg]);
+
+  // Close version dropdown on outside click
+  useEffect(() => {
+    if (!showVersionDropdown) return;
+    const handleClick = (e: MouseEvent) => {
+      if (versionDropdownRef.current && !versionDropdownRef.current.contains(e.target as Node)) {
+        setShowVersionDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showVersionDropdown]);
 
   const handleEnrich = async () => {
     try {
@@ -672,7 +695,72 @@ export default function BenchmarkDetail() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
-          <h2 className="text-xl font-semibold text-white">{benchmark.name}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold text-white">{benchmark.name}</h2>
+            {/* Version Dropdown */}
+            {versions.length > 1 && (
+              <div className="relative" ref={versionDropdownRef}>
+                <button
+                  onClick={() => setShowVersionDropdown(!showVersionDropdown)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-dark-border bg-dark-elevated px-2.5 py-1 text-xs font-medium text-dark-secondary hover:border-ey-yellow/50 hover:text-white transition-colors"
+                >
+                  <GitCompare className="h-3.5 w-3.5" />
+                  v{benchmark.version}
+                  <ChevronDown className={`h-3 w-3 transition-transform ${showVersionDropdown ? 'rotate-180' : ''}`} />
+                </button>
+                {showVersionDropdown && (
+                  <div className="absolute left-0 top-full z-50 mt-1 w-72 rounded-xl border border-dark-border bg-dark-card shadow-xl">
+                    <div className="border-b border-dark-border px-3 py-2">
+                      <span className="text-xs font-medium text-dark-secondary">Versions ({versions.length})</span>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto py-1">
+                      {versions.map((v) => (
+                        <button
+                          key={v.id}
+                          onClick={async () => {
+                            setShowVersionDropdown(false);
+                            if (v.id !== benchmarkId) {
+                              // Fetch diff from current to selected version
+                              try {
+                                const diff = await api.getBenchmarkDiff(benchmarkId, v.id);
+                                setVersionDiff(diff);
+                                // Build badge map for the target rules
+                                const badges: Record<string, 'added' | 'modified'> = {};
+                                diff.added.forEach(r => { badges[r.section_number] = 'added'; });
+                                diff.modified.forEach(r => { badges[r.section_number] = 'modified'; });
+                                setDiffBadges(badges);
+                                setShowDiffBadges(true);
+                                // Auto-dismiss after 10 seconds
+                                setTimeout(() => setShowDiffBadges(false), 10000);
+                              } catch { /* ignore */ }
+                              navigate(`/benchmarks/${v.id}`);
+                            }
+                          }}
+                          className={`flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-dark-elevated ${v.id === benchmarkId ? 'bg-ey-yellow/5 border-l-2 border-ey-yellow' : ''}`}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium text-white truncate">v{v.version}</span>
+                              {v.is_baseline && (
+                                <span className="rounded bg-ey-yellow/10 px-1.5 py-0.5 text-[10px] font-medium text-ey-yellow">baseline</span>
+                              )}
+                              {v.id === benchmarkId && (
+                                <span className="rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-400">current</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-dark-muted mt-0.5">
+                              {v.total_rules} rules {'\u00b7'} {v.phase2_status}
+                              {v.import_date && ` \u00b7 ${new Date(v.import_date).toLocaleDateString()}`}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <p className="text-sm text-dark-secondary">
             {benchmark.platform} {'\u00b7'} {benchmark.platform_family} {'\u00b7'} v{benchmark.version} {'\u00b7'} {benchmark.total_rules} rules
           </p>
@@ -1063,6 +1151,81 @@ export default function BenchmarkDetail() {
           )
           }
 
+          {/* Version Diff Summary Banner */}
+          {showDiffBadges && versionDiff && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-4"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <GitCompare className="h-5 w-5 text-sky-400" />
+                  <span className="text-sm font-medium text-white">
+                    Version diff: {versionDiff.base_name} → {versionDiff.compare_name}
+                  </span>
+                </div>
+                <button onClick={() => setShowDiffBadges(false)} className="text-dark-muted hover:text-white">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-4 text-xs">
+                <span className="text-emerald-400">{versionDiff.added.length} added</span>
+                <span className="text-red-400">{versionDiff.removed.length} removed</span>
+                <span className="text-amber-400">{versionDiff.modified.length} modified</span>
+                <span className="text-dark-secondary">{versionDiff.unchanged_count} unchanged</span>
+              </div>
+              {versionDiff.removed.length > 0 && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs font-medium text-red-400 hover:text-red-300">
+                    Show {versionDiff.removed.length} removed rules
+                  </summary>
+                  <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
+                    {versionDiff.removed.map((r) => (
+                      <div key={r.section_number} className="flex items-center gap-2 rounded bg-red-500/5 px-2 py-1 text-xs">
+                        <span className="font-mono text-dark-muted">{r.section_number}</span>
+                        <span className="text-red-300">{r.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+            </motion.div>
+          )}
+
+          {/* Cache Acceleration Stats */}
+          {cacheStats && cacheStats.cache_hits > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-100px" }}
+              className="rounded-xl border border-dark-border bg-dark-card p-4"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <Database className="h-4 w-4 text-ey-yellow" />
+                <h4 className="text-sm font-medium text-white">Command Cache Acceleration</h4>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-lg bg-dark-elevated p-3">
+                  <div className="text-lg font-bold text-emerald-400">{cacheStats.auto_imported}</div>
+                  <div className="text-xs text-dark-muted">Auto-imported</div>
+                </div>
+                <div className="rounded-lg bg-dark-elevated p-3">
+                  <div className="text-lg font-bold text-amber-400">{cacheStats.flagged_for_review}</div>
+                  <div className="text-xs text-dark-muted">Flagged for review</div>
+                </div>
+                <div className="rounded-lg bg-dark-elevated p-3">
+                  <div className="text-lg font-bold text-sky-400">{cacheStats.remaining_for_llm}</div>
+                  <div className="text-xs text-dark-muted">Sent to LLM</div>
+                </div>
+                <div className="rounded-lg bg-dark-elevated p-3">
+                  <div className="text-lg font-bold text-ey-yellow">{cacheStats.coverage_percent}%</div>
+                  <div className="text-xs text-dark-muted">Cache coverage</div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {/* Rules Section */}
           {
             (benchmark.phase1_status === 'completed' || benchmark.source === 'custom') && (
@@ -1149,17 +1312,27 @@ export default function BenchmarkDetail() {
                         <div key={rule.id}>
                           <button
                             onClick={() => handleExpandRule(rule.id)}
-                            className="group flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-dark-elevated"
+                            className="group flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-dark-elevated min-w-0"
                           >
-                            <span className="min-w-[60px] text-sm font-mono text-dark-secondary">{rule.section_number}</span>
-                            <span className="flex-1 text-sm font-medium text-white">{rule.title}</span>
+                            <span className="min-w-[60px] shrink-0 text-sm font-mono text-dark-secondary">{rule.section_number}</span>
+                            <span className="flex-1 min-w-0 truncate text-sm font-medium text-white">{rule.title}</span>
+                            <div className="flex shrink-0 flex-wrap items-center gap-1.5 max-w-[40%] justify-end">
                             {severityBadge(rule.severity)}
+                            {showDiffBadges && diffBadges[rule.section_number] === 'added' && (
+                              <span className="animate-pulse rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-400">NEW</span>
+                            )}
+                            {showDiffBadges && diffBadges[rule.section_number] === 'modified' && (
+                              <span className="animate-pulse rounded bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400">CHANGED</span>
+                            )}
                             {rule.assessment_type && (
                               <span className="rounded bg-dark-overlay px-2 py-0.5 text-xs text-dark-secondary">{rule.assessment_type}</span>
                             )}
-                            {rule.tags.map((t) => (
-                              <span key={t.id} className="rounded bg-sky-500/10 px-2 py-0.5 text-xs text-sky-400">{t.tag_id}</span>
+                            {rule.tags.slice(0, 3).map((t) => (
+                              <span key={t.id} className="rounded bg-sky-500/10 px-2 py-0.5 text-xs text-sky-400 truncate max-w-[120px]">{t.tag_id}</span>
                             ))}
+                            {rule.tags.length > 3 && (
+                              <span className="rounded bg-sky-500/10 px-2 py-0.5 text-xs text-sky-400">+{rule.tags.length - 3}</span>
+                            )}
                             {rule.source === 'nessus_import' && (
                               <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-400">imported</span>
                             )}
@@ -1172,6 +1345,7 @@ export default function BenchmarkDetail() {
                             {rule.source === 'imported' && (
                               <span className="rounded bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">imported</span>
                             )}
+                            </div>
                             {benchmark.is_editable && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.id, rule.section_number); }}

@@ -80,10 +80,14 @@ class ExtractedRule:
     # Expected value (from Nessus "Policy Value")
     expected_value: str = ""
 
+    # Multi-framework support
+    framework: str = ""             # e.g. "cis", "stig", "nist", "iso"
+    framework_ref: str = ""         # Original ID in source framework (e.g. "V-253283", "AC-2(1)")
+
     def to_rule_kwargs(self) -> dict[str, Any]:
         """Return kwargs suitable for creating a Rule model instance."""
         import json
-        return {
+        kwargs = {
             "section_number": self.section_number,
             "title": self.title,
             "description": self.description,
@@ -95,6 +99,9 @@ class ExtractedRule:
             "audit_description_raw": "",  # No audit command from Nessus
             "references_json": json.dumps(self.framework_mappings) if self.framework_mappings else None,
         }
+        if self.framework_ref:
+            kwargs["framework_ref"] = self.framework_ref
+        return kwargs
 
 
 @dataclass

@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 logger = logging.getLogger("auditforge.schemas.preloaded")
 
 # Current schema version — bump when making breaking changes to the pack format
-CURRENT_SCHEMA_VERSION = "1.0"
+CURRENT_SCHEMA_VERSION = "2.0"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -41,8 +41,12 @@ class PreloadedBenchmarkMeta(BaseModel):
     platform: str = Field(
         ..., description="Target platform, e.g. 'Windows 11 Enterprise', 'Ubuntu 24.04 LTS'"
     )
-    platform_family: Literal["windows", "linux", "network", "database"] = Field(
+    platform_family: Literal["windows", "linux", "network", "database", "other", "container"] = Field(
         ..., description="Platform family for connector selection and template routing"
+    )
+    framework: str = Field(
+        default="cis",
+        description="Security framework: 'cis', 'stig', 'nist', 'iso', 'xccdf', 'custom'"
     )
     cis_pdf_hash: str | None = Field(
         None, description="SHA-256 hash of the source CIS PDF (prefixed with 'sha256:')"
@@ -196,6 +200,12 @@ class PreloadedRule(BaseModel):
     )
     enabled: bool = Field(default=True, description="Whether this rule is active by default")
     tags: list[RuleTag] = Field(default_factory=list, description="Functional category tags")
+
+    # ── Multi-framework fields (schema v2.0) ─────────────────────────────
+    framework_ref: str | None = Field(
+        None,
+        description="Original reference ID in the source framework (e.g. STIG 'V-253283', NIST 'AC-2(1)', ISO 'A.5.1')"
+    )
 
     # ── Audit command (from Phase 2, curated) ────────────────────────────
     audit_command: str | None = Field(

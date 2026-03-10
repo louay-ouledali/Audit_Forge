@@ -247,8 +247,8 @@ async def restore_backup(
     # 3) Re-create tables that may be missing (belt-and-suspenders)
     try:
         Base.metadata.create_all(bind=engine)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Post-restore create_all failed: %s", exc, exc_info=True)
 
     return RestoreResponse(
         message=f"Database restored successfully ({tables_restored} tables).{migration_note}",
@@ -333,8 +333,8 @@ def restore_auto_backup(filename: str, db: Session = Depends(get_db)):
 
     try:
         Base.metadata.create_all(bind=engine)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Post-restore create_all failed: %s", exc, exc_info=True)
 
     return {
         "message": f"Restored from {filename}.{migration_note}",

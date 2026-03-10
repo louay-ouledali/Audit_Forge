@@ -215,12 +215,20 @@ def _parse_findings_from_html(content: str, platform_info: PlatformInfo) -> list
                 platform_info.scheme = pi.scheme or platform_info.scheme
 
         # ── Build ParsedFinding ───────────────────────────────
+        # Split inline Rationale: / Impact: markers from the Info blob
+        info_raw = _clean_text(sections.get("info", ""))
+        desc, rationale, impact = _split_info_text(info_raw)
+        # Prefer separately-extracted sections if the HTML had them as headers
+        rationale = _clean_text(sections.get("rationale", "")) or rationale
+        impact = _clean_text(sections.get("impact", "")) or impact
         findings.append(ParsedFinding(
             section_number=section_number,
             title=raw_title,
             status=status,
             severity="medium",
-            description=_clean_text(sections.get("info", "")) or None,
+            description=desc or None,
+            rationale=rationale or None,
+            impact=impact or None,
             solution=_clean_text(sections.get("solution", "")) or None,
             see_also=_clean_text(sections.get("see_also", "")) or None,
             policy_value=_clean_text(sections.get("policy_value", "")) or None,

@@ -217,7 +217,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
   const handleSmartImport = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json,.zip,.csv,.html,.htm,.nessus,.xml';
+    input.accept = '.json,.zip,.csv,.html,.htm,.nessus,.xml,.ckl,.txt,.pdf,.xls,.xlsx,.doc,.docx';
     input.multiple = true;
     input.onchange = async () => {
       const files = input.files;
@@ -226,7 +226,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
 
       const firstFile = files[0];
       const ext = firstFile.name.split('.').pop()?.toLowerCase();
-      const isScannerFormat = ['csv', 'html', 'htm', 'nessus', 'xml'].includes(ext || '');
+      const isScannerFormat = ['csv', 'html', 'htm', 'nessus', 'xml', 'ckl', 'txt'].includes(ext || '');
 
       if (isScannerFormat) {
         // Always show preview modal for scanner formats (single or multi-file)
@@ -554,6 +554,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         fileCount={pendingImportFiles.length || 1}
         onImport={handlePreviewImport}
         targets={missionTargets}
+        file={pendingImportFile}
       />
 
       {/* ── 10. Unassign Confirm ──────────────────────────── */}

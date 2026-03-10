@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -12,8 +12,11 @@ import {
   Loader2,
   Database,
   Target,
+  Brain,
+  Sparkles,
 } from 'lucide-react';
 import type { SmartImportPreviewResponse } from '@/services/api';
+import * as api from '@/services/api';
 import type { Target as TargetType } from '@/types';
 import { extractApiError } from '@/utils/apiError';
 
@@ -32,6 +35,8 @@ interface Props {
   onImport: (options: ImportOptions) => Promise<void>;
   /** Available targets for import destination selector */
   targets?: TargetType[];
+  /** The original file — needed for unknown import */
+  file?: File | null;
 }
 
 export interface ImportOptions {
@@ -57,12 +62,93 @@ function StatCard({ label, value, color }: { label: string; value: number | stri
   );
 }
 
-export default function ImportPreviewModal({ open, onClose, preview, loading, filename, fileCount = 1, onImport, targets = [] }: Props) {
+export default function ImportPreviewModal({ open, onClose, preview, loading, filename, fileCount = 1, onImport, targets = [], file = null }: Props) {
   const [importing, setImporting] = useState(false);
   const [runFpDetection, setRunFpDetection] = useState(true);
   const [allowBenchmarkCreation, setAllowBenchmarkCreation] = useState(true);
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null);
   const [importError, setImportError] = useState('');
+
+  // ── Unknown import state ──
+  const [unknownJobId, setUnknownJobId] = useState<string | null>(null);
+  const [unknownStatus, setUnknownStatus] = useState<api.UnknownImportResult | null>(null);
+  const [unknownAnalyzing, setUnknownAnalyzing] = useState(false);
+  const [platformOverride, setPlatformOverride] = useState('');
+  const [platformFamilyOverride, setPlatformFamilyOverride] = useState('');
+  const [benchmarkTitleOverride, setBenchmarkTitleOverride] = useState('');
+
+  const isUnknown = preview?.is_unknown === true;
+
+  // Poll for unknown import status
+  const pollStatus = useCallback(async (jobId: string) => {
+    try {
+      const result = await api.getUnknownImportStatus(jobId);
+      setUnknownStatus(result);
+      if (result.status === 'completed' || result.status === 'failed') {
+        setUnknownAnalyzing(false);
+        if (result.platform_detection) {
+          setPlatformOverride(result.platform_detection.platform);
+          setPlatformFamilyOverride(result.platform_detection.platform_family);
+          setBenchmarkTitleOverride(result.platform_detection.benchmark_title);
+        }
+      } else {
+        // Continue polling
+        setTimeout(() => pollStatus(jobId), 2000);
+      }
+    } catch {
+      setUnknownAnalyzing(false);
+    }
+  }, []);
+
+  const handleStartAiAnalysis = async () => {
+    if (!file) return;
+    setUnknownAnalyzing(true);
+    setImportError('');
+    try {
+      const result = await api.startUnknownImport(file);
+      setUnknownJobId(result.job_id);
+      setUnknownStatus(result);
+      // Start polling
+      setTimeout(() => pollStatus(result.job_id), 2000);
+    } catch (err: unknown) {
+      setImportError(extractApiError(err, 'AI analysis failed'));
+      setUnknownAnalyzing(false);
+    }
+  };
+
+  const handleConfirmUnknownImport = async () => {
+    if (!unknownJobId || !unknownStatus) return;
+    setImporting(true);
+    setImportError('');
+    try {
+      const result = await api.confirmUnknownImport({
+        job_id: unknownJobId,
+        platform: platformOverride || unknownStatus.platform_detection?.platform || 'unknown',
+        platform_family: platformFamilyOverride || unknownStatus.platform_detection?.platform_family || 'other',
+        benchmark_title: benchmarkTitleOverride || unknownStatus.platform_detection?.benchmark_title,
+        version: unknownStatus.platform_detection?.version,
+      });
+      // Close and refresh
+      onClose();
+    } catch (err: unknown) {
+      setImportError(extractApiError(err, 'Import failed'));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setUnknownJobId(null);
+      setUnknownStatus(null);
+      setUnknownAnalyzing(false);
+      setPlatformOverride('');
+      setPlatformFamilyOverride('');
+      setBenchmarkTitleOverride('');
+      setImportError('');
+    }
+  }, [open]);
 
   if (!open) return null;
 
@@ -125,20 +211,170 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
               <Loader2 className="h-8 w-8 text-ey-yellow animate-spin" />
               <p className="text-sm text-dark-secondary">Analyzing file...</p>
             </div>
-          ) : preview?.message ? (
+          ) : preview?.message && !isUnknown ? (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-400">
               <AlertTriangle className="mr-2 inline h-4 w-4" />
               {preview.message}
             </div>
+          ) : isUnknown ? (
+            /* ── Unknown format: AI reverse engineering flow ── */
+            <div className="space-y-4">
+              {/* AI Analysis Banner */}
+              <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="rounded-lg bg-purple-500/10 p-2">
+                    <Brain className="h-5 w-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">AI-Powered Benchmark Analysis</h3>
+                    <p className="text-xs text-dark-secondary">
+                      Format not recognized. AI can analyze this document to extract security rules.
+                    </p>
+                  </div>
+                </div>
+
+                {!unknownStatus && !unknownAnalyzing && (
+                  <button
+                    onClick={handleStartAiAnalysis}
+                    disabled={!file}
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Start AI Analysis
+                  </button>
+                )}
+
+                {/* Progress */}
+                {unknownAnalyzing && (
+                  <div className="mt-3 flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 text-purple-400 animate-spin" />
+                    <div>
+                      <p className="text-sm text-white">
+                        {unknownStatus?.status === 'detecting_platform' && 'Detecting platform...'}
+                        {unknownStatus?.status === 'extracting_rules' && 'Extracting security rules...'}
+                        {unknownStatus?.status === 'matching_cache' && 'Matching against command cache...'}
+                        {(!unknownStatus?.status || unknownStatus?.status === 'pending') && 'Starting analysis...'}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Error */}
+              {unknownStatus?.status === 'failed' && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
+                  <AlertTriangle className="mr-2 inline h-4 w-4" />
+                  {unknownStatus.error || 'Analysis failed'}
+                </div>
+              )}
+
+              {/* Results */}
+              {unknownStatus?.status === 'completed' && unknownStatus.platform_detection && (
+                <>
+                  {/* Platform Detection Result */}
+                  <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+                    <h3 className="text-xs font-medium text-dark-secondary uppercase tracking-wider mb-3">
+                      Detected Platform
+                      <span className="ml-2 text-purple-400">
+                        (confidence: {Math.round((unknownStatus.platform_detection.confidence ?? 0) * 100)}%)
+                      </span>
+                    </h3>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-xs text-dark-muted mb-1 block">Platform</label>
+                        <input
+                          type="text"
+                          value={platformOverride}
+                          onChange={(e) => setPlatformOverride(e.target.value)}
+                          className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-purple-500/50 focus:outline-none focus:ring-1 focus:ring-purple-500/30"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-dark-muted mb-1 block">Family</label>
+                          <select
+                            value={platformFamilyOverride}
+                            onChange={(e) => setPlatformFamilyOverride(e.target.value)}
+                            className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-purple-500/50 focus:outline-none focus:ring-1 focus:ring-purple-500/30"
+                          >
+                            <option value="windows">Windows</option>
+                            <option value="linux">Linux</option>
+                            <option value="network">Network</option>
+                            <option value="database">Database</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-xs text-dark-muted mb-1 block">Benchmark Title</label>
+                          <input
+                            type="text"
+                            value={benchmarkTitleOverride}
+                            onChange={(e) => setBenchmarkTitleOverride(e.target.value)}
+                            className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-purple-500/50 focus:outline-none focus:ring-1 focus:ring-purple-500/30"
+                          />
+                        </div>
+                      </div>
+                      {unknownStatus.platform_detection.reasoning && (
+                        <p className="text-xs text-dark-muted italic mt-1">
+                          AI reasoning: {unknownStatus.platform_detection.reasoning}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Extracted Rules Summary */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <StatCard label="Rules Found" value={unknownStatus.total_rules} color="text-purple-400" />
+                    <StatCard label="Cache Hits" value={unknownStatus.cache_matches} color="text-emerald-400" />
+                    <StatCard label="Match Rate" value={`${unknownStatus.cache_match_percent}%`} color="text-sky-400" />
+                  </div>
+
+                  {/* Rules Preview (first 10) */}
+                  {unknownStatus.extracted_rules.length > 0 && (
+                    <div className="rounded-xl border border-dark-border bg-dark-card p-4">
+                      <h3 className="text-xs font-medium text-dark-secondary uppercase tracking-wider mb-2">
+                        Extracted Rules (showing {Math.min(10, unknownStatus.extracted_rules.length)} of {unknownStatus.total_rules})
+                      </h3>
+                      <div className="space-y-1 max-h-40 overflow-y-auto scrollbar-thin">
+                        {unknownStatus.extracted_rules.slice(0, 10).map((rule, idx) => (
+                          <div key={idx} className="flex items-center gap-2 text-xs py-1 border-b border-dark-border/50 last:border-0">
+                            <span className="shrink-0 w-16 text-dark-muted font-mono">{rule.section_number}</span>
+                            <span className="flex-1 text-white truncate">{rule.title}</span>
+                            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] ${
+                              rule.severity === 'critical' ? 'bg-red-500/10 text-red-400' :
+                              rule.severity === 'high' ? 'bg-orange-500/10 text-orange-400' :
+                              rule.severity === 'medium' ? 'bg-amber-500/10 text-amber-400' :
+                              'bg-gray-500/10 text-gray-400'
+                            }`}>
+                              {rule.severity}
+                            </span>
+                            {rule.has_cache_match && (
+                              <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" title="Command cache match" />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           ) : preview ? (
             <>
-              {/* Source Scanner Badge */}
-              {preview.source_tool && (
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 px-3 py-1 text-xs font-semibold text-sky-400">
-                    <FileSearch className="h-3 w-3" />
-                    {preview.source_tool}
-                  </span>
+              {/* Source Scanner & Framework Badge */}
+              {(preview.source_tool || preview.scheme) && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {preview.source_tool && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-500/10 border border-sky-500/30 px-3 py-1 text-xs font-semibold text-sky-400">
+                      <FileSearch className="h-3 w-3" />
+                      {preview.source_tool}
+                    </span>
+                  )}
+                  {preview.scheme && preview.scheme !== 'CIS' && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-purple-500/10 border border-purple-500/30 px-3 py-1 text-xs font-semibold text-purple-400">
+                      {preview.scheme}
+                    </span>
+                  )}
                   {fileCount > 1 && (
                     <span className="text-xs text-dark-muted">{fileCount} files will be imported with these settings</span>
                   )}
@@ -303,23 +539,43 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
           >
             Cancel
           </button>
-          <button
-            onClick={handleImport}
-            disabled={loading || importing || !preview || !!preview.message}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50"
-          >
-            {importing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Importing...
-              </>
-            ) : (
-              <>
-                <Upload className="h-4 w-4" />
-                Import
-              </>
-            )}
-          </button>
+          {isUnknown ? (
+            <button
+              onClick={handleConfirmUnknownImport}
+              disabled={unknownAnalyzing || importing || unknownStatus?.status !== 'completed'}
+              className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-purple-700 disabled:opacity-50"
+            >
+              {importing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Creating Benchmark...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Create Benchmark from AI Analysis
+                </>
+              )}
+            </button>
+          ) : (
+            <button
+              onClick={handleImport}
+              disabled={loading || importing || !preview || !!preview.message}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {importing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  Import
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
       </div>

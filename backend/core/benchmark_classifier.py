@@ -199,7 +199,7 @@ def build_catalog(benchmarks: list[dict]) -> dict:
 
     Input: list of dicts with keys: id, name, version, platform, platform_family,
            total_rules, phase1_status, phase2_status, verification_status, is_ready,
-           source, import_date
+           source, import_date, framework, group_id, is_baseline
 
     Output: nested dict structure for the frontend:
     {
@@ -217,6 +217,7 @@ def build_catalog(benchmarks: list[dict]) -> dict:
                 {
                   "name": "Windows Server 2022",
                   "icon": "server",
+                  "version_count": 2,
                   "benchmarks": [ { ...benchmark data... } ]
                 }
               ]
@@ -277,9 +278,16 @@ def build_catalog(benchmarks: list[dict]) -> dict:
                     key=lambda x: x.get("version", ""),
                     reverse=True,
                 )
+                # Collect unique group_ids to count distinct versions
+                group_ids = {b.get("group_id") for b in sorted_benchmarks if b.get("group_id")}
+                version_count = len(group_ids) if group_ids else len(sorted_benchmarks)
+                # Collect unique frameworks present
+                frameworks = sorted({b.get("framework", "cis") for b in sorted_benchmarks})
                 products_list.append({
                     "name": product_name,
                     "icon": product_data["icon"],
+                    "version_count": version_count,
+                    "frameworks": frameworks,
                     "benchmarks": sorted_benchmarks,
                 })
                 vendor_benchmark_count += len(sorted_benchmarks)
@@ -310,10 +318,14 @@ def build_catalog(benchmarks: list[dict]) -> dict:
                 vc = 0
                 for product_name in sorted(vendor_data["products"].keys()):
                     product_data = vendor_data["products"][product_name]
+                    sorted_b = sorted(product_data["benchmarks"], key=lambda x: x.get("version", ""), reverse=True)
+                    grp_ids = {b.get("group_id") for b in sorted_b if b.get("group_id")}
                     products_list.append({
                         "name": product_name,
                         "icon": product_data["icon"],
-                        "benchmarks": product_data["benchmarks"],
+                        "version_count": len(grp_ids) if grp_ids else len(sorted_b),
+                        "frameworks": sorted({b.get("framework", "cis") for b in sorted_b}),
+                        "benchmarks": sorted_b,
                     })
                     vc += len(product_data["benchmarks"])
                 vendors_list.append({

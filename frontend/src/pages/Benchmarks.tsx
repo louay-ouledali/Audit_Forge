@@ -4,7 +4,7 @@ import {
   Upload, Trash2, RefreshCw, ChevronRight, ChevronLeft, Database,
   Monitor, Server, Network, Cloud, AppWindow, Smartphone, GitBranch,
   Box, Shield, Laptop, Globe, HardDrive, Flame, Router,
-  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List, Plus, MoreVertical
+  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List, Plus, MoreVertical, Filter
 } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { CatalogCategory, CatalogVendor, ProductLine, BenchmarkCatalog, CatalogBenchmark } from '@/types';
@@ -201,6 +201,17 @@ function ProductLineCard({ productLine, categoryName, onClick }: { productLine: 
   const Icon = getIcon(productLine.icon);
   const readyCount = productLine.benchmarks.filter((b) => b.is_ready).length;
   const totalRules = productLine.benchmarks.reduce((s, b) => s + b.total_rules, 0);
+  const versionCount = productLine.version_count ?? productLine.benchmarks.length;
+  const frameworks = productLine.frameworks ?? [...new Set(productLine.benchmarks.map(b => b.framework ?? 'cis'))];
+
+  const FW_COLORS: Record<string, string> = {
+    cis: 'bg-sky-500/15 text-sky-300',
+    stig: 'bg-amber-500/15 text-amber-300',
+    nist: 'bg-green-500/15 text-green-300',
+    iso: 'bg-purple-500/15 text-purple-300',
+    disa: 'bg-orange-500/15 text-orange-300',
+    custom: 'bg-gray-500/15 text-gray-300',
+  };
 
   return (
     <button
@@ -211,7 +222,15 @@ function ProductLineCard({ productLine, categoryName, onClick }: { productLine: 
         <Icon className={`h-5 w-5 ${colors.icon}`} />
       </div>
       <div className="flex-1 min-w-0">
-        <h5 className="text-sm font-semibold text-white truncate">{productLine.name}</h5>
+        <div className="flex items-center gap-2">
+          <h5 className="text-sm font-semibold text-white truncate">{productLine.name}</h5>
+          {versionCount > 1 && (
+            <span className="shrink-0 rounded-full bg-ey-yellow/15 px-1.5 py-0.5 text-[10px] font-semibold text-ey-yellow">{versionCount}v</span>
+          )}
+          {frameworks.filter(fw => fw !== 'cis').map(fw => (
+            <span key={fw} className={`shrink-0 rounded px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${FW_COLORS[fw] ?? FW_COLORS.custom}`}>{fw}</span>
+          ))}
+        </div>
         <div className="mt-0.5 flex items-center gap-2 text-xs text-dark-secondary">
           <span>{productLine.benchmarks.length} version{productLine.benchmarks.length !== 1 ? 's' : ''}</span>
           <span className="text-dark-muted">&middot;</span>
@@ -258,6 +277,15 @@ function BenchmarkRow({ benchmark, onNavigate, onDelete }: { benchmark: CatalogB
           )}
           {benchmark.source === 'custom' && (
             <span className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">Custom</span>
+          )}
+          {benchmark.framework && benchmark.framework !== 'cis' && (
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+              benchmark.framework === 'stig' ? 'bg-amber-500/15 text-amber-300' :
+              benchmark.framework === 'nist' ? 'bg-green-500/15 text-green-300' :
+              benchmark.framework === 'iso' ? 'bg-purple-500/15 text-purple-300' :
+              benchmark.framework === 'disa' ? 'bg-orange-500/15 text-orange-300' :
+              'bg-gray-500/15 text-gray-300'
+            }`}>{benchmark.framework}</span>
           )}
         </div>
         <div className="mt-1 flex items-center gap-3 text-xs text-dark-secondary">
@@ -362,6 +390,7 @@ export default function Benchmarks() {
   const [newBenchmarkFamily, setNewBenchmarkFamily] = useState('Windows');
   const [creating, setCreating] = useState(false);
   const [deletingBenchmarkId, setDeletingBenchmarkId] = useState<number | null>(null);
+  const [frameworkFilter, setFrameworkFilter] = useState<string>('all');
 
   /* Platform → family auto-link map */
   const PLATFORM_TO_FAMILY: Record<string, string> = {
@@ -378,6 +407,32 @@ export default function Benchmarks() {
     if (!catalog) return [];
     return catalog.categories.flatMap(c => c.vendors.flatMap(v => v.product_lines.flatMap(p => p.benchmarks)));
   }, [catalog]);
+
+  /* Collect unique frameworks for filter dropdown */
+  const availableFrameworks = useMemo(() => {
+    const fws = new Set<string>();
+    for (const b of allBenchmarksFlat) fws.add(b.framework ?? 'cis');
+    return Array.from(fws).sort();
+  }, [allBenchmarksFlat]);
+
+  /* Apply framework filter to catalog (returns a pruned copy) */
+  const filteredCatalog = useMemo(() => {
+    if (!catalog || frameworkFilter === 'all') return catalog;
+    const filtered: BenchmarkCatalog = {
+      ...catalog,
+      categories: catalog.categories.map(cat => ({
+        ...cat,
+        vendors: cat.vendors.map(v => ({
+          ...v,
+          product_lines: v.product_lines.map(pl => ({
+            ...pl,
+            benchmarks: pl.benchmarks.filter(b => (b.framework ?? 'cis') === frameworkFilter),
+          })).filter(pl => pl.benchmarks.length > 0),
+        })).filter(v => v.product_lines.length > 0),
+      })).filter(cat => cat.vendors.length > 0),
+    };
+    return filtered;
+  }, [catalog, frameworkFilter]);
 
   /* Fetch catalog */
   const fetchCatalog = () =>
@@ -461,7 +516,7 @@ export default function Benchmarks() {
   const goBenchmarks = (catIdx: number, vendIdx: number, prodIdx: number) => setNav({ level: 'benchmarks', categoryIdx: catIdx, vendorIdx: vendIdx, productIdx: prodIdx });
 
   /* Resolve current context from catalog */
-  const currentCategory = catalog && nav.categoryIdx !== undefined ? catalog.categories[nav.categoryIdx] : null;
+  const currentCategory = filteredCatalog && nav.categoryIdx !== undefined ? filteredCatalog.categories[nav.categoryIdx] : null;
   const currentVendor = currentCategory && nav.vendorIdx !== undefined ? currentCategory.vendors[nav.vendorIdx] : null;
   const currentProduct = currentVendor && nav.productIdx !== undefined ? currentVendor.product_lines[nav.productIdx] : null;
 
@@ -474,10 +529,13 @@ export default function Benchmarks() {
       for (const v of cat.vendors)
         for (const pl of v.product_lines)
           for (const b of pl.benchmarks)
-            if (b.name.toLowerCase().includes(q) || b.platform.toLowerCase().includes(q) || b.version.toLowerCase().includes(q) || v.name.toLowerCase().includes(q) || pl.name.toLowerCase().includes(q))
+            if (
+              (frameworkFilter === 'all' || (b.framework ?? 'cis') === frameworkFilter) &&
+              (b.name.toLowerCase().includes(q) || b.platform.toLowerCase().includes(q) || b.version.toLowerCase().includes(q) || v.name.toLowerCase().includes(q) || pl.name.toLowerCase().includes(q))
+            )
               results.push(b);
     return results;
-  }, [catalog, searchQuery]);
+  }, [catalog, searchQuery, frameworkFilter]);
 
   /* Breadcrumbs */
   const breadcrumbs: BreadcrumbItem[] = [{ label: 'Benchmarks', onClick: nav.level !== 'categories' ? goCategories : undefined }];
@@ -595,6 +653,23 @@ export default function Benchmarks() {
               )}
             </div>
 
+            {/* Framework Filter */}
+            {availableFrameworks.length > 1 && (
+              <div className="flex items-center gap-1.5 rounded-lg border border-dark-border bg-dark-card px-3 py-2 shrink-0">
+                <Filter className="h-3.5 w-3.5 text-dark-muted" />
+                <select
+                  value={frameworkFilter}
+                  onChange={(e) => setFrameworkFilter(e.target.value)}
+                  className="bg-transparent text-xs font-medium text-dark-secondary outline-none cursor-pointer"
+                >
+                  <option value="all">All Frameworks</option>
+                  {availableFrameworks.map(fw => (
+                    <option key={fw} value={fw}>{fw.toUpperCase()}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {/* View Mode Toggle */}
             <div className="flex rounded-lg border border-dark-border bg-dark-card p-1 shadow-sm shrink-0">
               <button
@@ -652,10 +727,12 @@ export default function Benchmarks() {
             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-bold text-white">All Benchmarks</h2>
-                <span className="text-xs text-dark-secondary bg-dark-elevated px-2 py-1 rounded-md">{allBenchmarksFlat.length} items</span>
+                <span className="text-xs text-dark-secondary bg-dark-elevated px-2 py-1 rounded-md">
+                  {(frameworkFilter === 'all' ? allBenchmarksFlat : allBenchmarksFlat.filter(b => (b.framework ?? 'cis') === frameworkFilter)).length} items
+                </span>
               </div>
               <div className="space-y-2 max-h-[70vh] overflow-y-auto custom-scrollbar pr-2">
-                {allBenchmarksFlat.map((b) => (
+                {(frameworkFilter === 'all' ? allBenchmarksFlat : allBenchmarksFlat.filter(b => (b.framework ?? 'cis') === frameworkFilter)).map((b) => (
                   <BenchmarkRow key={b.id} benchmark={b} onNavigate={(id) => navigate(`/benchmarks/${id}`)} onDelete={handleDelete} />
                 ))}
               </div>
@@ -680,9 +757,9 @@ export default function Benchmarks() {
               )}
 
               {/* Level: Categories */}
-              {nav.level === 'categories' && (
+              {nav.level === 'categories' && filteredCatalog && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {catalog.categories.map((cat, i) => (
+                  {filteredCatalog.categories.map((cat, i) => (
                     <CategoryCard key={cat.name} category={cat} onClick={() => goVendors(i)} />
                   ))}
                 </div>

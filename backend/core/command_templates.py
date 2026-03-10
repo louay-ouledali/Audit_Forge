@@ -1614,10 +1614,86 @@ def match_template(rule: dict[str, Any], platform_family: str) -> dict[str, str]
     Returns a dict with keys ``audit_command``, ``expected_output_regex``,
     ``expected_output_description``, ``remediation_command``,
     ``remediation_description`` — or ``None`` if no template matched.
+
+    Supports cross-framework matching: STIG/NIST rules are normalised to
+    extract underlying audit concepts (registry paths, policy settings, etc.)
+    that the existing CIS templates can match.
     """
     templates = _TEMPLATES_BY_FAMILY.get(platform_family, [])
     for fn in templates:
         result = fn(rule)
         if result:
             return result
+
+    # Cross-framework fallback: try to extract audit hints from description/solution
+    # and re-match with a synthetic rule
+    if rule.get("framework_ref") or rule.get("framework") in ("stig", "nist", "xccdf"):
+        synthetic = _build_cross_framework_rule(rule, platform_family)
+        if synthetic:
+            for fn in templates:
+                result = fn(synthetic)
+                if result:
+                    result["_cross_framework"] = "true"
+                    return result
+
     return None
+
+
+def _build_cross_framework_rule(rule: dict[str, Any], platform_family: str) -> dict[str, Any] | None:
+    """Extract template-matchable hints from STIG/NIST rule descriptions.
+
+    Scans the rule's description, solution, and title for patterns like
+    registry paths, policy settings, sysctl parameters, etc., and builds
+    a synthetic rule dict that existing templates can match.
+    """
+    title = rule.get("title", "")
+    desc = rule.get("description", "") or ""
+    solution = rule.get("remediation_description_raw", "") or rule.get("solution", "") or ""
+    combined = f"{title}\n{desc}\n{solution}"
+
+    if not combined.strip():
+        return None
+
+    synthetic: dict[str, Any] = {
+        "section_number": rule.get("section_number", ""),
+        "title": title,
+        "description": desc,
+        "remediation_description_raw": solution,
+    }
+
+    if platform_family == "windows":
+        # Look for registry paths in STIG fix text
+        reg_match = re.search(
+            r"(HKLM|HKEY_LOCAL_MACHINE)\\([^\s\"']+)",
+            combined,
+            re.IGNORECASE,
+        )
+        if reg_match:
+            synthetic["title"] = f"(Registry) {title}"
+            synthetic["description"] = combined
+
+        # Look for Group Policy paths
+        gpo_match = re.search(
+            r"Computer Configuration\\.*?\\([^\n]+)",
+            combined,
+        )
+        if gpo_match:
+            synthetic["title"] = f"(GPO) {title}"
+
+    elif platform_family == "linux":
+        # Look for sysctl parameters
+        sysctl_match = re.search(r"sysctl\s+[-w]?\s*(\S+)", combined)
+        if sysctl_match:
+            synthetic["title"] = f"sysctl {sysctl_match.group(1)}"
+
+        # Look for file permission checks
+        file_match = re.search(r"(chmod|chown)\s+\S+\s+(/\S+)", combined)
+        if file_match:
+            synthetic["title"] = f"File permissions on {file_match.group(2)}"
+
+        # Look for systemctl checks
+        svc_match = re.search(r"systemctl\s+(?:is-enabled|status|disable)\s+(\S+)", combined)
+        if svc_match:
+            synthetic["title"] = f"Ensure {svc_match.group(1)} is disabled"
+
+    return synthetic

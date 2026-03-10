@@ -37,6 +37,7 @@ class Rule(Base):
     # ── Smart Import provenance ──
     source = Column(String, nullable=True)                # "cis_extract", "nessus_import", "manual", null
     framework_mappings = Column(Text, nullable=True)      # JSON: {"NIST_800_53": ["AC-3"], "HIPAA": ["164.306"], ...}
+    framework_ref = Column(String, nullable=True)         # Original framework reference ID (e.g. NIST "AC-2", STIG "V-253283")
 
     # ── Pre-loaded benchmark intelligence fields ──
     narrative_group = Column(String, nullable=True)       # Key into report_profile.narrative_groups

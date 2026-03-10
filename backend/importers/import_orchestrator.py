@@ -40,6 +40,34 @@ from backend.importers.qualys_parser import (
     parse_qualys_xml,
 )
 from backend.importers.openvas_parser import detect_openvas_xml, parse_openvas_xml
+from backend.importers.stig_parser import (
+    detect_stig_xccdf,
+    detect_stig_ckl,
+    parse_stig_xccdf,
+    parse_stig_ckl,
+    extract_rules_from_stig,
+)
+from backend.importers.nist_parser import (
+    detect_nist_json,
+    detect_nist_csv,
+    detect_nist_xml,
+    parse_nist_json,
+    parse_nist_csv,
+    parse_nist_xml,
+    extract_rules_from_nist,
+)
+from backend.importers.iso_parser import (
+    detect_iso_json,
+    detect_iso_csv,
+    parse_iso_json,
+    parse_iso_csv,
+    extract_rules_from_iso,
+)
+from backend.importers.xccdf_parser import (
+    detect_xccdf,
+    parse_xccdf,
+    extract_rules_from_xccdf,
+)
 from backend.importers.benchmark_resolver import resolve_benchmark
 from backend.importers.platform_detector import enrich_platform_info
 from backend.importers.severity_enricher import enrich_imported_benchmark
@@ -65,6 +93,8 @@ class ImportOrchestrator:
 
         Returns one of: 'nessus_csv', 'nessus_html', 'nessus_xml',
                         'qualys_csv', 'qualys_xml', 'openvas_xml',
+                        'stig_xccdf', 'stig_ckl', 'nist_json', 'nist_csv',
+                        'nist_xml', 'iso_json', 'iso_csv', 'xccdf',
                         'auditforge_json', 'auditforge_zip', 'unknown'
         """
         if not content:
@@ -96,6 +126,38 @@ class ImportOrchestrator:
         # Check for OpenVAS/GVM XML
         if detect_openvas_xml(content):
             return "openvas_xml"
+
+        # Check for DISA STIG CKL (before generic XCCDF)
+        if detect_stig_ckl(content):
+            return "stig_ckl"
+
+        # Check for DISA STIG XCCDF (before generic XCCDF)
+        if detect_stig_xccdf(content):
+            return "stig_xccdf"
+
+        # Check for NIST 800-53 XML
+        if detect_nist_xml(content):
+            return "nist_xml"
+
+        # Check for generic XCCDF/SCAP (after STIG-specific check)
+        if detect_xccdf(content):
+            return "xccdf"
+
+        # Check for NIST 800-53 JSON (before generic JSON)
+        if detect_nist_json(content):
+            return "nist_json"
+
+        # Check for ISO 27001 JSON
+        if detect_iso_json(content):
+            return "iso_json"
+
+        # Check for NIST 800-53 CSV (before generic CSV)
+        if detect_nist_csv(content):
+            return "nist_csv"
+
+        # Check for ISO 27001 CSV
+        if detect_iso_csv(content):
+            return "iso_csv"
 
         # Check for AuditForge JSON
         if stripped.startswith("[") or stripped.startswith("{"):
@@ -269,10 +331,75 @@ class ImportOrchestrator:
                 "source_tool": source_tool,
             }
 
+        # ── Multi-framework preview (STIG, NIST, ISO, XCCDF) ────
+        _framework_formats = {
+            "stig_xccdf", "stig_ckl", "nist_json", "nist_csv", "nist_xml",
+            "iso_json", "iso_csv", "xccdf",
+        }
+        if fmt in _framework_formats:
+            _parser_map = {
+                "stig_xccdf": (parse_stig_xccdf, extract_rules_from_stig, "stig_xccdf"),
+                "stig_ckl": (parse_stig_ckl, extract_rules_from_stig, "stig_ckl"),
+                "nist_json": (parse_nist_json, extract_rules_from_nist, "nist_oscal"),
+                "nist_csv": (parse_nist_csv, extract_rules_from_nist, "nist_csv"),
+                "nist_xml": (parse_nist_xml, extract_rules_from_nist, "nist_xml"),
+                "iso_json": (parse_iso_json, extract_rules_from_iso, "iso_json"),
+                "iso_csv": (parse_iso_csv, extract_rules_from_iso, "iso_csv"),
+                "xccdf": (parse_xccdf, extract_rules_from_xccdf, "xccdf"),
+            }
+            parse_fn, extract_fn, source_tool = _parser_map[fmt]
+            findings, platform_info = parse_fn(content)
+            extracted_rules = extract_fn(findings)
+
+            counts = _count_statuses(findings)
+
+            benchmark_exists = False
+            existing_benchmark: Benchmark | None = None
+            if platform_info.benchmark_name:
+                from backend.importers.benchmark_resolver import _try_exact_match, _try_fuzzy_match
+                existing_benchmark = _try_exact_match(platform_info, self.db)
+                if not existing_benchmark:
+                    existing_benchmark = _try_fuzzy_match(platform_info, self.db)
+                benchmark_exists = existing_benchmark is not None
+
+            return {
+                "format": fmt,
+                "filename": filename,
+                "platform": platform_info.platform,
+                "platform_family": platform_info.platform_family,
+                "os_version": platform_info.os_version,
+                "benchmark_name": platform_info.benchmark_name or "Unknown benchmark",
+                "benchmark_version": platform_info.benchmark_version or "unknown",
+                "benchmark_exists": benchmark_exists,
+                "existing_benchmark_id": existing_benchmark.id if existing_benchmark else None,
+                "existing_benchmark_name": existing_benchmark.name if existing_benchmark else None,
+                "hostname": platform_info.hostname or platform_info.ip_address or "Unknown host",
+                "ip_address": platform_info.ip_address,
+                "profile_level": platform_info.profile_level,
+                "total_findings": len(findings),
+                "total_rules": len(extracted_rules),
+                "passed": counts.get("PASS", 0),
+                "failed": counts.get("FAIL", 0),
+                "not_applicable": counts.get("NOT_APPLICABLE", 0),
+                "errors": counts.get("ERROR", 0) + counts.get("MANUAL_REVIEW", 0),
+                "scheme": platform_info.scheme or "unknown",
+                "source_tool": source_tool,
+            }
+
         return {
             "format": fmt,
             "filename": filename,
-            "message": "Unsupported or unrecognized format.",
+            "is_unknown": True,
+            "message": "Format not automatically recognized. AI-powered analysis available.",
+            "ai_parseable": True,
+            "platform": "unknown",
+            "platform_family": "other",
+            "benchmark_name": "Unknown Benchmark",
+            "benchmark_version": "unknown",
+            "total_findings": 0,
+            "total_rules": 0,
+            "scheme": "custom",
+            "source_tool": "unknown",
         }
 
     def execute(
@@ -332,10 +459,36 @@ class ImportOrchestrator:
         elif fmt == "openvas_xml":
             findings, platform_info = parse_openvas_xml(content)
             extracted_rules = []
+        elif fmt == "stig_xccdf":
+            findings, platform_info = parse_stig_xccdf(content)
+            extracted_rules = extract_rules_from_stig(findings)
+        elif fmt == "stig_ckl":
+            findings, platform_info = parse_stig_ckl(content)
+            extracted_rules = extract_rules_from_stig(findings)
+        elif fmt == "nist_json":
+            findings, platform_info = parse_nist_json(content)
+            extracted_rules = extract_rules_from_nist(findings)
+        elif fmt == "nist_csv":
+            findings, platform_info = parse_nist_csv(content)
+            extracted_rules = extract_rules_from_nist(findings)
+        elif fmt == "nist_xml":
+            findings, platform_info = parse_nist_xml(content)
+            extracted_rules = extract_rules_from_nist(findings)
+        elif fmt == "iso_json":
+            findings, platform_info = parse_iso_json(content)
+            extracted_rules = extract_rules_from_iso(findings)
+        elif fmt == "iso_csv":
+            findings, platform_info = parse_iso_csv(content)
+            extracted_rules = extract_rules_from_iso(findings)
+        elif fmt == "xccdf":
+            findings, platform_info = parse_xccdf(content)
+            extracted_rules = extract_rules_from_xccdf(findings)
         else:
             raise ValueError(
                 f"Unsupported format: '{fmt}'. Smart Import accepts "
-                "Nessus CSV/HTML/XML, Qualys CSV/XML, and OpenVAS XML exports."
+                "Nessus CSV/HTML/XML, Qualys CSV/XML, OpenVAS XML, "
+                "DISA STIG XCCDF/CKL, NIST 800-53 JSON/CSV/XML, "
+                "ISO 27001 JSON/CSV, and generic XCCDF/SCAP exports."
             )
 
         # ── Step 1b: Enrich platform detection from content ──

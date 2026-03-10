@@ -194,11 +194,22 @@ def _reconstruct_benchmark(
         "platform_info": info.to_dict(),
     })
 
+    # Map scheme to framework
+    _scheme_to_framework = {
+        "CIS": "cis",
+        "STIG": "stig",
+        "NIST": "nist",
+        "ISO": "iso",
+        "SCAP": "xccdf",
+    }
+    framework = _scheme_to_framework.get(info.scheme, "unknown")
+
     benchmark = Benchmark(
         name=name,
         version=version,
         platform=info.platform or "Unknown",
         platform_family=info.platform_family or "Unknown",
+        framework=framework,
         total_rules=len(extracted_rules),
         source="nessus_reconstructed" if info.source_tool == "nessus" else "imported",
         is_ready=False,       # Not ready until commands are generated
