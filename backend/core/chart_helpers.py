@@ -770,6 +770,13 @@ def generate_waterfall_svg(
                 f'<rect x="{lbl_w}" y="{y}" width="{bw:.1f}" height="{bar_h}" '
                 f'rx="3" fill="{color}" opacity="0.9"/>'
             )
+            if row_idx > 0:
+                # Connector line from previous bar (upwards from right edge)
+                x_conn = lbl_w + running_val * scale
+                parts.append(
+                    f'<line x1="{x_conn:.1f}" y1="{y - gap}" x2="{x_conn:.1f}" y2="{y}" '
+                    f'stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3,2"/>'
+                )
         else:
             # Floating bar showing the deduction
             start_x = lbl_w + running_val * scale
@@ -778,17 +785,18 @@ def generate_waterfall_svg(
                 f'<rect x="{start_x:.1f}" y="{y}" width="{bw:.1f}" height="{bar_h}" '
                 f'rx="3" fill="{color}" opacity="0.85"/>'
             )
-            # Connector line from previous bar
+            # Connector line from previous bar (upwards from right edge)
+            x_conn = lbl_w + (running_val + value) * scale
             parts.append(
-                f'<line x1="{lbl_w + (running_val + value) * scale:.1f}" y1="{y}" '
-                f'x2="{lbl_w + (running_val + value) * scale:.1f}" y2="{y + bar_h + gap}" '
+                f'<line x1="{x_conn:.1f}" y1="{y - gap}" x2="{x_conn:.1f}" y2="{y}" '
                 f'stroke="#cbd5e1" stroke-width="1" stroke-dasharray="3,2"/>'
             )
 
         # Value label
-        bw_actual = (running_val if is_total else value) * scale
+        # For deductions, position text correctly at the right side of the floating bar
+        bw_actual = (running_val + value) if not is_total else running_val
         parts.append(
-            f'<text x="{lbl_w + bw_actual + 6:.1f}" y="{y + bar_h / 2 + 4}" '
+            f'<text x="{lbl_w + bw_actual * scale + 6:.1f}" y="{y + bar_h / 2 + 4}" '
             f'font-size="8" font-weight="600" fill="#1e293b">'
             f'{"" if is_total else "-"}{value}</text>'
         )
