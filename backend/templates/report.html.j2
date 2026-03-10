@@ -278,35 +278,49 @@
     {% set ns.n = ns.n + 1 %}
     {% endif %}
 
+    {% if not section_toggles or section_toggles.get('charts', true) %}
     <li><a href="#sec-visual-dashboard">{{ ns.n }}. Visual Dashboard</a></li>
     {% set ns.n = ns.n + 1 %}
+    {% endif %}
 
+    {% if not section_toggles or section_toggles.get('executive_summary', true) %}
     <li><a href="#sec-executive-summary">{{ ns.n }}. Executive Summary &amp; Compliance Overview</a></li>
     {% set ns.n = ns.n + 1 %}
+    {% endif %}
 
+    {% if not section_toggles or section_toggles.get('audit_scope', true) %}
     <li><a href="#sec-audit-scope">{{ ns.n }}. Audit Scope</a></li>
     {% set ns.n = ns.n + 1 %}
+    {% endif %}
 
-    {% if audience == 'technical' and has_device_profiles is defined and has_device_profiles %}
+    {% if (not section_toggles or section_toggles.get('device_profiles', true)) and has_device_profiles is defined and has_device_profiles %}
     <li><a href="#sec-device-profiles">{{ ns.n }}. Device Profiles</a></li>
     {% set ns.n = ns.n + 1 %}
     {% endif %}
 
+    {% if not section_toggles or section_toggles.get('categories', true) %}
     {% if by_category or (categories_enriched is defined and categories_enriched) %}
     <li><a href="#sec-by-category">{{ ns.n }}. Rule Categories</a></li>
     {% set ns.n = ns.n + 1 %}
     {% endif %}
+    {% endif %}
 
+    {% if not section_toggles or section_toggles.get('per_target', true) %}
     {% if per_target_findings is defined and per_target_findings | length > 1 %}
     <li><a href="#sec-per-target">{{ ns.n }}. Per-Target Compliance Breakdown</a></li>
     {% set ns.n = ns.n + 1 %}
     {% endif %}
+    {% endif %}
 
+    {% if not section_toggles or section_toggles.get('methodology', true) %}
     <li><a href="#sec-methodology">{{ ns.n }}. Audit Methodology</a></li>
     {% set ns.n = ns.n + 1 %}
+    {% endif %}
 
+    {% if not section_toggles or section_toggles.get('findings_register', true) %}
     <li><a href="#sec-findings-register">{{ ns.n }}. Complete Findings Register ({{ findings|length }})</a></li>
     {% set ns.n = ns.n + 1 %}
+    {% endif %}
 
     {% if not section_toggles or section_toggles.get('recommendations', true) %}
     {% if recommendations is defined and recommendations %}
@@ -315,7 +329,7 @@
     {% endif %}
     {% endif %}
 
-    {% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
+{% if (not section_toggles or section_toggles.get('false_positives', true)) and fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
     <li><a href="#sec-fp-analysis">{{ ns.n }}. False Positive Analysis</a></li>
     {% set ns.n = ns.n + 1 %}
     {% endif %}
@@ -903,7 +917,7 @@
 {% endif %}
 
 <!-- ═══ False Positive Analysis ═══ -->
-{% if fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
+{% if (not section_toggles or section_toggles.get('false_positives', true)) and fp_summary and fp_summary.total_suspects is defined and fp_summary.total_suspects > 0 %}
 <div class="section" id="sec-fp-analysis">
   <h2>False Positive Analysis</h2>
   <div class="fp-section-card">
