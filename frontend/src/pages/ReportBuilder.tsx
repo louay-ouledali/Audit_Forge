@@ -941,8 +941,8 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                               <p className="text-xs text-dark-muted">You can skip this step — rules will appear ungrouped in the report.</p>
                             </div>
                           ) : (
-                            <div className="space-y-3">
-                              {groups.map((group, gIdx) => (
+                            <div className="flex flex-col max-h-[500px] overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                                {groups.map((group, gIdx) => (
                                 <div key={gIdx} onDragOver={handleDragOver} onDrop={() => handleDrop(gIdx)}
                                   className={`rounded-xl border bg-dark-card transition-all ${dragState ? 'border-ey-yellow/30 bg-ey-yellow/5' : 'border-dark-border'}`}>
                                   {/* Group header */}
@@ -1262,3 +1262,4 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
     </div>
   );
 }
+
