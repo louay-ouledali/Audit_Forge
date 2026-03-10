@@ -1370,7 +1370,7 @@ def _resolve_section_name(section_num: str, findings: list[dict]) -> str:
     3. Default to 'Section N'.
     """
     if section_num in _CIS_SECTION_NAMES:
-        return f"Section {section_num}: {_CIS_SECTION_NAMES[section_num]}"
+        return _CIS_SECTION_NAMES[section_num]
 
     # Attempt to derive from rule titles in that section
     titles = [f["rule_title"] for f in findings
@@ -1382,7 +1382,7 @@ def _resolve_section_name(section_num: str, findings: list[dict]) -> str:
         clean = first_title.replace("Ensure ", "").replace("(L1) ", "").replace("(L2) ", "")
         if len(clean) > 40:
             clean = clean[:38] + ".."
-        return f"Section {section_num}: {clean}"
+        return clean
 
     return f"Section {section_num}"
 
