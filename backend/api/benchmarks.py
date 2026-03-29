@@ -28,6 +28,29 @@ from backend.database import get_db
 from backend.models.benchmark import Benchmark
 from backend.models.benchmark_group import BenchmarkGroup
 from backend.models.rule import Rule
+
+
+# ── Platform family normalization ─────────────────────────────
+
+_PLATFORM_FAMILY_MAP: dict[str, str] = {
+    "unix": "linux",
+    "macos": "linux",
+    "linux": "linux",
+    "windows": "windows",
+    "network": "network",
+    "database": "database",
+    "cloud": "cloud",
+    "other": "other",
+}
+
+
+def normalize_platform_family(value: str) -> str:
+    """Normalize platform_family to lowercase canonical form.
+
+    The backend uses 'linux' everywhere (templates, verification patterns,
+    gap analysis categories). Frontend and importers sometimes send 'Unix'.
+    """
+    return _PLATFORM_FAMILY_MAP.get(value.lower(), value.lower())
 from backend.models.rule_command import RuleCommand
 from backend.models.rule_tag import RuleTag
 from backend.models.verification_report import VerificationReport
@@ -338,6 +361,7 @@ def confirm_unknown_import(
     # Use user-confirmed or detected values
     platform = payload.platform or detection.get("platform", "unknown")
     platform_family = payload.platform_family or detection.get("platform_family", "other")
+    platform_family = normalize_platform_family(platform_family)
     bench_title = payload.benchmark_title or detection.get("benchmark_title", "Unknown Benchmark")
     version = payload.version or detection.get("version", "unknown")
 
@@ -447,7 +471,8 @@ def create_custom_benchmark(
         name=payload.name,
         version=payload.version,
         platform=payload.platform,
-        platform_family=payload.platform_family,
+        platform_family=normalize_platform_family(payload.platform_family),
+        connection_hints=json.dumps(payload.connection_hints) if payload.connection_hints else None,
         source="custom",
         is_editable=True,
         phase1_status="completed",  # no PDF to parse
@@ -532,6 +557,7 @@ async def create_rule_with_ai(
                 cmd = RuleCommand(
                     rule_id=rule.id,
                     audit_command=result.get("audit_command", ""),
+                    command_transport=result.get("command_transport"),
                     expected_output_regex=result.get("expected_output_regex", ""),
                     expected_output_description=result.get("expected_output_description", ""),
                     remediation_command=result.get("remediation_command", ""),
@@ -1827,6 +1853,12 @@ async def enrich_severities(
     benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    if benchmark.source != "custom":
+        raise HTTPException(
+            status_code=403,
+            detail="Severity classification is only available for custom benchmarks",
+        )
 
     medium_count = (
         db.query(func.count(Rule.id))

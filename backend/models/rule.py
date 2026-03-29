@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy import (
     Boolean,
     Column,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -47,6 +48,11 @@ class Rule(Base):
     risk_weight = Column(Integer, nullable=True, default=5)  # 1-10 risk weight for scoring
     related_rules_json = Column(Text, nullable=True)      # JSON array of related section numbers
     group_with_json = Column(Text, nullable=True)         # JSON array of section numbers to co-group
+
+    # ── Forge Copilot fields ──
+    pending_review = Column(Boolean, default=False, nullable=False)
+    copilot_confidence = Column(Float, nullable=True)                  # 0.0-1.0
+    copilot_source_benchmark = Column(String, nullable=True)           # Name of source benchmark
 
     benchmark = relationship("Benchmark", back_populates="rules")
     commands = relationship("RuleCommand", back_populates="rule", cascade="all, delete-orphan", uselist=False)

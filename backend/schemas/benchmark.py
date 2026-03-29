@@ -29,6 +29,7 @@ class BenchmarkResponse(BaseModel):
     migration_readiness: float | None = None
     source: str | None = None
     source_details: str | None = None
+    connection_hints: str | None = None
 
 
 class BenchmarkDetailEnvelope(BaseModel):
@@ -117,6 +118,7 @@ class CustomBenchmarkCreate(BaseModel):
     version: str = "1.0"
     platform: str = "Windows"
     platform_family: str = "Windows"
+    connection_hints: dict[str, str] | None = None
 
 
 class CustomBenchmarkResponse(BaseModel):

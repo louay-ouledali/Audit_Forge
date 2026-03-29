@@ -15,6 +15,7 @@ class RuleCommand(Base):
     rule_id = Column(Integer, ForeignKey("rules.id", ondelete="CASCADE"), nullable=False, unique=True)
 
     audit_command = Column(Text)
+    command_transport = Column(String, nullable=True)  # sql, shell, powershell, cli, api
     expected_output_regex = Column(Text)
     expected_output_description = Column(Text)
     remediation_command = Column(Text)

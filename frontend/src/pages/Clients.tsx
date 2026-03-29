@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Plus, Pencil, Trash2, Search, Building2, Mail, User, X, LayoutGrid, List, ArrowUpDown, ArrowRight } from 'lucide-react';
+import { Plus, Pencil, Trash2, Search, Building2, Mail, User, X, LayoutGrid, List, ArrowUpDown, ArrowRight, Radar } from 'lucide-react';
 import type { Client } from '@/types';
 import * as api from '@/services/api';
 import ConfirmDialog from '@/components/common/ConfirmDialog';
@@ -134,18 +134,31 @@ export default function Clients() {
 
   return (
     <div className="relative z-10 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-white">Clients</h2>
-          <p className="mt-1 text-sm text-dark-secondary">{clients.length} client{clients.length !== 1 ? 's' : ''} registered</p>
+      {/* ── Branded Header: Mission Control ── */}
+      <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-dark-card/60 p-8 shadow-[0_0_40px_rgba(16,185,129,0.05)] backdrop-blur-md">
+        {/* Subtle emerald radar motif */}
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-emerald-600/10 blur-[80px] pointer-events-none" />
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMTkiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgxNiwgMTg1LCAxMjksIDAuMSkiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] pointer-events-none mask-image:radial-gradient(ellipse_at_center,white,transparent_80%)" />
+        
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="flex flex-row items-center gap-5">
+            <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
+              {/* Radar sweep animation */}
+              <div className="absolute inset-0 rounded-2xl border border-emerald-400/30 animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]" />
+              <Radar className="h-7 w-7 text-emerald-400" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-white tracking-tight">Mission Control</h1>
+              <p className="mt-1 text-sm text-dark-secondary max-w-md">Manage clients, orchestrate active missions, and coordinate audit targets</p>
+            </div>
+          </div>
+          <button
+            onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm); }}
+            className="h-10 inline-flex items-center gap-2 rounded-xl bg-ey-yellow px-5 py-2 text-sm font-semibold text-black shadow-[0_0_15px_rgba(255,230,0,0.2)] transition-all hover:bg-ey-yellow-hover hover:shadow-[0_0_20px_rgba(255,230,0,0.3)]"
+          >
+            <Plus className="h-4 w-4" /> New Client
+          </button>
         </div>
-        <button
-          onClick={() => { setShowForm(true); setEditingId(null); setForm(emptyForm); }}
-          className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2.5 text-sm font-semibold text-black shadow-sm transition-colors hover:bg-ey-yellow-hover"
-        >
-          <Plus className="h-4 w-4" /> New Client
-        </button>
       </div>
 
       {/* Search, Sort & View Toggle Toolbar */}
@@ -279,7 +292,7 @@ export default function Clients() {
             <div
               key={client.id}
               onClick={() => navigate(`/clients/${client.id}`)}
-              className={`glow-card group relative rounded-xl border border-dark-border bg-dark-card transition-all duration-300 hover:border-dark-hover cursor-pointer ${viewMode === 'grid' ? 'p-5' : 'p-4 flex items-center justify-between'
+              className={`group relative rounded-xl border border-dark-border bg-dark-card transition-all duration-300 hover:border-dark-hover cursor-pointer ${viewMode === 'grid' ? 'p-5' : 'p-4 flex items-center justify-between'
                 }`}
             >
               {/* Actions */}

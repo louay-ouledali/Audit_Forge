@@ -204,18 +204,23 @@ def _check_safety(audit_command: str | None, platform_family: str) -> dict:
 
     stripped = audit_command.strip()
 
+    # Normalize platform_family: "Unix"→"linux", "Windows"→"windows"
+    pf = platform_family.lower() if platform_family else "linux"
+    if pf in ("unix", "macos"):
+        pf = "linux"
+
     # ── Context-aware bypass ──────────────────────────────────────────────
     # Network read-only commands (show, display, get, diagnose …) are safe
-    if platform_family == "network" and _is_readonly_network_cmd(stripped):
+    if pf == "network" and _is_readonly_network_cmd(stripped):
         return {"result": "pass", "message": "Read-only network command", "details": []}
 
     # SQL read-only queries (SELECT, SHOW, EXPLAIN, WITH) are safe even when
     # they reference DML/DDL keywords as column values or string literals
-    if platform_family == "database" and _is_readonly_sql_cmd(stripped):
+    if pf == "database" and _is_readonly_sql_cmd(stripped):
         return {"result": "pass", "message": "Read-only SQL query", "details": []}
 
     # ── Standard pattern matching ─────────────────────────────────────────
-    patterns = PLATFORM_PATTERNS.get(platform_family, DANGEROUS_LINUX)
+    patterns = PLATFORM_PATTERNS.get(pf, DANGEROUS_LINUX)
     hits: list[str] = []
     for pattern, description in patterns:
         if re.search(pattern, stripped, re.IGNORECASE):
@@ -262,6 +267,11 @@ def verify_single_command(audit_command: str | None, platform_family: str) -> di
     if not audit_command or not audit_command.strip():
         return {"passed": False, "issues": [{"type": "empty", "message": "Audit command is empty"}]}
 
+    # Normalize platform_family
+    pf = platform_family.lower() if platform_family else "linux"
+    if pf in ("unix", "macos"):
+        pf = "linux"
+
     # Syntax check: verify the command looks valid
     stripped = audit_command.strip()
     if len(stripped) < 3:
@@ -276,13 +286,13 @@ def verify_single_command(audit_command: str | None, platform_family: str) -> di
     # Safety check: verify command is read-only
     # Context-aware bypass for read-only commands
     skip_safety = False
-    if platform_family == "network" and _is_readonly_network_cmd(stripped):
+    if pf == "network" and _is_readonly_network_cmd(stripped):
         skip_safety = True
-    elif platform_family == "database" and _is_readonly_sql_cmd(stripped):
+    elif pf == "database" and _is_readonly_sql_cmd(stripped):
         skip_safety = True
 
     if not skip_safety:
-        patterns = PLATFORM_PATTERNS.get(platform_family, DANGEROUS_LINUX)
+        patterns = PLATFORM_PATTERNS.get(pf, DANGEROUS_LINUX)
         for pattern, description in patterns:
             if re.search(pattern, stripped, re.IGNORECASE):
                 issues.append({"type": "safety", "message": f"Dangerous pattern: {description}"})

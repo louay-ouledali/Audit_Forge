@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { Mission, MissionAnalysisResult, ComparableMission } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
+import BrandLockup from '@/components/common/BrandLockup';
 
 type AnalysisTab = 'cross_target' | 'category_analysis' | 'cross_mission';
 
@@ -107,22 +108,16 @@ export default function MissionAnalysis() {
         Back
       </button>
 
-      <div className="flex items-center gap-3">
-        <Bot className="h-6 w-6 text-ey-yellow" />
-        <div>
-          <h2 className="text-xl font-semibold text-white">AI Analysis</h2>
-          {mission && (
-            <p className="text-sm text-dark-secondary">Mission: {mission.name}</p>
-          )}
+        <div className="flex items-center gap-4 border-b border-dark-border pb-6 mt-1 mb-4">
+          <BrandLockup service="lens" size="xl" />
+          <div>
+            {mission && (
+              <p className="text-sm text-dark-secondary ml-1 mt-1">AI-powered cross-target and cross-mission analysis
+                <span className="inline-block ml-3 px-2 py-0.5 rounded border border-dark-border text-[10px] bg-dark-card font-medium text-white">{mission.name}</span>
+              </p>
+            )}
+          </div>
         </div>
-      </div>
-
-      {error && (
-        <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          {error}
-        </div>
-      )}
 
       {/* Analysis Sections instead of Tabs */}
       <div className="space-y-8 mt-6">

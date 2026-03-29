@@ -24,6 +24,13 @@ const defaultSettings: SettingsType = {
   llm_task_verification_model: '',
   llm_task_reports_model: '',
   llm_task_analysis_model: '',
+  ui_theme: 'dark',
+};
+
+const applyTheme = (theme: string) => {
+  const normalized = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', normalized);
+  localStorage.setItem('auditforge_theme', normalized);
 };
 
 const TASK_FIELDS = [
@@ -56,10 +63,18 @@ export default function Settings() {
     (async () => {
       try {
         const [data, cache] = await Promise.all([api.getSettings(), api.getCacheStats().catch(() => null)]);
-        setSettings({ ...defaultSettings, ...data });
+        
+        // Load ui_theme straight from localStorage since backend might not store it yet
+        const localTheme = localStorage.getItem('auditforge_theme') || 'dark';
+
+        const merged = { ...defaultSettings, ...data, ui_theme: localTheme };
+        setSettings(merged);
+        applyTheme(merged.ui_theme);
         if (cache) setCacheStats(cache);
       } catch {
         // keep defaults
+        const localTheme = localStorage.getItem('auditforge_theme') || 'dark';
+        applyTheme(localTheme);
       } finally {
         setLoading(false);
       }
@@ -74,6 +89,9 @@ export default function Settings() {
 
   const handleChange = (key: string, value: string) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
+    if (key === 'ui_theme') {
+      applyTheme(value);
+    }
   };
 
   const handleSave = async () => {
@@ -437,6 +455,37 @@ export default function Settings() {
             ))}
           </div>
         </fieldset>
+      </section>
+
+      {/* Display */}
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-white">Appearance</h3>
+            <p className="text-sm text-gray-400 mt-1">Switch between light and dark themes.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const newTheme = (settings.ui_theme || 'dark') === 'dark' ? 'light' : 'dark';
+              handleChange('ui_theme', newTheme);
+            }}
+            className={`
+              relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-ey-yellow focus:ring-offset-2 focus:ring-offset-dark-bg
+              ${(settings.ui_theme || 'dark') === 'light' ? 'bg-ey-yellow' : 'bg-dark-border'}
+            `}
+            role="switch"
+            aria-checked={(settings.ui_theme || 'dark') === 'light'}
+          >
+            <span
+              aria-hidden="true"
+              className={`
+                pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out
+                ${(settings.ui_theme || 'dark') === 'light' ? 'translate-x-5' : 'translate-x-0'}
+              `}
+            />
+          </button>
+        </div>
       </section>
 
       {/* LLM Cache */}

@@ -8,7 +8,7 @@ import {
     Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import logoImg from '../../assets/logo.png';
+import logoImg from '../../assets/logo-transparent.png';
 
 const navItems = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
@@ -43,8 +43,12 @@ export default function Navbar() {
 
                 {/* Logo and Context */}
                 <div className="flex items-center gap-3 pr-6 border-r border-dark-border/50">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-ey-yellow/10 ring-1 ring-ey-yellow/30 shadow-[0_0_10px_rgba(255,230,0,0.2)] overflow-hidden">
-                        <img src={logoImg} alt="AuditForge Logo" className="h-5 w-5 object-contain" />
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center">
+                        <img
+                            src={logoImg}
+                            alt="AuditForge Logo"
+                            className="h-full w-full object-contain"
+                        />
                     </div>
                     <div className="flex flex-col">
                         <span className="text-sm font-bold tracking-tight text-white leading-tight">

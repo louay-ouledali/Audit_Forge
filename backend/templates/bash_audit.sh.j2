@@ -49,6 +49,9 @@ info = {
     'kernel': subprocess.getoutput('uname -r'),
     'arch': subprocess.getoutput('uname -m'),
     'ip_addresses': subprocess.getoutput('hostname -I 2>/dev/null').strip(),
+    'open_ports': [int(p) for p in subprocess.getoutput(
+        \"ss -tlnp 2>/dev/null | awk 'NR>1{split(\\$4,a,\\\":\\\"); print a[length(a)]}' | sort -un | head -50\"
+    ).strip().split('\\n') if p.strip().isdigit()],
     'scan_date': datetime.datetime.now(datetime.timezone.utc).isoformat(),
     'scan_id': '{{ scan_id }}',
     'benchmark': '{{ benchmark.name }}',

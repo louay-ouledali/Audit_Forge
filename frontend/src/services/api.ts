@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo, ADConnectionTestResult, ADDiscoverResponse, ADWinRMCheckResult, ADBulkCreateResult, BenchmarkVersionItem, BenchmarkGroupResponse, VersionDiffResponse, CacheAccelerationStats } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo, ADConnectionTestResult, ADDiscoverResponse, ADWinRMCheckResult, ADBulkCreateResult, BenchmarkVersionItem, BenchmarkGroupResponse, VersionDiffResponse, CacheAccelerationStats, ConnectSession, ConnectAgent, CopilotChatResponse, CopilotPendingRule, CopilotPipelineResult, CopilotAction } from '@/types';
 
 const api = axios.create({
   baseURL: '/api',
@@ -10,7 +10,7 @@ export async function getHealth() {
   return data;
 }
 
-export async function getDashboardStats(): Promise<{ clients: number; active_missions: number; benchmarks: number; scans: number }> {
+export async function getDashboardStats(): Promise<{ clients: number; active_missions: number; benchmarks: number; scans: number; total_rules: number }> {
   const { data } = await api.get('/stats');
   return data;
 }
@@ -588,7 +588,7 @@ export async function deleteScan(id: number): Promise<void> {
 // ── Module 8: Findings ───────────────────────────────────────
 
 export async function getScanFindings(scanId: number, params?: { status?: string; severity?: string }): Promise<{ data: Finding[]; total: number }> {
-  const { data } = await api.get(`/scans/${scanId}/findings`, { params });
+  const { data } = await api.get(`/scans/${scanId}/findings`, { params: { ...params, limit: 10000 } });
   return data;
 }
 
@@ -1022,5 +1022,115 @@ export async function adBulkCreateTargets(payload: {
 
 export async function adGenerateWinRMScript(clientId: number, targetHosts: string[]): Promise<{ script: string }> {
   const { data } = await api.post('/ad/generate-winrm-script', { client_id: clientId, target_hosts: targetHosts });
+  return data;
+}
+
+// ── AuditForge Connect ──────────────────────────────────────────
+
+export async function createConnectSession(payload: {
+  client_id: number;
+  mission_id?: number;
+  expires_in_hours?: number;
+  max_agent_lifetime_seconds?: number;
+  notes?: string;
+}): Promise<ConnectSession> {
+  const { data } = await api.post('/connect/sessions', payload);
+  return data.data;
+}
+
+export async function getConnectSessions(clientId?: number, missionId?: number): Promise<ConnectSession[]> {
+  const params: Record<string, number> = {};
+  if (clientId) params.client_id = clientId;
+  if (missionId) params.mission_id = missionId;
+  const { data } = await api.get('/connect/sessions', { params });
+  return data.data;
+}
+
+export async function getConnectSession(sessionId: number): Promise<ConnectSession> {
+  const { data } = await api.get(`/connect/sessions/${sessionId}`);
+  return data.data;
+}
+
+export async function terminateConnectSession(sessionId: number): Promise<void> {
+  await api.delete(`/connect/sessions/${sessionId}`);
+}
+
+export async function validateEnrollmentCode(code: string): Promise<{
+  valid: boolean;
+  session_id: number | null;
+  client_name: string | null;
+  expires_at: string | null;
+}> {
+  const { data } = await api.get(`/connect/portal/${code}`);
+  return data.data;
+}
+
+export async function getConnectAgents(sessionId: number): Promise<ConnectAgent[]> {
+  const { data } = await api.get(`/connect/sessions/${sessionId}/agents`);
+  return data.data;
+}
+
+export async function startAgentScan(sessionId: number, benchmarkId: number, agentIds?: number[]): Promise<{ scan_ids: number[] }> {
+  const { data } = await api.post(`/connect/sessions/${sessionId}/scan`, {
+    benchmark_id: benchmarkId,
+    agent_ids: agentIds || null,
+  });
+  return data.data;
+}
+
+export function getAgentScriptUrl(code: string, platform: 'windows' | 'linux'): string {
+  // Pass the browser's hostname so the backend bakes the correct server_host into the agent script
+  const host = window.location.hostname;
+  return `/api/connect/agent/${code}/${platform}?host=${encodeURIComponent(host)}`;
+}
+
+export function getEnableScriptUrl(code: string, platform: 'windows' | 'linux'): string {
+  return `/api/connect/portal/${code}/enable-script/${platform}`;
+}
+
+export function getUsbScriptUrl(code: string, platform: 'windows' | 'linux'): string {
+  return `/api/connect/portal/${code}/usb-script/${platform}`;
+}
+
+// ── Forge Copilot ──────────────────────────────────────────
+// Types re-exported from @/types
+export type { CopilotChatResponse, CopilotPendingRule, CopilotPipelineResult, CopilotAction };
+
+export async function copilotChat(benchmarkId: number, message: string, conversationId?: string, signal?: AbortSignal): Promise<CopilotChatResponse> {
+  const { data } = await api.post(`/copilot/${benchmarkId}/chat`, { message, conversation_id: conversationId }, { signal });
+  return data;
+}
+
+export async function copilotGenerateBenchmark(benchmarkId: number, description: string, platform?: string, platformFamily?: string, signal?: AbortSignal): Promise<CopilotPipelineResult> {
+  const { data } = await api.post(`/copilot/${benchmarkId}/generate-benchmark`, {
+    description,
+    platform: platform || undefined,
+    platform_family: platformFamily || undefined,
+  }, { signal });
+  return data;
+}
+
+export async function copilotApprove(benchmarkId: number, ruleIds: number[], action: 'approve' | 'reject'): Promise<{ approved?: number; rejected?: number }> {
+  const { data } = await api.post(`/copilot/${benchmarkId}/approve`, { rule_ids: ruleIds, action });
+  return data;
+}
+
+export async function copilotApproveWithEdits(benchmarkId: number, ruleId: number, edits: Record<string, string>): Promise<any> {
+  const { data } = await api.post(`/copilot/${benchmarkId}/approve-with-edits`, { rule_id: ruleId, edits, action: 'approve' });
+  return data;
+}
+
+export async function copilotGetPending(benchmarkId: number): Promise<{ count: number; rules: CopilotPendingRule[] }> {
+  const { data } = await api.get(`/copilot/${benchmarkId}/pending`);
+  return data;
+}
+
+export async function copilotConfirmBatchEdit(benchmarkId: number, ruleIds: number[], fieldName: string, newValue: string, confirmed: boolean): Promise<any> {
+  const { data } = await api.post(`/copilot/${benchmarkId}/confirm-batch-edit`, {
+    rule_ids: ruleIds,
+    field_name: fieldName,
+    new_value: newValue,
+    confirmed,
+  });
   return data;
 }

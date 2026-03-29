@@ -58,6 +58,10 @@ async def run_phase2(benchmark_id: int) -> None:
         platform = benchmark.platform
         platform_family = benchmark.platform_family
 
+        # Normalize platform_family (UI may send "Unix", backend uses "linux")
+        _PF_NORM = {"unix": "linux", "macos": "linux"}
+        platform_family = _PF_NORM.get(platform_family.lower(), platform_family.lower()) if platform_family else "linux"
+
         # Delete previously failed RuleCommand rows so they can be retried
         failed_cmds = (
             db.query(RuleCommand)
@@ -199,6 +203,7 @@ async def run_phase2(benchmark_id: int) -> None:
                     cmd = RuleCommand(
                         rule_id=rule.id,
                         audit_command=result.get("audit_command"),
+                        command_transport=result.get("command_transport"),
                         expected_output_regex=result.get("expected_output_regex"),
                         expected_output_description=result.get("expected_output_description"),
                         remediation_command=result.get("remediation_command"),

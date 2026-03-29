@@ -13,11 +13,11 @@ class Scan(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False)
-    benchmark_id = Column(Integer, ForeignKey("benchmarks.id"), nullable=False)
+    benchmark_id = Column(Integer, ForeignKey("benchmarks.id", ondelete="SET NULL"), nullable=True)
     # Direct link to mission (since targets now belong to clients)
     mission_id = Column(Integer, ForeignKey("missions.id", ondelete="SET NULL"), nullable=True, index=True)
     scan_mode = Column(String, nullable=False)
-    preset_id = Column(Integer, ForeignKey("scan_presets.id"))
+    preset_id = Column(Integer, ForeignKey("scan_presets.id", ondelete="SET NULL"))
 
     started_at = Column(DateTime)
     completed_at = Column(DateTime)

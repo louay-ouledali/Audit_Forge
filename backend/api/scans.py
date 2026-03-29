@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -333,13 +335,29 @@ def _enrich_discovered_hosts(
     # Pre-fetch all active benchmarks for suggestion matching
     benchmarks = db.query(Benchmark).filter(Benchmark.status == "active").all()
 
+    # Optional lab override: force specific IPs to be treated as firewall/network targets.
+    # Example: DISCOVERY_FORCE_FIREWALL_IPS=172.17.0.2,192.168.1.254
+    forced_firewall_ips = {
+        ip.strip() for ip in os.getenv("DISCOVERY_FORCE_FIREWALL_IPS", "").split(",") if ip.strip()
+    }
+
     enriched = []
     ip_updated_targets: list[int] = []
+    metadata_updated = False
 
     for host in hosts:
         ip = host.get("ip", "")
         mac = (host.get("mac_address", "") or "").upper()
         os_guess = (host.get("os_guess", "") or "").lower()
+
+        # Force-classification override for known lab endpoints.
+        if ip in forced_firewall_ips:
+            host["os_guess"] = "firewall"
+            host["device_role"] = "network_device"
+            host["vendor"] = host.get("vendor") or "Netgate"
+            host["os_version"] = host.get("os_version") or "pfSense (lab override)"
+            host["detection_method"] = (host.get("detection_method") or "") + "+forced_firewall_ip"
+            os_guess = "firewall"
 
         # Match: prefer MAC (persistent) → fallback to IP
         existing: Target | None = None
@@ -372,10 +390,32 @@ def _enrich_discovered_hosts(
         if existing and mac and not existing.mac_address:
             existing.mac_address = mac
 
+        # If this host is force-overridden as firewall and already exists,
+        # keep its stored target type aligned so benchmark locking follows.
+        if existing and ip in forced_firewall_ips:
+            if (existing.target_type or "").lower() != "network":
+                existing.target_type = "network"
+                if not existing.connection_method:
+                    existing.connection_method = "ssh"
+                metadata_updated = True
+
         # Suggest benchmark based on OS guess
         suggested_name = None
         suggested_id = None
+
+        # Prefer network/firewall benchmarks for forced firewall IPs.
+        if ip in forced_firewall_ips:
+            for bm in benchmarks:
+                fam = (bm.platform_family or "").lower()
+                plat = (bm.platform or "").lower()
+                if fam in ("network", "firewall") or "firewall" in plat or "pfsense" in plat:
+                    suggested_name = f"{bm.name} v{bm.version}" if bm.version else bm.name
+                    suggested_id = bm.id
+                    break
+
         for bm in benchmarks:
+            if suggested_id:
+                break
             bm_name_lower = (bm.name or "").lower()
             bm_platform_lower = (bm.platform or "").lower()
             if os_guess and (os_guess in bm_name_lower or os_guess in bm_platform_lower):
@@ -388,7 +428,7 @@ def _enrich_discovered_hosts(
         enriched.append(host)
 
     # Commit any IP re-ties or MAC backfills
-    if ip_updated_targets:
+    if ip_updated_targets or metadata_updated:
         db.commit()
 
     return enriched
@@ -498,6 +538,7 @@ def _run_scan_in_background(
     """
     loop = asyncio.new_event_loop()
     try:
+        asyncio.set_event_loop(loop)
         loop.run_until_complete(
             execute_network_scan(
                 db_factory=SessionLocal,
@@ -511,8 +552,50 @@ def _run_scan_in_background(
                 preset_id=preset_id,
             )
         )
+    except Exception as exc:
+        logger.exception("Background scan launcher crashed for scan %s: %s", scan_id, exc)
+        db = SessionLocal()
+        try:
+            scan = db.query(Scan).filter(Scan.id == scan_id).first()
+            if scan and scan.status in ("pending", "running"):
+                scan.status = "failed"
+                scan.notes = f"Scan launcher crashed: {exc}"
+                scan.completed_at = datetime.now(timezone.utc)
+                db.commit()
+        finally:
+            db.close()
     finally:
         loop.close()
+
+
+def _start_scan_thread(
+    *,
+    scan_id: int,
+    target_id: int,
+    benchmark_id: int,
+    selected_rule_ids: list[int] | None,
+    category_filter: list[str] | None,
+    severity_filter: list[str] | None,
+    profile_filter: str | None,
+    preset_id: int | None,
+) -> None:
+    """Launch a scan in a daemon thread to avoid BackgroundTasks stalls."""
+    t = threading.Thread(
+        target=_run_scan_in_background,
+        kwargs={
+            "scan_id": scan_id,
+            "target_id": target_id,
+            "benchmark_id": benchmark_id,
+            "selected_rule_ids": selected_rule_ids,
+            "category_filter": category_filter,
+            "severity_filter": severity_filter,
+            "profile_filter": profile_filter,
+            "preset_id": preset_id,
+        },
+        daemon=True,
+        name=f"scan-runner-{scan_id}",
+    )
+    t.start()
 
 
 @router.post("/network", response_model=NetworkScanResponse)
@@ -548,9 +631,9 @@ def start_network_scan(
     db.commit()
     db.refresh(scan)
 
-    # Launch background task
-    background_tasks.add_task(
-        _run_scan_in_background,
+    # Launch scan in a dedicated daemon thread.
+    # BackgroundTasks can occasionally stall in some container/reload setups.
+    _start_scan_thread(
         scan_id=scan.id,
         target_id=payload.target_id,
         benchmark_id=payload.benchmark_id,
@@ -1054,6 +1137,39 @@ async def smart_import(
         db.commit()
         raise HTTPException(status_code=400, detail=str(exc))
 
+    # Persist open_ports from system_info into DiscoveryCache (USB imports)
+    if system_info and system_info.get("open_ports") and target.ip_address:
+        try:
+            open_ports_raw = system_info["open_ports"]
+            open_ports_data = [
+                {"port": p, "service": "", "platform_hint": ""}
+                for p in open_ports_raw if isinstance(p, int)
+            ]
+            if open_ports_data:
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc)
+                cached = db.query(DiscoveryCache).filter(
+                    DiscoveryCache.ip_address == target.ip_address
+                ).order_by(DiscoveryCache.last_seen.desc()).first()
+                if cached:
+                    cached.hostname = target.hostname or cached.hostname
+                    cached.detection_method = "usb_import"
+                    cached.last_seen = now
+                    cached.open_ports_json = json.dumps(open_ports_data)
+                else:
+                    db.add(DiscoveryCache(
+                        ip_address=target.ip_address,
+                        hostname=target.hostname,
+                        os_guess=target.target_type or "unknown",
+                        detection_method="usb_import",
+                        first_seen=now,
+                        last_seen=now,
+                        open_ports_json=json.dumps(open_ports_data),
+                    ))
+                db.commit()
+        except Exception:
+            logger.warning("Failed to persist USB import port data to DiscoveryCache", exc_info=True)
+
     return {
         **stats,
         "scan_id": scan.id,
@@ -1128,7 +1244,7 @@ def list_scan_findings(
     status: str | None = None,
     severity: str | None = None,
     skip: int = Query(0, ge=0),
-    limit: int = Query(200, ge=1, le=2000),
+    limit: int = Query(2000, ge=1, le=10000),
     db: Session = Depends(get_db),
 ):
     """List findings for a specific scan with optional filters and pagination."""

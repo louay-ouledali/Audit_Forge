@@ -111,9 +111,12 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
       if (usedEngine) setEngine(usedEngine);
 
       // Poll for progress every 1.5 seconds
+      const pollStartedAt = Date.now();
+      let consecutivePollErrors = 0;
       pollRef.current = setInterval(async () => {
         try {
           const status = await api.getDiscoveryStatus(discovery_id);
+          consecutivePollErrors = 0;
           setProgress({ scanned: status.scanned, total: status.total, found: status.found });
 
           if (status.status === 'completed' || status.status === 'cancelled') {
@@ -137,8 +140,25 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
             setDiscovering(false);
             setProgress(null);
           }
-        } catch {
-          // Ignore transient poll errors
+        } catch (pollErr: any) {
+          consecutivePollErrors += 1;
+
+          const httpStatus = pollErr?.response?.status;
+          const pollTimedOut = Date.now() - pollStartedAt > 180000; // 3 minutes
+          const tooManyErrors = consecutivePollErrors >= 10;
+
+          // Fail fast on 404 (scan id lost) or sustained poll failures/timeouts.
+          if (httpStatus === 404 || tooManyErrors || pollTimedOut) {
+            stopPolling();
+            discoveryIdRef.current = null;
+            setDiscovering(false);
+            setProgress(null);
+            setError(
+              httpStatus === 404
+                ? 'Discovery session expired (404). Please start a new scan.'
+                : 'Discovery polling failed or timed out. Please retry with a smaller subnet or Quick profile.'
+            );
+          }
         }
       }, 1500);
     } catch (err: any) {
@@ -175,8 +195,10 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
       const osGuess = (host.os_guess || 'linux').toLowerCase();
       const role = (host.device_role || '').toLowerCase();
       const targetType = role === 'network_device' ? 'network'
+        : role === 'firewall' ? 'network'
         : role === 'database_server' ? 'database'
         : role === 'mobile' ? 'mobile'
+        : osGuess.includes('firewall') ? 'network'
         : osGuess.includes('windows') ? 'windows'
         : osGuess.includes('macos') ? 'macos'
         : 'linux';
@@ -252,9 +274,12 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
       discoveryIdRef.current = discovery_id;
       if (usedEngine) setEngine(usedEngine);
 
+      const pollStartedAt = Date.now();
+      let consecutivePollErrors = 0;
       pollRef.current = setInterval(async () => {
         try {
           const status = await api.getDiscoveryStatus(discovery_id);
+          consecutivePollErrors = 0;
           setProgress({ scanned: status.scanned, total: status.total, found: status.found });
 
           if (status.status === 'completed' || status.status === 'cancelled') {
@@ -274,8 +299,24 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
             setScanningIp(false);
             setProgress(null);
           }
-        } catch {
-          // Ignore transient poll errors
+        } catch (pollErr: any) {
+          consecutivePollErrors += 1;
+
+          const httpStatus = pollErr?.response?.status;
+          const pollTimedOut = Date.now() - pollStartedAt > 180000; // 3 minutes
+          const tooManyErrors = consecutivePollErrors >= 10;
+
+          if (httpStatus === 404 || tooManyErrors || pollTimedOut) {
+            stopPolling();
+            discoveryIdRef.current = null;
+            setScanningIp(false);
+            setProgress(null);
+            setError(
+              httpStatus === 404
+                ? 'Scan session expired (404). Please run the scan again.'
+                : 'Scan polling failed or timed out. Please retry.'
+            );
+          }
         }
       }, 1500);
     } catch (err: any) {

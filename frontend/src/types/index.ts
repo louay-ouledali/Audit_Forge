@@ -929,3 +929,73 @@ export interface CacheAccelerationStats {
   remaining_for_llm: number;
   coverage_percent: number;
 }
+
+// ── AuditForge Connect ──────────────────────────────────────────
+
+export interface ConnectAgent {
+  id: number;
+  session_id: number;
+  hostname: string | null;
+  ip_address: string | null;
+  os_type: string | null;
+  os_version: string | null;
+  status: 'pending' | 'connected' | 'scanning' | 'completed' | 'disconnected';
+  connected_at: string | null;
+  disconnected_at: string | null;
+  target_id: number | null;
+  system_info: Record<string, unknown> | null;
+}
+
+export interface ConnectSession {
+  id: number;
+  enrollment_code: string;
+  client_id: number;
+  mission_id: number | null;
+  status: 'active' | 'expired' | 'terminated';
+  created_at: string;
+  expires_at: string;
+  max_agent_lifetime_seconds: number;
+  notes: string | null;
+  agent_count: number;
+  agents: ConnectAgent[];
+}
+
+// ── Forge Copilot ───────────────────────────────────────────
+
+export interface CopilotAction {
+  tool: string;
+  params: Record<string, unknown>;
+  result: Record<string, unknown>;
+}
+
+export interface CopilotChatResponse {
+  response: string;
+  intent: string;
+  actions: CopilotAction[];
+  pending_rules: CopilotPendingRule[];
+  conversation_id: string;
+}
+
+export interface CopilotPendingRule {
+  id: number;
+  section_number: string;
+  title: string;
+  description?: string;
+  severity: string;
+  confidence: number | null;
+  source_benchmark: string | null;
+  source?: string;
+}
+
+export interface CopilotPipelineResult {
+  pending_rules: CopilotPendingRule[];
+  progress: string[];
+  stats: {
+    mined: number;
+    template_matched: number;
+    gaps_found: number;
+    llm_generated: number;
+    total_pending: number;
+  };
+  created?: { created: number; rules: CopilotPendingRule[] };
+}

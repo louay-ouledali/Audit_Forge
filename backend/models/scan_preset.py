@@ -13,7 +13,7 @@ class ScanPreset(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String, nullable=False)
     description = Column(Text)
-    benchmark_id = Column(Integer, ForeignKey("benchmarks.id"))
+    benchmark_id = Column(Integer, ForeignKey("benchmarks.id", ondelete="CASCADE"))
     selection_criteria = Column(Text, nullable=False)
     rule_count = Column(Integer)
     is_default = Column(Boolean, default=False)

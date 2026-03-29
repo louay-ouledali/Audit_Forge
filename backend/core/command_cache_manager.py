@@ -411,6 +411,7 @@ def apply_cached_commands(
             cmd = RuleCommand(
                 rule_id=rule_id,
                 audit_command=match["audit_command"],
+                command_transport=match.get("command_transport"),
                 expected_output_regex=match["expected_output_regex"],
                 expected_output_description=match.get("expected_output_description"),
                 remediation_command=match.get("remediation_command"),

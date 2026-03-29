@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import BrandLockup from '@/components/common/BrandLockup';
 import {
   ArrowLeft,
   Crosshair,
@@ -11,6 +12,7 @@ import {
   Bot,
   Activity,
   Server,
+  Wifi,
 } from 'lucide-react';
 import type { Mission, Target, Client, ScanDetail } from '@/types';
 import * as api from '@/services/api';
@@ -25,9 +27,10 @@ import { DEFAULT_FILTER_STATE } from '@/components/mission/MissionFindings';
 import type { FindingsFilterState } from '@/components/mission/MissionFindings';
 import MissionReports from '@/components/mission/MissionReports';
 import TargetsTab from '@/components/targets/TargetsTab';
+import ConnectSessionManager from '@/components/connect/ConnectSessionManager';
 
 /* ── Tab types ───────────────────────────────────────────────── */
-type MissionTab = 'overview' | 'targets' | 'findings' | 'reports';
+type MissionTab = 'overview' | 'targets' | 'connect' | 'findings' | 'reports';
 
 export default function MissionWorkspace() {
   const missionId = useNumericParam('id');
@@ -154,7 +157,6 @@ export default function MissionWorkspace() {
 
       {/* Mission Header Card */}
       <div className="relative overflow-hidden rounded-xl border border-dark-border bg-dark-card p-6">
-        <div className="absolute inset-0 bg-gradient-to-br from-ey-yellow/5 via-transparent to-transparent" />
         <div className="relative">
           <div className="flex items-start justify-between">
             <div>
@@ -198,9 +200,9 @@ export default function MissionWorkspace() {
               </button>
               <button
                 onClick={() => navigate(`/missions/${missionId}/analysis`)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-xs font-medium text-dark-secondary hover:text-white transition-colors"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2 py-1.5 text-xs font-medium text-dark-secondary hover:bg-violet-500/10 transition-colors"
               >
-                <Bot className="h-3.5 w-3.5" /> AI Analysis
+                <BrandLockup service="lens" size="sm" />
               </button>
             </div>
           </div>
@@ -290,6 +292,7 @@ export default function MissionWorkspace() {
         {([
           { key: 'overview' as const, label: 'Overview', icon: Activity },
           { key: 'targets' as const, label: 'Targets', icon: Server, count: missionTargets.length },
+          { key: 'connect' as const, label: 'Forge Connect', icon: Wifi },
           { key: 'findings' as const, label: 'Findings', icon: AlertTriangle, count: findingsCount || undefined },
           { key: 'reports' as const, label: 'Reports', icon: BarChart3 },
         ]).map(tab => (
@@ -297,12 +300,18 @@ export default function MissionWorkspace() {
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${activeTab === tab.key
-              ? 'border-ey-yellow text-ey-yellow'
+              ? (tab.key === 'connect' ? 'border-ey-yellow text-white' : 'border-ey-yellow text-ey-yellow')
               : 'border-transparent text-dark-secondary hover:text-white'
               }`}
           >
-            <tab.icon className="h-4 w-4" />
-            {tab.label}
+            {tab.key === 'connect' ? (
+              <BrandLockup service="connect" size="sm" hideText={false} />
+            ) : (
+              <>
+                <tab.icon className="h-4 w-4" />
+                {tab.label}
+              </>
+            )}
             {tab.count !== undefined && <span className="rounded-full bg-dark-elevated px-2 py-0.5 text-xs">{tab.count}</span>}
           </button>
         ))}
@@ -336,6 +345,13 @@ export default function MissionWorkspace() {
           isLocked={!!mission.is_locked}
           clientAdConfigured={client?.ad_configured ?? false}
           clientAdDomain={client?.ad_domain}
+        />
+      )}
+
+      {activeTab === 'connect' && mission && (
+        <ConnectSessionManager
+          clientId={mission.client_id}
+          missionId={missionId}
         />
       )}
 

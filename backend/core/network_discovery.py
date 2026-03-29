@@ -85,6 +85,11 @@ PROBE_PORTS: list[tuple[int, str, str]] = [
     (53,    "DNS",          "network"),
     (514,   "Syslog",       "network"),
     (8291,  "WinBox",       "network"),     # MikroTik RouterOS
+        # ── Firewalls / VPN appliances ──
+        (443,   "HTTPS-Web",    "firewall"),    # pfSense, OPNsense, FortiGate web UI
+        (8443,  "HTTPS-Mgmt",   "firewall"),    # pfSense, OPNsense, Fortinet web UI
+        (9443,  "HTTPS-Alt-Mgmt","firewall"),   # Some firewall variants
+        (8000,  "HTTP-Mgmt",    "firewall"),    # Some firewall management interfaces
     # ── Databases ──
     (1433,  "MSSQL",        "database"),
     (5432,  "PostgreSQL",   "database"),
@@ -155,6 +160,7 @@ class DiscoveredHost:
     confidence: int = 0        # 0-100 detection confidence score
     banners: dict[int, str] = field(default_factory=dict)  # port → raw banner
     connection_methods: list[str] = field(default_factory=list)
+    suggested_benchmarks: list[dict[str, Any]] = field(default_factory=list)  # CIS benchmark suggestions
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -173,6 +179,7 @@ class DiscoveredHost:
             "confidence": self.confidence,
             "banners": self.banners,
             "connection_methods": self.connection_methods,
+            "suggested_benchmarks": self.suggested_benchmarks,
         }
 
 
@@ -306,7 +313,6 @@ async def _tcp_os_fingerprint(
         if not ttl:
             return None
 
-        # Map TTL to initial TTL (adjust for hops — round up to nearest known TTL)
         initial_ttl = _round_to_initial_ttl(ttl)
 
         # Determine OS family
@@ -1135,7 +1141,12 @@ _HTTP_BODY_PATTERNS: list[tuple[str, str, str, str]] = [
     (r"pfSense",                              "Netgate",         "pfSense",    "pfSense"),
     (r"OPNsense",                             "Deciso",          "OPNsense",   "OPNsense"),
     # Network infra
-    (r"Cisco.*?Prime",                        "Cisco",           "Prime",      ""),
+        (r"SonicOS",                              "SonicWall",       "NSA",        "SonicOS"),
+        (r"Vyatta|VyOS",                          "VyOS",            "VyOS",       "VyOS"),
+        (r"Palo Alto.*?PAN-OS",                   "Palo Alto",       "PA",         "PAN-OS"),
+        (r"PAN-OS.*?v([\d.]+)?",                  "Palo Alto",       "PA",         "PAN-OS"),
+        # Network infra
+        (r"Cisco.*?Prime",                        "Cisco",           "Prime",      ""),
     (r"Cisco Adaptive Security",              "Cisco",           "ASA",        ""),
     (r"ASDM",                                 "Cisco",           "ASA",        ""),
     (r"Meraki Dashboard",                     "Meraki (Cisco)",  "Meraki",     ""),
@@ -2450,6 +2461,155 @@ async def _winrm_detect(ip: str) -> dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════
+# Enhanced Firewall Detection (4-signal multi-layer approach)
+# ═══════════════════════════════════════════════════════════
+
+async def _detect_firewall(
+    ip: str,
+    open_ports: list[dict[str, Any]],
+    banners: dict[int, str],
+    http_result: dict[str, Any],
+) -> dict[str, Any]:
+    """Intelligently detect firewalls by port combinations, SSH banners, and HTTP signatures.
+    
+    Firewalls typically expose:
+    - HTTPS on 443, 8443, or 9443 (management UI)
+    - SSH on 22 (for CLI access)
+    - HTTP on 80 (redirects to HTTPS UI)
+    - Specific SSH banner strings (FreeBSD, FortiSSH, VyOS, etc)
+    - Specific HTTP server headers or page titles
+    
+    Uses 4-signal approach:
+    1. Port combinations (SSH+HTTPS = +30 points)
+    2. SSH banner analysis (FreeBSD/FortiSSH/VyOS signatures = +40-70)
+    3. HTTP keywords (FortiOS, SonicOS, pfSense, PAN-OS = +50)
+    4. Absence checks (Windows/DB ports = -30 to -40)
+    
+    Returns dict with: vendor, device_model, os_version, detection_method, confidence, device_role.
+    Requires confidence >= 30 to classify as firewall.
+    """
+    result: dict[str, Any] = {}
+    port_set = {p["port"] for p in open_ports} if open_ports else set()
+    confidence_score = 0
+    detection_sources = []
+    
+    # ─────────────────────────────────────────────────────────────
+    # Signal 1: Port combination analysis
+    # ─────────────────────────────────────────────────────────────
+    has_https_ui = any(p in port_set for p in (443, 8443, 9443))
+    has_ssh = 22 in port_set
+    has_http = any(p in port_set for p in (80, 8000, 8080, 8888))
+    has_windows = any(p in port_set for p in (3389, 5985, 5986, 135, 139))
+    has_db = any(p in port_set for p in (1433, 3306, 5432, 1521, 27017))
+    
+    # SSH + HTTPS is common in pfSense, OPNsense, Fortinet CLI
+    if has_ssh and has_https_ui:
+        confidence_score += 30
+        detection_sources.append("port_combo:ssh+https")
+    
+    # HTTP + HTTPS typical web-based management UI
+    if has_http and has_https_ui:
+        confidence_score += 20
+        detection_sources.append("port_combo:http+https")
+    
+    # Penalize Windows signatures (indicates Windows server, not firewall)
+    if has_windows:
+        confidence_score -= 40
+        detection_sources.append("disqualifier:windows_ports")
+    
+    # Penalize database ports (indicates database server)
+    if has_db:
+        confidence_score -= 30
+        detection_sources.append("disqualifier:database_ports")
+    
+    # ─────────────────────────────────────────────────────────────
+    # Signal 2: SSH banner analysis for firewall fingerprints
+    # ─────────────────────────────────────────────────────────────
+    ssh_banner = banners.get(22, "")
+    logger.debug(f"[FIREWALL_DETECT] IP={ip}, SSH Banner available: {bool(ssh_banner)}, Banner: {ssh_banner[:100] if ssh_banner else 'NONE'}")
+    if ssh_banner:
+        # Build firewall SSH signature patterns
+        firewall_ssh_patterns = [
+            ("pfSense", r"(FreeBSD|pfSense)", "Netgate", "pfSense"),
+            ("OPNsense", r"(OPNsense|Deciso)", "Deciso", "OPNsense"),
+            ("FortiGate", r"(FortiSSH|Fortinet)", "Fortinet", "FortiGate"),
+            ("VyOS", r"VyOS", "VyOS", "EdgeRouter/VyOS"),
+            ("Ubiquiti", r"(EdgeRouter|Ubiquiti)", "Ubiquiti", "EdgeRouter"),
+        ]
+        
+        for product_name, pattern, vendor_name, device_model in firewall_ssh_patterns:
+            if re.search(pattern, ssh_banner, re.IGNORECASE):
+                if not result.get("vendor"):
+                    result["vendor"] = vendor_name
+                    result["device_model"] = device_model
+                result["os_version"] = product_name
+                # High confidence for SSH banner matches (very specific)
+                confidence_score += 70
+                detection_sources.append(f"firewall_ssh_banner:{product_name}")
+                break
+    
+    # ─────────────────────────────────────────────────────────────
+    # Signal 3: HTTP headers/titles for firewall keywords
+    # ─────────────────────────────────────────────────────────────
+    if http_result and isinstance(http_result, dict):
+        vendor = (http_result.get("vendor") or "").lower()
+        os_version = (http_result.get("os_version") or "").lower()
+        
+        # Strong firewall keywords in HTTP response
+        firewall_keywords = {
+            "pfsense": ("Netgate", "pfSense"),
+            "opnsense": ("Deciso", "OPNsense"),
+            "fortigate": ("Fortinet", "FortiGate"),
+            "fortios": ("Fortinet", "FortiGate"),
+            "sonicwall": ("SonicWall", "SonicWall"),
+            "sonic": ("SonicWall", "SonicWall"),
+            "palo alto": ("Palo Alto", "PAN-OS"),
+            "pan-os": ("Palo Alto", "PAN-OS"),
+            "cisco asa": ("Cisco", "ASA"),
+            "sophos": ("Sophos", "Sophos Firewall"),
+            "watchguard": ("WatchGuard", "Firebox"),
+            "juniper": ("Juniper", "Junos"),
+        }
+        
+        for keyword, (vendor_name, device_model) in firewall_keywords.items():
+            if keyword in vendor or keyword in os_version:
+                result["vendor"] = vendor_name
+                result["device_model"] = device_model
+                result["os_version"] = os_version or device_model
+                confidence_score += 50
+                detection_sources.append(f"firewall_http_keyword:{keyword}")
+                break
+        
+        # If HTTP detection returned high confidence, boost our score
+        if http_result.get("confidence", 0) >= 70:
+            if not result.get("vendor"):
+                result["vendor"] = http_result.get("vendor")
+                result["device_model"] = http_result.get("device_model")
+            result["os_version"] = http_result.get("os_version") or result.get("os_version")
+            confidence_score += http_result.get("confidence", 0) // 2
+            detection_sources.append("firewall_http_confidence")
+    
+    # ─────────────────────────────────────────────────────────────
+    # Final confidence calculation and device role assignment
+    # ─────────────────────────────────────────────────────────────
+    
+    # Threshold: >= 30 confidence = firewall
+    logger.debug(f"[FIREWALL_DETECT] IP={ip}, Final confidence_score={confidence_score}, sources={detection_sources}")
+    if confidence_score >= 30:
+        result["device_role"] = "firewall"
+        result["confidence"] = min(confidence_score, 95)
+        result["detection_method"] = " + ".join(detection_sources) if detection_sources else "firewall_heuristic"
+        if not result.get("vendor"):
+            result["vendor"] = "Unknown Firewall"
+        logger.warning(f"[FIREWALL_DETECT] ✓ Detected firewall at {ip}: {result}")
+        return result
+    
+    # Below threshold = not a firewall
+    logger.debug(f"[FIREWALL_DETECT] ✗ Not enough confidence at {ip} (score={confidence_score})")
+    return {}
+
+
+# ═══════════════════════════════════════════════════════════
 # Orchestrator: multi-layer fingerprinting with confidence
 # ═══════════════════════════════════════════════════════════
 
@@ -2587,6 +2747,28 @@ async def _fingerprint_host(
         except Exception:
             pass
 
+    # Layer 6b: Firewall detection (smart multi-signal detection with HTTP results)
+    http_result = {}
+    if http_task and not http_task.cancelled():
+        try:
+            http_result = http_task.result() or {}
+        except Exception:
+            pass
+    
+    firewall_task = asyncio.create_task(
+        _detect_firewall(ip, open_ports, banners, http_result)
+    )
+    
+    try:
+        firewall_result = await asyncio.wait_for(firewall_task, timeout=5.0)
+        if firewall_result and firewall_result.get("device_role") == "firewall":
+            # Boost firewall detection confidence slightly
+            if firewall_result.get("confidence", 0) > 0:
+                firewall_result["confidence"] = min(firewall_result.get("confidence", 0) + 10, 98)
+            candidates.insert(0, firewall_result)  # Insert at beginning for high priority
+    except (asyncio.TimeoutError, Exception):
+        pass
+
     # Layer 7: Hostname heuristics
     hn_result = _hostname_heuristics(hostname)
     if hn_result:
@@ -2642,6 +2824,7 @@ async def _fingerprint_host(
         "os_version": "",
         "vendor": "",
         "device_model": "",
+        "device_role": "",  # NEW: preserve firewall detection
         "firmware": "",
         "mac_address": mac or "",
         "domain": "",
@@ -2652,6 +2835,11 @@ async def _fingerprint_host(
 
     # Sort by confidence (highest first)
     candidates.sort(key=lambda c: c.get("confidence", 0), reverse=True)
+    
+    # DEBUG: Log all candidates for this IP
+    logger.debug(f"[FINGERPRINT] IP={ip} has {len(candidates)} candidates:")
+    for idx, c in enumerate(candidates):
+        logger.debug(f"  [{idx}] {c.get('vendor', '?')}/{c.get('os_version', '?')} | role={c.get('device_role', '?')} | conf={c.get('confidence', 0)} | method={c.get('detection_method', '?')}")
 
     for candidate in candidates:
         conf = candidate.get("confidence", 0)
@@ -2671,6 +2859,8 @@ async def _fingerprint_host(
             best["vendor"] = candidate["vendor"]
         if not best["device_model"] and candidate.get("device_model"):
             best["device_model"] = candidate["device_model"]
+        if not best["device_role"] and candidate.get("device_role"):
+            best["device_role"] = candidate["device_role"]  # NEW: preserve firewall detection
         if not best["firmware"] and candidate.get("firmware"):
             best["firmware"] = candidate["firmware"]
         if not best["domain"] and candidate.get("domain"):
@@ -2740,14 +2930,20 @@ def _guess_os(open_ports: list[dict[str, Any]]) -> str:
     if 62078 in port_numbers or 548 in port_numbers:
         return "macos"
 
-    # Strong Linux indicator
+    # FIREWALL DETECTION: SSH + HTTPS ports typically indicate firewall/appliance
+    # (pfSense, FortiGate, Ubiquiti EdgeRouter, OPNsense all use this pattern)
+    if 22 in port_numbers and any(p in port_numbers for p in (443, 8443, 9443)):
+        return "firewall"  # Return early — firewall detected by port combo
+
+    # Strong Linux indicator (but NOT if it's SSH-only or SSH + HTTPS)
     if 22 in port_numbers and not (port_numbers & windows_ports):
         return "linux"
 
-    # Database ports
+    # Database ports — standalone DB with no SSH often runs on Linux
     db_ports = {1433, 5432, 1521, 3306, 6379, 27017, 9200}
-    if port_numbers & db_ports and not (port_numbers & windows_ports) and 22 not in port_numbers:
-        return "unknown"
+    if port_numbers & db_ports and not (port_numbers & windows_ports):
+        # MSSQL (1433) without Windows ports is unusual but possible (Linux MSSQL)
+        return "linux"
 
     # Printer indicators
     if port_numbers & {631, 9100}:
@@ -2785,6 +2981,10 @@ def _guess_device_role(open_ports: list[dict[str, Any]], os_guess: str) -> str:
     # Network device (telnet, SNMP, NETCONF, WinBox — no SSH-only)
     network_ports = {23, 161, 830, 8291}
     if port_numbers & network_ports and not (port_numbers & {135, 445, 3389}):
+        return "network_device"
+
+    # Firewall / security appliance inferred from OS guess
+    if os_guess == "firewall":
         return "network_device"
 
     # Database server
@@ -2836,6 +3036,170 @@ def _detect_connection_methods(os_guess: str, open_ports: list[dict[str, Any]]) 
         methods.append("mongodb")
 
     return methods
+
+
+def suggest_benchmarks(
+    open_ports: list[dict[str, Any]],
+    os_guess: str,
+    device_role: str,
+    banners: dict[int, str] | None = None,
+    loaded_benchmark_names: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Suggest CIS benchmark packs based on discovered ports, OS, and banners.
+
+    Returns a list of dicts with keys: benchmark_name, confidence, reason.
+    Higher confidence = more certain match.
+
+    Parameters
+    ----------
+    loaded_benchmark_names:
+        Optional list of benchmark names currently loaded in the system.
+        If provided, enables dynamic matching against newly loaded packs
+        that aren't in the hardcoded mapping.
+    """
+    suggestions = []
+    port_numbers = {p["port"] for p in open_ports}
+    banners = banners or {}
+
+    # ── Database benchmarks (highest priority — port-specific) ────────────
+    if 5432 in port_numbers:
+        suggestions.append({
+            "benchmark_name": "CIS PostgreSQL 16 Benchmark",
+            "confidence": 0.9,
+            "reason": "Port 5432 (PostgreSQL) detected",
+        })
+    if 1433 in port_numbers:
+        suggestions.append({
+            "benchmark_name": "CIS Microsoft SQL Server 2022 Benchmark",
+            "confidence": 0.85,
+            "reason": "Port 1433 (MSSQL) detected",
+        })
+    if 3306 in port_numbers:
+        suggestions.append({
+            "benchmark_name": "CIS Oracle MySQL Enterprise Edition 8.4 Benchmark",
+            "confidence": 0.85,
+            "reason": "Port 3306 (MySQL) detected",
+        })
+    if 1521 in port_numbers:
+        suggestions.append({
+            "benchmark_name": "CIS Oracle Database 23ai Benchmark",
+            "confidence": 0.85,
+            "reason": "Port 1521 (Oracle) detected",
+        })
+    if 27017 in port_numbers:
+        suggestions.append({
+            "benchmark_name": "CIS MongoDB 8 Benchmark",
+            "confidence": 0.85,
+            "reason": "Port 27017 (MongoDB) detected",
+        })
+    if 9042 in port_numbers:
+        suggestions.append({
+            "benchmark_name": "CIS Apache Cassandra Benchmark",
+            "confidence": 0.85,
+            "reason": "Port 9042 (Cassandra) detected",
+        })
+
+    # ── Web server benchmarks (banner-based or port-based) ────────────────
+    # Check HTTP banner for server type
+    http_banner = banners.get(80, "") + banners.get(443, "") + banners.get(8080, "")
+    http_banner_lower = http_banner.lower()
+    if "nginx" in http_banner_lower:
+        suggestions.append({
+            "benchmark_name": "CIS NGINX Benchmark",
+            "confidence": 0.95,
+            "reason": "NGINX detected in HTTP banner",
+        })
+    elif "apache" in http_banner_lower:
+        suggestions.append({
+            "benchmark_name": "CIS Apache HTTP Server 2.2 Benchmark",
+            "confidence": 0.9,
+            "reason": "Apache detected in HTTP banner",
+        })
+    elif "tomcat" in http_banner_lower or 8005 in port_numbers:
+        suggestions.append({
+            "benchmark_name": "CIS Apache Tomcat 10.1 Benchmark",
+            "confidence": 0.85,
+            "reason": "Tomcat detected (banner or port 8005)",
+        })
+
+    # ── OS-based benchmarks ───────────────────────────────────────────────
+    if os_guess == "windows":
+        # Check for server vs workstation
+        if device_role == "server" or device_role == "domain_controller":
+            suggestions.append({
+                "benchmark_name": "CIS Microsoft Windows Server 2022 Benchmark",
+                "confidence": 0.7,
+                "reason": "Windows server detected (ports/role)",
+            })
+        else:
+            suggestions.append({
+                "benchmark_name": "CIS Microsoft Windows 11 Enterprise Benchmark",
+                "confidence": 0.6,
+                "reason": "Windows workstation detected",
+            })
+
+    elif os_guess == "linux":
+        # If no specific service detected, suggest generic Linux benchmark
+        if not any(s["benchmark_name"].startswith("CIS") and "Linux" not in s["benchmark_name"]
+                   for s in suggestions):
+            suggestions.append({
+                "benchmark_name": "CIS Ubuntu Linux 24.04 LTS Benchmark",
+                "confidence": 0.5,
+                "reason": "Linux host detected via SSH",
+            })
+
+    elif os_guess == "firewall":
+        # FortiGate is most common, but low confidence without banner
+        suggestions.append({
+            "benchmark_name": "CIS FortiGate 7.4.x Benchmark",
+            "confidence": 0.4,
+            "reason": "Firewall appliance detected (SSH + HTTPS)",
+        })
+
+    # ── Network device benchmarks ─────────────────────────────────────────
+    if device_role == "network_device":
+        if 23 in port_numbers:  # Telnet suggests older Cisco
+            suggestions.append({
+                "benchmark_name": "CIS Cisco Firewall Benchmark",
+                "confidence": 0.5,
+                "reason": "Network device with Telnet (Cisco-style)",
+            })
+
+    # ── DNS server ────────────────────────────────────────────────────────
+    if 53 in port_numbers and os_guess == "linux":
+        suggestions.append({
+            "benchmark_name": "CIS ISC BIND DNS Server 9.11 Benchmark",
+            "confidence": 0.7,
+            "reason": "DNS port 53 open on Linux host",
+        })
+
+    # ── Dynamic matching for newly loaded packs ──────────────────────────
+    # Maps well-known ports to platform keywords. If a loaded benchmark name
+    # contains the keyword and isn't already suggested, add it dynamically.
+    _PORT_KEYWORDS = {
+        5432: "postgresql", 3306: "mysql", 1521: "oracle", 1433: "sql server",
+        27017: "mongodb", 9042: "cassandra", 6379: "redis", 9200: "elasticsearch",
+        5672: "rabbitmq", 2181: "zookeeper", 8443: "kubernetes", 8500: "consul",
+        5601: "kibana", 9090: "prometheus", 3000: "grafana", 8080: "tomcat",
+    }
+    if loaded_benchmark_names:
+        already_suggested = {s["benchmark_name"] for s in suggestions}
+        for port_num, keyword in _PORT_KEYWORDS.items():
+            if port_num in port_numbers:
+                for bm_name in loaded_benchmark_names:
+                    if bm_name in already_suggested:
+                        continue
+                    if keyword in bm_name.lower():
+                        suggestions.append({
+                            "benchmark_name": bm_name,
+                            "confidence": 0.6,
+                            "reason": f"Port {port_num} matches loaded benchmark '{bm_name}'",
+                        })
+                        already_suggested.add(bm_name)
+
+    # Sort by confidence descending
+    suggestions.sort(key=lambda x: x["confidence"], reverse=True)
+    return suggestions
 
 
 async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
@@ -2929,7 +3293,12 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
                 os_guess = "unknown"  # network devices — OS determined elsewhere
 
         # Determine device role from ports + OS
-        device_role = _guess_device_role(open_ports, os_guess)
+        # BUT: preserve firewall classification if already detected
+        device_role = fp.get("device_role", "")
+        if not device_role or device_role == "unknown":
+            device_role = _guess_device_role(open_ports, os_guess)
+        
+        logger.debug(f"[DISCOVERY] IP={ip}, device_role={device_role}, from_fp={fp.get('device_role', 'N/A')}")
 
         # Refine role from vendor if still unknown (phones, IoT with no ports)
         vendor = fp.get("vendor", "")
@@ -2941,16 +3310,24 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
                 device_role = "mobile"
 
         # Detect locally-administered (randomized) MACs — bit 1 of first octet
+        # NOTE: Many non-mobile devices use randomized MACs (VMs, Docker, IoT),
+        # so we do NOT classify as "mobile" — let port-based heuristics decide.
         mac_addr = fp.get("mac_address", "")
         if mac_addr and not vendor:
             try:
                 first_byte = int(mac_addr.split(":")[0], 16)
                 if first_byte & 0x02:
                     vendor = "(randomized MAC)"
-                    if device_role == "unknown":
-                        device_role = "mobile"
             except (ValueError, IndexError):
                 pass
+
+        # Suggest matching CIS benchmark packs based on ports/OS/banners
+        bench_suggestions = suggest_benchmarks(
+            open_ports=open_ports,
+            os_guess=os_guess,
+            device_role=device_role,
+            banners=banners,
+        )
 
         return DiscoveredHost(
             ip=ip,
@@ -2968,6 +3345,7 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
             domain=fp.get("domain", ""),
             detection_method=fp.get("detection_method", ""),
             confidence=fp.get("confidence", 0),
+            suggested_benchmarks=bench_suggestions,
         )
 
 
@@ -3163,13 +3541,14 @@ async def discover_network(
         conf = 25 if vendor else 10
 
         # Detect locally-administered (randomized) MACs — bit 1 of first octet
+        # NOTE: Do NOT classify as "mobile" — VMs and containers commonly use
+        # randomized MACs. Keep as "unknown" and let port heuristics refine.
         is_random_mac = False
         if mac and not vendor:
             try:
                 first_byte = int(mac.split(":")[0], 16)
                 if first_byte & 0x02:
                     is_random_mac = True
-                    device_role = "mobile"
                     detection = "mac_arp"
                     conf = 15
             except (ValueError, IndexError):

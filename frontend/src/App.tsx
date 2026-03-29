@@ -5,6 +5,7 @@ import MissionWorkspace from './pages/MissionWorkspace';
 import BenchmarkDetail from './pages/BenchmarkDetail';
 import FindingDetail from './pages/FindingDetail';
 import MissionAnalysis from './pages/MissionAnalysis';
+import ConnectPortal from './pages/ConnectPortal';
 import { ToastProvider } from './components/common/Toast';
 
 function App() {
@@ -12,6 +13,9 @@ function App() {
     <ToastProvider>
     <BrowserRouter>
       <Routes>
+        {/* Portal page — standalone, outside MainLayout */}
+        <Route path="/connect/:code" element={<ConnectPortal />} />
+
         <Route path="/" element={<MainLayout />}>
           {/* Persistent pages are rendered by MainLayout via keep-alive.
               We still need index + catch-all so React Router matches them. */}

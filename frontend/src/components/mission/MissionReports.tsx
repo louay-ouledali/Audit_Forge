@@ -65,7 +65,7 @@ export default function MissionReports({ missionId, missionName, isLocked = fals
             onClick={() => navigate(`/missions/${missionId}/analysis`)}
             className="inline-flex items-center gap-2 rounded-lg border border-dark-border bg-dark-elevated px-4 py-2.5 text-sm font-medium text-dark-secondary hover:text-white"
           >
-            <Bot className="h-4 w-4" /> AI Analysis
+            <Bot className="h-4 w-4" /> Forge Lens
           </button>
         </div>
       </div>

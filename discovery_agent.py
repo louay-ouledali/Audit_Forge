@@ -52,20 +52,21 @@ _loop: asyncio.AbstractEventLoop | None = None
 
 async def _run_scan(scan_id: str, subnet: str) -> None:
     """Execute the pure-Python discovery engine and store results."""
-    from backend.core.network_discovery import discover_network
-
-    _scans[scan_id] = {
-        "id": scan_id,
-        "status": "running",
-        "subnet": subnet,
-        "total": 0,
-        "scanned": 0,
-        "found": 0,
-        "hosts": [],
-        "engine": "agent",
-    }
+    # Ensure status endpoint always has a record to return.
+    if scan_id not in _scans:
+        _scans[scan_id] = {
+            "id": scan_id,
+            "status": "running",
+            "subnet": subnet,
+            "total": 0,
+            "scanned": 0,
+            "found": 0,
+            "hosts": [],
+            "engine": "agent",
+        }
 
     try:
+        from backend.core.network_discovery import discover_network
         hosts = await discover_network(subnet, discovery_id=scan_id)
         _scans[scan_id]["status"] = "completed"
         _scans[scan_id]["hosts"] = hosts
@@ -174,6 +175,19 @@ class AgentHandler(BaseHTTPRequestHandler):
                 return
 
             scan_id = str(uuid.uuid4())[:8]
+
+            # Pre-register the scan so immediate status polls never 404.
+            _scans[scan_id] = {
+                "id": scan_id,
+                "status": "running",
+                "subnet": subnet,
+                "total": 0,
+                "scanned": 0,
+                "found": 0,
+                "hosts": [],
+                "engine": "agent",
+            }
+
             _start_scan_in_loop(scan_id, subnet)
             self._send_json({"scan_id": scan_id, "status": "running", "engine": "agent"})
             return

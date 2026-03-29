@@ -57,6 +57,14 @@ class PreloadedBenchmarkMeta(BaseModel):
     release_date: str | None = Field(
         None, description="Benchmark release date (YYYY-MM-DD or approximate)"
     )
+    connection_hints: dict[str, str] | None = Field(
+        None,
+        description=(
+            "Map of transport type to connector name, e.g. "
+            "{'sql': 'postgresql', 'shell': 'ssh'}. "
+            "Helps the scan executor pick the right connector for each transport."
+        ),
+    )
 
 
 class NarrativeGroup(BaseModel):
@@ -210,6 +218,14 @@ class PreloadedRule(BaseModel):
     # ── Audit command (from Phase 2, curated) ────────────────────────────
     audit_command: str | None = Field(
         None, description="The audit command (PowerShell / Bash / SQL) to check this rule"
+    )
+    command_transport: Literal["sql", "shell", "powershell", "cli", "api"] | None = Field(
+        None,
+        description=(
+            "Transport type for this command: 'sql' (database query), "
+            "'shell' (SSH/bash), 'powershell' (WinRM), 'cli' (network device), "
+            "'api' (REST/HTTP). Used to route to the correct connector."
+        ),
     )
     expected_output_expression: str | None = Field(
         None,
@@ -445,6 +461,7 @@ def validate_pack(path: str | Path) -> tuple[PreloadedBenchmarkPack | None, Pack
     with_narrative = sum(1 for r in pack.rules if r.narrative_group)
     with_mitre = sum(1 for r in pack.rules if r.mitre_attack)
     with_remediation = sum(1 for r in pack.rules if r.remediation_command)
+    with_transport = sum(1 for r in pack.rules if r.command_transport)
 
     pct = lambda n: round(n / total * 100) if total else 0  # noqa: E731
 
@@ -479,6 +496,7 @@ def validate_pack(path: str | Path) -> tuple[PreloadedBenchmarkPack | None, Pack
         "with_narrative_group": with_narrative,
         "with_mitre_attack": with_mitre,
         "with_remediation_command": with_remediation,
+        "with_command_transport": with_transport,
         "narrative_groups_defined": len(pack.report_profile.narrative_groups),
         "completeness_pct": {
             "commands": pct(with_commands),
@@ -488,6 +506,7 @@ def validate_pack(path: str | Path) -> tuple[PreloadedBenchmarkPack | None, Pack
             "narrative_groups": pct(with_narrative),
             "mitre_attack": pct(with_mitre),
             "remediation_commands": pct(with_remediation),
+            "command_transport": pct(with_transport),
         },
     }
 

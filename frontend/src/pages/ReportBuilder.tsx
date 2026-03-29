@@ -484,21 +484,27 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
       {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400 animate-in fade-in">{error}</div>}
       {success && <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400 animate-in fade-in">{success}</div>}
 
-      {/* ── Header ────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ey-yellow/15 border border-ey-yellow/30">
-              <BarChart3 className="h-5 w-5 text-ey-yellow" />
+{/* ── Branded Header: Report Studio ────────────────────────────────────── */}
+        <div className="relative overflow-hidden rounded-2xl border border-sky-500/20 bg-dark-card/60 p-8 shadow-[0_0_40px_rgba(14,165,233,0.05)] backdrop-blur-md mb-6">
+          {/* Subtle sky-blue analytical grid motif */}
+          <div className="absolute top-0 right-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-sky-600/10 blur-[80px] pointer-events-none" />
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTAgMGwyMCAwdjIwSDB6IiBmaWxsPSJub25lIi8+PHBhdGggZD0iTTAgMjBWMHptMjAgMEgweiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJyZ2JhKDE0LCAxNjUsIDIzMywgMC4wNykiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] pointer-events-none mask-image:linear-gradient(to_bottom_right,white,transparent)" />
+          
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+            <div className="flex flex-row items-center gap-5">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-500/10 border border-sky-500/20 shadow-[0_0_20px_rgba(14,165,233,0.15)]">
+                <BarChart3 className="h-7 w-7 text-sky-400" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-white tracking-tight">Report Studio</h1>
+                <p className="mt-1 text-sm text-dark-secondary max-w-md">
+                  {scopedMissionName
+                    ? <>Reporting for mission <span className="text-ey-yellow font-medium">{scopedMissionName}</span></>
+                    : 'Build, customize, and export professional audit reports'
+                  }
+                </p>
+              </div>
             </div>
-            Report Studio
-          </h1>
-          <p className="mt-1.5 text-sm text-dark-secondary ml-[52px]">
-            {scopedMissionName
-              ? <>Reporting for mission <span className="text-ey-yellow font-medium">{scopedMissionName}</span></>
-              : 'Build, customize, and export professional audit reports'
-            }
-          </p>
         </div>
       </div>
 
@@ -533,7 +539,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
           <p className="text-sm text-dark-secondary max-w-md mx-auto mb-2">
             Complete at least one scan to start building reports.
           </p>
-          <p className="text-xs text-dark-muted">Go to a Mission Workspace → run a scan → import results</p>
+          <p className="text-xs text-dark-muted">Go to Mission Control → run a scan → import results</p>
         </div>
       ) : (
         <>

@@ -140,10 +140,13 @@ def test_connection(
     try:
         server = ldap3.Server(**server_kwargs)
 
-        # Build the bind DN
+        # Build the bind DN — prefer NTLM (DOMAIN\user) over UPN for security
         bind_user = username
         if "\\" not in username and "@" not in username:
-            bind_user = f"{username}@{domain}"
+            # Default to NTLM format (DOMAIN\user) which is safer than
+            # SIMPLE bind with UPN (user@domain) over non-TLS connections.
+            short_domain = domain.split(".")[0].upper()
+            bind_user = f"{short_domain}\\{username}"
 
         conn = ldap3.Connection(
             server,
@@ -272,7 +275,8 @@ def discover_computers(
 
         bind_user = username
         if "\\" not in username and "@" not in username:
-            bind_user = f"{username}@{domain}"
+            short_domain = domain.split(".")[0].upper()
+            bind_user = f"{short_domain}\\{username}"
 
         conn = ldap3.Connection(
             server,
@@ -527,9 +531,18 @@ def match_benchmark(
     best_match = None
     best_score = 0
 
+    # Database-family benchmarks should never match AD-discovered Windows hosts
+    _DB_KEYWORDS = {"sql server", "postgresql", "oracle database", "mysql",
+                    "mongodb", "cassandra", "mariadb", "redis"}
+
     for bm in benchmarks:
         bm_name = (bm.get("name") or "").lower()
         bm_platform = (bm.get("platform") or "").lower()
+
+        # Skip database benchmarks for OS matching — they should only be
+        # suggested when a database port is discovered, not from AD OS string
+        if any(kw in bm_name for kw in _DB_KEYWORDS):
+            continue
 
         score = 0
         # Check if benchmark matches the target type
@@ -594,8 +607,10 @@ foreach ($target in $targets) {{
             Start-Sleep -Seconds 5
 
             # Configure WinRM for remote management
+            # NOTE: We use Kerberos/NTLM auth (not Basic), and do NOT enable
+            # AllowUnencrypted — WinRM over HTTPS is strongly recommended.
             Invoke-WmiMethod -Class Win32_Process -Name Create `
-                -ArgumentList "powershell -Command Set-Item WSMan:\\localhost\\Service\\AllowUnencrypted $true; Set-Item WSMan:\\localhost\\Service\\Auth\\Basic $true; Enable-PSRemoting -Force -SkipNetworkProfileCheck" `
+                -ArgumentList "powershell -Command Enable-PSRemoting -Force -SkipNetworkProfileCheck" `
                 -ComputerName $target `
                 -Credential $credential `
                 -ErrorAction SilentlyContinue

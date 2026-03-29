@@ -232,7 +232,132 @@ COMMAND PATTERNS:
 • SSH → show ip ssh
 • AAA → show running-config | section aaa
 • Banner → show running-config | include banner
-• VTY config → show running-config | section line vty"""
+• VTY config → show running-config | section line vty
+
+═══════════════════════════════════════════════════════════
+DATABASE PLATFORMS — Per-Rule Transport Tagging
+═══════════════════════════════════════════════════════════
+Database benchmarks contain TWO types of commands:
+1. [SQL] — SQL queries that run through the database connector
+2. [SHELL] — OS-level commands that run via SSH on the database host
+
+PREFIX every audit_command with a transport tag: [SQL] or [SHELL].
+
+CRITICAL: NEVER wrap SQL in shell tools. These are WRONG:
+  WRONG: psql -c "SHOW shared_buffers"       ← shell wrapper around SQL
+  WRONG: sqlcmd -Q "SELECT @@version"         ← shell wrapper around SQL
+  WRONG: mysql -e "SHOW VARIABLES LIKE 'x'"   ← shell wrapper around SQL
+  WRONG: echo "SELECT * FROM V$PARAMETER" | sqlplus
+  CORRECT: [SQL] SHOW shared_buffers;
+  CORRECT: [SQL] SELECT @@version;
+  CORRECT: [SQL] SHOW VARIABLES LIKE 'x';
+  CORRECT: [SQL] SELECT value FROM V$PARAMETER WHERE name = 'x';
+
+PostgreSQL:
+  [SQL] SHOW setting_name;
+  [SQL] SELECT setting FROM pg_settings WHERE name = 'x';
+  [SQL] SELECT rolname FROM pg_roles WHERE rolsuper;
+  [SHELL] stat -c '%a' /var/lib/postgresql/data/pg_hba.conf
+  [SHELL] systemctl is-enabled postgresql
+  [SHELL] grep -E '^ssl' /var/lib/postgresql/data/postgresql.conf | awk '{{print $3}}'
+
+MSSQL:
+  [SQL] SELECT name, value_in_use FROM sys.configurations WHERE name = 'x';
+  [SQL] SELECT @@SERVERNAME;
+  [SQL] EXEC xp_loginconfig 'audit level';
+  [SQL] SELECT COUNT(*) FROM sys.databases WHERE is_trustworthy_on = 1 AND name != 'msdb';
+
+Oracle:
+  [SQL] SELECT value FROM V$PARAMETER WHERE name = 'audit_trail';
+  [SQL] SELECT profile, resource_name, limit FROM DBA_PROFILES WHERE resource_name LIKE '%PASSWORD%';
+  [SHELL] stat -c '%a' $ORACLE_HOME/network/admin/sqlnet.ora
+
+MySQL:
+  [SQL] SHOW VARIABLES LIKE 'x';
+  [SQL] SELECT user, host FROM mysql.user WHERE Super_priv = 'Y';
+  [SHELL] stat -c '%a %U:%G' /var/lib/mysql
+
+MongoDB — ALL commands are [SHELL] (no SQL connector for Mongo shell):
+  [SHELL] mongosh --quiet --eval 'db.version()'
+  [SHELL] grep 'authorization' /etc/mongod.conf
+  [SHELL] grep 'sslMode\\|tlsMode' /etc/mongod.conf
+
+Cassandra — ALL commands are [SHELL]:
+  [SHELL] grep 'authenticator' /etc/cassandra/cassandra.yaml | awk '{{print $2}}'
+  [SHELL] stat -c '%a %U:%G' /etc/cassandra/cassandra.yaml
+
+═══════════════════════════════════════════════════════════
+HYPERVISOR PLATFORMS — Dual Transport (ESXi)
+═══════════════════════════════════════════════════════════
+VMware ESXi uses TWO transports:
+  [SHELL] — esxcli/vim-cmd commands via SSH
+  [POWERSHELL] — PowerCLI cmdlets via WinRM/vCenter
+
+CRITICAL: NEVER use unbound variables like $VM or $vmhost.
+Always iterate with ForEach-Object:
+  WRONG:  Get-AdvancedSetting -Entity $VM -Name 'x'
+  CORRECT: [POWERSHELL] Get-VM | ForEach-Object {{ (Get-AdvancedSetting -Entity $_ -Name 'x').Value }}
+
+  [SHELL] esxcli system syslog config get
+  [SHELL] esxcli network vswitch standard list
+  [SHELL] vim-cmd hostsvc/hosthardware | grep -A2 'biosInfo'
+  [POWERSHELL] Get-VMHost | Select-Object Name, @{{N='LockdownLevel';E={{$_.ExtensionData.Config.LockdownMode}}}}
+  [POWERSHELL] Get-VM | ForEach-Object {{ $_ | Get-AdvancedSetting -Name 'isolation.tools.copy.disable' | Select-Object Entity, Value }}
+
+═══════════════════════════════════════════════════════════
+FIREWALL/NETWORK DEVICE PLATFORMS — Native CLI Only
+═══════════════════════════════════════════════════════════
+All firewall commands use [CLI] transport. Commands run in privileged mode.
+
+CRITICAL: NEVER pipe to Unix tools (grep, awk, sed, wc, cut, sort).
+These tools do NOT exist on network device CLIs.
+
+FortiGate:
+  WRONG:  get system global | grep hostname | awk '{{print $NF}}'
+  CORRECT: [CLI] get system global
+  CORRECT: [CLI] show full-configuration system admin
+  CORRECT: [CLI] diag sys ntp status
+  Use contains:keyword or not_contains:keyword for expressions.
+
+Juniper JunOS — supports native filters | match, | count, | display set:
+  WRONG:  show configuration | grep ntp | awk '{{print $2}}'
+  CORRECT: [CLI] show configuration system ntp | display set
+  CORRECT: [CLI] show interfaces | match "Physical link is Up"
+
+Palo Alto PAN-OS — supports | match:
+  WRONG:  show system info | grep hostname | wc -l
+  CORRECT: [CLI] show system info | match hostname
+  CORRECT: [CLI] show running security-policy
+
+Cisco IOS/ASA — supports | include, | section:
+  CORRECT: [CLI] show running-config | include service password-encryption
+  CORRECT: [CLI] show running-config | section line vty
+
+Check Point — supports | grep (clish allows it):
+  CORRECT: [CLI] clish -c 'show configuration'
+  CORRECT: [CLI] show asset all
+
+═══════════════════════════════════════════════════════════
+UNKNOWN / NEW PLATFORMS — Generic Transport Tagging
+═══════════════════════════════════════════════════════════
+If the platform is not listed above, you MUST still produce transport tags.
+Use these heuristics:
+
+1. SQL query (SELECT, SHOW, EXEC, GRANT, ALTER, CREATE, DROP, SET, USE,
+   DECLARE, sp_, xp_, db., rs., sh.) → prefix with [SQL]
+2. Unix/Linux shell command (grep, cat, stat, systemctl, find, chmod, ls,
+   paths starting with /, sudo, bash, sh -c) → prefix with [SHELL]
+3. PowerShell cmdlet (Get-*, Set-*, New-*, Remove-*, $env:, ForEach-Object,
+   Select-Object, Invoke-*, Write-Output) → prefix with [POWERSHELL]
+4. Network device CLI (show, get system, config, execute, diagnose,
+   display, set, delete) → prefix with [CLI]
+5. REST API / HTTP call (curl, wget, Invoke-RestMethod, API endpoint) →
+   prefix with [API]
+6. When uncertain, default to [SHELL] (the most universal transport).
+
+CRITICAL: Always include the command_transport field in your JSON response,
+even for platforms you do not recognise. The scan executor depends on this
+tag to route commands to the correct connector."""
 
 PHASE2_COMMAND_GENERATION = """Platform: {platform} (family: {platform_family})
 
@@ -241,6 +366,25 @@ The command MUST work when pasted directly into the platform's native shell:
   - Windows → PowerShell
   - Linux → bash
   - Network → privileged EXEC (SSH CLI)
+  - Database → SQL queries (for DB settings) + shell commands (for OS checks)
+  - Hypervisor → SSH (esxcli) + PowerShell (PowerCLI)
+
+═══════════════════════════════════════════════════════════
+TRANSPORT TAG PREFIX — REQUIRED FOR DATABASE/HYPERVISOR/FIREWALL
+═══════════════════════════════════════════════════════════
+For database, hypervisor, and firewall platforms, prefix each audit_command with:
+  [SQL]        — SQL query sent through database connector
+  [SHELL]      — OS-level command sent via SSH
+  [POWERSHELL] — PowerShell/PowerCLI sent via WinRM
+  [CLI]        — Native device CLI sent via SSH/Netmiko
+
+For database platforms, NEVER wrap SQL in shell tools:
+  WRONG: psql -c "SHOW x"    → CORRECT: [SQL] SHOW x;
+  WRONG: sqlcmd -Q "SELECT"  → CORRECT: [SQL] SELECT ...;
+  WRONG: mysql -e "SHOW"     → CORRECT: [SQL] SHOW ...;
+
+For firewall platforms, NEVER pipe to grep/awk/sed/wc:
+  WRONG: show ... | grep x | awk  → CORRECT: [CLI] show ... | match x
 
 ═══════════════════════════════════════════════════════════
 CRITICAL: EXTRACT ONLY THE SPECIFIC VALUE, NOT FULL OUTPUT
@@ -296,8 +440,14 @@ LINUX-SPECIFIC ROUTING:
 - Audit rules → auditctl -l | grep -c pattern  (count of matching rules)
 
 NETWORK-SPECIFIC ROUTING:
-- Config checking → show running-config | include pattern
-- Section checking → show running-config | section pattern
+- Cisco IOS/ASA → show running-config | include pattern  /  show running-config | section pattern
+- FortiGate → get system global  /  show full-configuration system <module>  /  diag sys ntp status
+- Juniper JunOS → show configuration <section> | display set  /  show interfaces | match pattern
+- Palo Alto PAN-OS → show system info | match pattern  /  show running security-policy | match pattern
+- Check Point Gaia → show asset system  /  show password-controls <field> | include keyword  /  clish -c "show <cmd>"
+CRITICAL: NEVER pipe to Unix tools (grep, awk, sed, wc, cut, sort) on network device CLIs.
+Use native filters only: | include / | section (Cisco), | match / | display set (Juniper), | match (Palo Alto).
+Exception: Check Point expert-mode commands (fw, cpstat) DO run in bash shell and CAN use grep — tag these [SHELL].
 
 ═══════════════════════════════════════════════════════════
 EXPECTED OUTPUT — USE COMPARISON EXPRESSIONS, NOT REGEX
@@ -514,6 +664,15 @@ COMPARISON EXPRESSIONS:
 - contains:TEXT for substring match
 - NEVER use regex patterns for simple numeric comparisons
 - NEVER use English prose like "14 or more"
+
+TRANSPORT TAG VALIDATION (database/hypervisor/firewall):
+- SQL queries (SELECT, SHOW, EXEC, WITH, DBCC) MUST have [SQL] prefix
+- OS-level commands (grep, stat, systemctl, ps) MUST have [SHELL] prefix
+- PowerCLI cmdlets (Get-VM, Get-VMHost) MUST have [POWERSHELL] prefix
+- Network CLI commands (show, get, diag) MUST have [CLI] prefix
+- Shell-wrapped SQL is ALWAYS wrong: no psql -c, no sqlcmd -Q, no mysql -e
+- Firewall pipes to grep/awk/sed/wc are ALWAYS wrong
+- Unbound variables ($VM, $vmhost) in PowerShell are ALWAYS wrong
 ═══════════════════════════════════════════════════════════
 
 CRITICAL: Be conservative. Only mark as "corrected" when you are CERTAIN the fix is correct.
@@ -651,7 +810,20 @@ LINUX (bash):
 • grep pattern file | awk '{{print $2}}' for config values
 
 NETWORK (SSH CLI):
-• show running-config | include/section pattern"""
+• show running-config | include/section pattern
+
+DATABASE:
+• For SQL queries, prefix with [SQL]: [SQL] SHOW x; / [SQL] SELECT ...
+• For OS checks, prefix with [SHELL]: [SHELL] stat -c '%a' /path
+• NEVER wrap SQL in shell tools (no psql -c, no sqlcmd -Q, no mysql -e)
+
+HYPERVISOR (VMware ESXi):
+• [SHELL] for esxcli/vim-cmd commands
+• [POWERSHELL] for PowerCLI (Get-VM, Get-VMHost)
+• NEVER use unbound $VM — iterate with ForEach-Object
+
+FIREWALL (FortiGate/JunOS/PAN-OS/Cisco):
+• [CLI] only — NEVER pipe to grep/awk/sed/wc"""
 
 COMMAND_REGENERATION = """
 RULE:
@@ -659,6 +831,8 @@ RULE:
 - Title: {title}
 - Platform: {platform} ({platform_family})
 - Assessment type: {assessment_type}
+- Connection type: {connection_method}
+- Command transport: {command_transport}
 - CIS audit instructions: {audit_description_raw}
 - CIS remediation instructions: {remediation_description_raw}
 

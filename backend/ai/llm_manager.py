@@ -40,7 +40,7 @@ class LLMManager:
     }
 
     # Task names for per-task model customization
-    TASK_NAMES = ("phase1_parsing", "phase2_commands", "verification", "reports", "analysis")
+    TASK_NAMES = ("phase1_parsing", "phase2_commands", "verification", "reports", "analysis", "copilot")
 
     def get_current_config(self, task: str | None = None) -> dict[str, str]:
         """Read LLM settings from the app_settings table.

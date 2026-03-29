@@ -167,6 +167,7 @@ def _insert_rule(db: Session, benchmark_id: int, rule_data: PreloadedRule) -> Ru
     cmd = RuleCommand(
         rule_id=rule.id,
         audit_command=rule_data.audit_command,
+        command_transport=rule_data.command_transport,
         expected_output_regex=rule_data.expected_output_expression,
         expected_output_description=rule_data.expected_output_description,
         remediation_command=rule_data.remediation_command,
@@ -224,6 +225,8 @@ def load_pack(pack_path: Path, db: Session, *, pack_hash: str | None = None) -> 
         "Loading preloaded pack: %s v%s (%d rules)",
         meta.name, meta.version, meta.total_rules,
     )
+    if meta.connection_hints:
+        logger.info("  Connection hints: %s", meta.connection_hints)
 
     benchmark = Benchmark(
         name=meta.name,
@@ -242,6 +245,7 @@ def load_pack(pack_path: Path, db: Session, *, pack_hash: str | None = None) -> 
         source="preloaded",
         preloaded_version=meta.version,
         pack_hash=pack_hash,
+        connection_hints=_json_dumps(meta.connection_hints),
     )
     db.add(benchmark)
     db.flush()  # get benchmark.id
@@ -305,6 +309,7 @@ def upgrade_pack(
     existing_benchmark.total_rules = meta.total_rules
     existing_benchmark.pack_hash = pack_hash
     existing_benchmark.preloaded_version = meta.version
+    existing_benchmark.connection_hints = _json_dumps(meta.connection_hints)
     existing_benchmark.phase1_status = "completed"
     existing_benchmark.phase2_status = "completed"
     existing_benchmark.verification_status = "completed"
@@ -416,6 +421,18 @@ def sync_preloaded(db: Session) -> dict[str, int]:
                 # If a user-imported benchmark has the same name, skip entirely
                 # — the user's enriched version takes precedence.
                 if existing.source != "preloaded":
+                    # Backfill connection_hints for user-imported benchmarks
+                    if not existing.connection_hints:
+                        try:
+                            raw = pack_info.full_path.read_text(encoding="utf-8")
+                            _pack = PreloadedBenchmarkPack.model_validate_json(raw)
+                            hints = _json_dumps(_pack.benchmark.connection_hints)
+                            if hints:
+                                existing.connection_hints = hints
+                                db.commit()
+                                logger.info("  Backfilled connection_hints for '%s'", pack_info.filename)
+                        except Exception:
+                            pass  # non-critical backfill
                     logger.debug(
                         "  Pack '%s' already covered by %s benchmark id=%d — skipping",
                         pack_info.filename, existing.source, existing.id,
@@ -424,6 +441,18 @@ def sync_preloaded(db: Session) -> dict[str, int]:
                     continue
 
                 if existing.pack_hash == disk_hash:
+                    # Backfill connection_hints for packs synced before the column existed
+                    if not existing.connection_hints:
+                        try:
+                            raw = pack_info.full_path.read_text(encoding="utf-8")
+                            _pack = PreloadedBenchmarkPack.model_validate_json(raw)
+                            hints = _json_dumps(_pack.benchmark.connection_hints)
+                            if hints:
+                                existing.connection_hints = hints
+                                db.commit()
+                                logger.info("  Backfilled connection_hints for '%s'", pack_info.filename)
+                        except Exception:
+                            pass  # non-critical backfill
                     logger.debug(
                         "  Pack '%s' unchanged (hash match) — skipping",
                         pack_info.filename,

@@ -336,32 +336,32 @@ def _detect_stig_platform(title: str, info: PlatformInfo) -> None:
             info.platform = "Windows Server"
         else:
             info.platform = "Windows"
-        info.platform_family = "Windows"
+        info.platform_family = "windows"
         # Try to extract version
         m = re.search(r"(?:server\s+)?(\d{4}(?:\s*r2)?|\d{2})\b", lower)
         if m:
             info.os_version = m.group(1).strip().title()
     elif any(x in lower for x in ("red hat", "rhel")):
         info.platform = "Red Hat"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "ubuntu" in lower:
         info.platform = "Ubuntu"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "oracle linux" in lower:
         info.platform = "Oracle Linux"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "suse" in lower:
         info.platform = "SUSE"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif any(x in lower for x in ("cisco", "ios", "asa")):
         info.platform = "Cisco"
-        info.platform_family = "Network"
+        info.platform_family = "network"
     elif any(x in lower for x in ("oracle database", "oracle db")):
         info.platform = "Oracle"
-        info.platform_family = "Database"
+        info.platform_family = "database"
     elif "apache" in lower:
         info.platform = "Apache"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "vmware" in lower:
         info.platform = "VMware"
         info.platform_family = "other"

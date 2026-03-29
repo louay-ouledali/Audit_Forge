@@ -20,6 +20,7 @@ services:
       - DOCKER_HOST_MODE=bridge
       - DISCOVERY_AGENT_HOST=discovery-agent
       - DISCOVERY_AGENT_PORT=37120
+      - DISCOVERY_FORCE_FIREWALL_IPS=172.17.0.2
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     working_dir: /app
     depends_on:

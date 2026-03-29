@@ -312,31 +312,31 @@ def _detect_xccdf_platform(title: str, info: PlatformInfo) -> None:
 
     if "windows" in lower:
         info.platform = "Windows Server" if "server" in lower else "Windows"
-        info.platform_family = "Windows"
+        info.platform_family = "windows"
     elif any(x in lower for x in ("rhel", "red hat")):
         info.platform = "Red Hat"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "ubuntu" in lower:
         info.platform = "Ubuntu"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "debian" in lower:
         info.platform = "Debian"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "suse" in lower or "sles" in lower:
         info.platform = "SUSE"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "centos" in lower:
         info.platform = "CentOS"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "oracle linux" in lower:
         info.platform = "Oracle Linux"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "linux" in lower or "unix" in lower:
         info.platform = "Linux"
-        info.platform_family = "Unix"
+        info.platform_family = "linux"
     elif "cisco" in lower:
         info.platform = "Cisco"
-        info.platform_family = "Network"
+        info.platform_family = "network"
 
 
 def _detect_scheme(text: str, info: PlatformInfo) -> None:

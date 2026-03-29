@@ -34,7 +34,7 @@ class MSSQLConnector(BaseConnector):
         port = getattr(target, "port", None) or 1433
         username = getattr(target, "ssh_username", None) or "sa"
         password = getattr(target, "_decrypted_password", None)
-        database = getattr(target, "os_details", None) or "master"
+        database = getattr(target, "db_name", None) or "master"
 
         self._host = host
         self._database = database

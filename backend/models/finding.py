@@ -13,7 +13,7 @@ class Finding(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     scan_id = Column(Integer, ForeignKey("scans.id", ondelete="CASCADE"), nullable=False)
-    rule_id = Column(Integer, ForeignKey("rules.id"), nullable=False)
+    rule_id = Column(Integer, ForeignKey("rules.id", ondelete="SET NULL"), nullable=True)
 
     status = Column(String, nullable=False)
     actual_output = Column(Text)

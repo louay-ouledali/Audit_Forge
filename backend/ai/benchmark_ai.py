@@ -265,13 +265,46 @@ async def generate_commands_for_batch(
     return [r if r is not None else {} for r in all_results]
 
 
-def _post_process_llm_result(result: dict[str, Any]) -> dict[str, Any]:
+import re as _re
+
+_TRANSPORT_TAG_RE = _re.compile(
+    r"^\s*\[(SQL|SHELL|POWERSHELL|CLI|API)\]\s*", _re.IGNORECASE
+)
+
+_TRANSPORT_MAP = {
+    "sql": "sql",
+    "shell": "shell",
+    "powershell": "powershell",
+    "cli": "cli",
+    "api": "api",
+}
+
+
+def _extract_transport_tag(cmd: str) -> tuple[str, str | None]:
+    """Strip a [SQL]/[SHELL]/[POWERSHELL]/[CLI] prefix from a command.
+
+    Returns (cleaned_command, transport_value) where transport_value is one of
+    "sql", "shell", "powershell", "cli", "api", or None if no tag found.
+    """
+    m = _TRANSPORT_TAG_RE.match(cmd)
+    if m:
+        tag = m.group(1).lower()
+        return cmd[m.end():], _TRANSPORT_MAP.get(tag)
+    return cmd, None
+
+
+def _post_process_llm_result(result: dict) -> dict:
     """Clean up common LLM mistakes in generated commands and expected output expressions."""
     from backend.core.comparison_engine import validate_expression
 
-    # --- Fix commands that test compliance instead of retrieving values ---
+    # --- Extract transport tag prefix from command ---
     cmd = result.get("audit_command", "")
     if cmd:
+        cmd, transport = _extract_transport_tag(cmd)
+        if transport:
+            result["command_transport"] = transport
+
+        # --- Fix commands that test compliance instead of retrieving values ---
         cmd = _fix_compliance_testing_command(cmd)
         cmd = _sanitize_command(cmd)
         result["audit_command"] = cmd
@@ -358,14 +391,6 @@ _COMPLIANCE_TEST_PATTERNS = [
     re.compile(r'\bif\s+\[.*\]\s*;\s*then\b'),
     # echo PASS/FAIL pattern
     re.compile(r'\becho\s+["\']?(?:PASS|FAIL|Compliant)["\']?\b', re.IGNORECASE),
-]
-
-# Known substitution rules: bad pattern → fixed command
-_WINDOWS_CMD_FIXES: list[tuple[re.Pattern, str]] = [
-    # PowerShell password policy via complex if/else → just use net accounts
-    (re.compile(r'.*net\s+accounts.*-(?:ge|le|gt|lt).*', re.IGNORECASE | re.DOTALL), "net accounts"),
-    # PowerShell registry query wrapped in if/else → just the reg query
-    (re.compile(r'.*if\s*\(\s*\(reg\s+query\s+([^)]+)\)', re.IGNORECASE), None),  # handled specially
 ]
 
 
@@ -662,6 +687,8 @@ async def regenerate_command(
     flag_error_output: str | None = None,
     system_info: str | None = None,
     previous_commands: list[dict[str, Any]] | None = None,
+    connection_method: str | None = None,
+    command_transport: str | None = None,
 ) -> dict[str, Any]:
     """Use LLM to regenerate a failed audit command with context."""
     error_section = ""
@@ -687,6 +714,8 @@ async def regenerate_command(
         platform=platform,
         platform_family=platform_family,
         assessment_type=assessment_type or "automated",
+        connection_method=connection_method or "N/A",
+        command_transport=command_transport or "N/A",
         audit_description_raw=audit_description_raw or "N/A",
         remediation_description_raw=remediation_description_raw or "N/A",
         current_audit_command=current_audit_command or "N/A",

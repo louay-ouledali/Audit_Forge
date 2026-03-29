@@ -29,35 +29,14 @@ body,
   color: #e5e5e5;
 }
 
-/* ── Ambient glow effects ── */
-.glow-ambient {
-  position: relative;
-}
-
-.glow-ambient::before {
-  content: '';
-  position: absolute;
-  top: -120px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 600px;
-  height: 400px;
-  background: radial-gradient(ellipse, rgba(255, 230, 0, 0.04) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
+/* ── Ambient glow effects removed for enterprise spotlight ── */
 .glow-card {
-  transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  transition: all 0.3s ease;
 }
 
 .glow-card:hover {
-  box-shadow: 0 0 20px rgba(255, 230, 0, 0.06), 0 0 40px rgba(255, 230, 0, 0.03);
+  /* Subtle border highlight without messy yellow glow */
   border-color: rgba(255, 230, 0, 0.15) !important;
-}
-
-.glow-subtle {
-  box-shadow: 0 0 30px rgba(255, 230, 0, 0.03);
 }
 
 /* ── Scrollbar styling ── */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Navbar from './Navbar';
+import AmbientSpotlight from './AmbientSpotlight';
 
 import Dashboard from '../../pages/Dashboard';
 import Clients from '../../pages/Clients';
@@ -33,9 +34,10 @@ export default function MainLayout() {
 
   return (
     <div className="flex min-h-screen bg-dark overflow-hidden flex-col">
+      <AmbientSpotlight />
       <Navbar />
       <div className="flex min-w-0 flex-1 flex-col pt-24 px-4 pb-4">
-        <main className="glow-ambient relative flex-1 overflow-y-auto overflow-x-hidden rounded-2xl border border-dark-border/30 bg-dark/50 p-6 backdrop-blur-sm shadow-2xl">
+        <main className="relative flex-1 overflow-y-auto overflow-x-hidden rounded-2xl border border-dark-border/30 bg-dark/50 p-6 backdrop-blur-sm shadow-xl">
           {PERSISTENT_PAGES.map(({ path, Component }) => {
             if (!activated.has(path)) return null;
             return (

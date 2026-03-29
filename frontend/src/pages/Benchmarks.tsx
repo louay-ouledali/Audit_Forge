@@ -4,7 +4,7 @@ import {
   Upload, Trash2, RefreshCw, ChevronRight, ChevronLeft, Database,
   Monitor, Server, Network, Cloud, AppWindow, Smartphone, GitBranch,
   Box, Shield, Laptop, Globe, HardDrive, Flame, Router,
-  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List, Plus, MoreVertical, Filter
+  Search, CheckCircle2, Clock, AlertTriangle, X, LayoutGrid, List, Plus, MoreVertical, Filter, Sparkles
 } from 'lucide-react';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import type { CatalogCategory, CatalogVendor, ProductLine, BenchmarkCatalog, CatalogBenchmark } from '@/types';
@@ -387,15 +387,15 @@ export default function Benchmarks() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newBenchmarkName, setNewBenchmarkName] = useState('');
   const [newBenchmarkPlatform, setNewBenchmarkPlatform] = useState('Windows');
-  const [newBenchmarkFamily, setNewBenchmarkFamily] = useState('Windows');
+  const [newBenchmarkFamily, setNewBenchmarkFamily] = useState('windows');
   const [creating, setCreating] = useState(false);
   const [deletingBenchmarkId, setDeletingBenchmarkId] = useState<number | null>(null);
   const [frameworkFilter, setFrameworkFilter] = useState<string>('all');
 
-  /* Platform → family auto-link map */
+  /* Platform → family auto-link map (values must match backend: linux, windows, network, cloud, database, other) */
   const PLATFORM_TO_FAMILY: Record<string, string> = {
-    Windows: 'Windows', Linux: 'Unix', macOS: 'Unix',
-    Network: 'Network', Cloud: 'Cloud', Database: 'Database', Other: 'other',
+    Windows: 'windows', Linux: 'linux', macOS: 'linux',
+    Network: 'network', Cloud: 'cloud', Database: 'database', Other: 'other',
   };
   const handlePlatformChange = useCallback((platform: string) => {
     setNewBenchmarkPlatform(platform);
@@ -489,7 +489,7 @@ export default function Benchmarks() {
   };
 
   /* Create Custom Benchmark */
-  const handleCreateCustom = async () => {
+  const handleCreateCustom = async (aiAssisted = false) => {
     if (!newBenchmarkName.trim()) return;
     setCreating(true); setError('');
     try {
@@ -501,7 +501,7 @@ export default function Benchmarks() {
       setShowCreateDialog(false);
       setNewBenchmarkName('');
       await fetchCatalog();
-      navigate(`/benchmarks/${result.benchmark_id}`);
+      navigate(`/benchmarks/${result.benchmark_id}`, { state: { openCopilot: aiAssisted } });
     } catch (err: unknown) {
       setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to create benchmark');
     } finally {
@@ -550,25 +550,36 @@ export default function Benchmarks() {
 
   return (
     <div className="space-y-6">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Benchmarks</h1>
-          <p className="mt-1 text-sm text-dark-secondary">CIS benchmark library — organized by category, vendor, and platform</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={fetchCatalog} className="rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-dark-secondary hover:bg-dark-elevated hover:text-white transition-colors">
-            <RefreshCw className="h-4 w-4" />
-          </button>
-          <button onClick={() => setShowCreateDialog(true)}
-            className="inline-flex items-center gap-2 rounded-lg border border-ey-yellow/30 bg-ey-yellow/10 px-4 py-2 text-sm font-medium text-ey-yellow hover:bg-ey-yellow/20 transition-colors">
-            <Plus className="h-4 w-4" /> Custom Benchmark
-          </button>
-          <button onClick={() => fileRef.current?.click()} disabled={uploading}
-            className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-colors">
-            <Upload className="h-4 w-4" /> {uploading ? 'Uploading...' : 'Import Benchmark'}
-          </button>
-          <input ref={fileRef} type="file" accept=".pdf,.csv,.html,.htm,.json,.nessus,.xml" className="hidden" onChange={handleUpload} />
+        {/* ── Branded Header: Benchmark Studio ── */}
+        <div className="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-dark-card/60 p-8 shadow-[0_0_40px_rgba(139,92,246,0.05)] backdrop-blur-md">
+          {/* Subtle violet knowledge node motif */}
+          <div className="absolute top-0 right-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-violet-600/10 blur-[80px] pointer-events-none" />
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9InJnYmEoMTM5LCA5MiwgMjQ2LCAwLjE1KSIvPjwvc3ZnPg==')] pointer-events-none mask-image:linear-gradient(to_bottom,white,transparent)" />
+          
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex flex-row items-center gap-5">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 border border-violet-500/20 shadow-[0_0_20px_rgba(139,92,246,0.15)]">
+                <Database className="h-7 w-7 text-violet-400" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-white tracking-tight">Benchmark Studio</h1>
+                <p className="mt-1 text-sm text-dark-secondary max-w-md">Import, enrich, and manage security frameworks and knowledge bases</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <button onClick={fetchCatalog} className="h-10 rounded-xl border border-dark-border bg-dark-card/80 px-4 py-2 text-sm text-dark-secondary hover:border-violet-500/30 hover:bg-violet-500/5 hover:text-violet-300 transition-all shadow-sm">
+                <RefreshCw className="h-4 w-4" />
+              </button>
+              <button onClick={() => setShowCreateDialog(true)}
+                className="h-10 inline-flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-5 py-2 text-sm font-medium text-violet-300 hover:bg-violet-500/20 transition-all shadow-sm">
+                <Plus className="h-4 w-4" /> Custom Base
+              </button>
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="h-10 inline-flex items-center gap-2 rounded-xl bg-ey-yellow px-5 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-all shadow-[0_0_15px_rgba(255,230,0,0.2)] hover:shadow-[0_0_20px_rgba(255,230,0,0.3)]">
+                <Upload className="h-4 w-4" /> {uploading ? 'Importing...' : 'Import Framework'}
+              </button>
+              <input ref={fileRef} type="file" accept=".pdf,.csv,.html,.htm,.json,.nessus,.xml" className="hidden" onChange={handleUpload} />
+            </div>
         </div>
       </div>
 
@@ -610,19 +621,23 @@ export default function Benchmarks() {
               <label className="block text-xs text-dark-secondary mb-1">Platform Family</label>
               <select value={newBenchmarkFamily} onChange={(e) => setNewBenchmarkFamily(e.target.value)}
                 className="w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white focus:border-ey-yellow/30 focus:outline-none focus:ring-1 focus:ring-ey-yellow/20">
-                <option value="Windows">Windows</option>
-                <option value="Unix">Unix</option>
-                <option value="Network">Network</option>
-                <option value="Cloud">Cloud</option>
-                <option value="Database">Database</option>
+                <option value="windows">Windows</option>
+                <option value="linux">Linux / Unix / macOS</option>
+                <option value="network">Network</option>
+                <option value="cloud">Cloud</option>
+                <option value="database">Database</option>
                 <option value="other">Other</option>
               </select>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={handleCreateCustom} disabled={creating || !newBenchmarkName.trim()}
+            <button onClick={() => handleCreateCustom(false)} disabled={creating || !newBenchmarkName.trim()}
               className="inline-flex items-center gap-2 rounded-lg bg-ey-yellow px-4 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-colors">
-              {creating ? 'Creating...' : 'Create Benchmark'}
+              {creating ? 'Creating...' : 'Create Empty'}
+            </button>
+            <button onClick={() => handleCreateCustom(true)} disabled={creating || !newBenchmarkName.trim()}
+              className="inline-flex items-center gap-2 rounded-lg bg-amber-500/15 border border-amber-500/40 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/25 disabled:opacity-50 transition-colors">
+              <Sparkles className="h-3.5 w-3.5" /> {creating ? 'Creating...' : 'AI-Assisted'}
             </button>
             <button onClick={() => { setShowCreateDialog(false); setNewBenchmarkName(''); }}
               className="rounded-lg border border-dark-border px-4 py-2 text-sm text-dark-secondary hover:bg-dark-overlay hover:text-white transition-colors">

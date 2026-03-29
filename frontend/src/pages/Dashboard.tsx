@@ -1,48 +1,13 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Building2, Crosshair, FileText, Play, Activity, BarChart3, Clock, CheckCircle, Plus, Upload, Search } from 'lucide-react';
-import { getDashboardStats, getScans, getAllMissions } from '../services/api';
+import { FlaskConical, Radar, BarChart3, Play, Activity, Clock, CheckCircle, Plus, Upload, Search } from 'lucide-react';
+import { getDashboardStats, getScans } from '../services/api';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import type { ScanDetail } from '../types';
 import logoImg from '../assets/logo.png';
 
-// Helper for Progress Ring
-function ProgressRing({ radius, stroke, progress, colorClass }: { radius: number, stroke: number, progress: number, colorClass: string }) {
-  const normalizedRadius = radius - stroke * 2;
-  const circumference = normalizedRadius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (progress / 100) * circumference;
-
-  return (
-    <div className="relative flex items-center justify-center">
-      <svg height={radius * 2} width={radius * 2} className="-rotate-90 transform">
-        <circle
-          stroke="rgba(255,255,255,0.1)"
-          fill="transparent"
-          strokeWidth={stroke}
-          r={normalizedRadius}
-          cx={radius}
-          cy={radius}
-        />
-        <circle
-          className={colorClass}
-          stroke="currentColor"
-          fill="transparent"
-          strokeWidth={stroke}
-          strokeDasharray={circumference + ' ' + circumference}
-          style={{ strokeDashoffset }}
-          strokeLinecap="round"
-          r={normalizedRadius}
-          cx={radius}
-          cy={radius}
-        />
-      </svg>
-    </div>
-  );
-}
-
 export default function Dashboard() {
-  const [stats, setStats] = useState({ clients: 0, active_missions: 0, benchmarks: 0, scans: 0 });
-  const [totalMissions, setTotalMissions] = useState(0);
+  const [stats, setStats] = useState({ clients: 0, active_missions: 0, benchmarks: 0, scans: 0, total_rules: 0 });
   const [recentScans, setRecentScans] = useState<ScanDetail[]>([]);
   const [allCompletedScans, setAllCompletedScans] = useState<ScanDetail[]>([]);
   const [error, setError] = useState('');
@@ -55,11 +20,9 @@ export default function Dashboard() {
     Promise.all([
       getDashboardStats(),
       getScans({}),
-      getAllMissions()
     ])
-      .then(([statsData, scansData, missionsData]) => {
+      .then(([statsData, scansData]) => {
         setStats(statsData);
-        setTotalMissions(missionsData.length);
         const sortedScans = scansData.data
           .filter(s => s.status === 'completed' && s.completed_at)
           .sort((a, b) => new Date(b.completed_at!).getTime() - new Date(a.completed_at!).getTime());
@@ -110,11 +73,43 @@ export default function Dashboard() {
       }));
   }, [allCompletedScans]);
 
-  const cards = [
-    { label: 'Clients', value: stats.clients, icon: Building2, accent: 'text-ey-yellow', bg: 'bg-ey-yellow/10', link: '/clients', progress: 100 },
-    { label: 'Active Missions', value: stats.active_missions, icon: Crosshair, accent: 'text-emerald-400', bg: 'bg-emerald-400/10', link: '/clients', progress: totalMissions > 0 ? Math.round((stats.active_missions / totalMissions) * 100) : 0 },
-    { label: 'Benchmarks', value: stats.benchmarks, icon: FileText, accent: 'text-purple-400', bg: 'bg-purple-400/10', link: '/benchmarks', progress: 100 },
-    { label: 'Total Scans', value: stats.scans, icon: Play, accent: 'text-sky-400', bg: 'bg-sky-400/10', link: recentScans[0] ? `/missions/${recentScans[0].mission_id}` : '/clients', progress: 100 },
+  const serviceCards = [
+    {
+      name: 'Benchmark Studio',
+      icon: FlaskConical,
+      accent: 'text-purple-400',
+      border: 'hover:border-purple-400/30',
+      bg: 'bg-purple-400/10',
+      link: '/benchmarks',
+      stats: [
+        { label: 'Benchmarks', value: stats.benchmarks },
+        { label: 'Rules', value: stats.total_rules },
+      ],
+    },
+    {
+      name: 'Mission Control',
+      icon: Radar,
+      accent: 'text-emerald-400',
+      border: 'hover:border-emerald-400/30',
+      bg: 'bg-emerald-400/10',
+      link: '/clients',
+      stats: [
+        { label: 'Clients', value: stats.clients },
+        { label: 'Active Missions', value: stats.active_missions },
+        { label: 'Scans', value: stats.scans },
+      ],
+    },
+    {
+      name: 'Report Studio',
+      icon: BarChart3,
+      accent: 'text-sky-400',
+      border: 'hover:border-sky-400/30',
+      bg: 'bg-sky-400/10',
+      link: '/reports',
+      stats: [
+        { label: 'Generate Reports', value: null },
+      ],
+    },
   ];
 
   /* ── Loading skeleton ──────────────────────────────────────── */
@@ -124,9 +119,9 @@ export default function Dashboard() {
         {/* Banner skeleton */}
         <div className="rounded-xl border border-dark-border bg-dark-card p-8 h-32" />
         {/* Stat cards */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-24 rounded-xl border border-dark-border bg-dark-card" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-28 rounded-xl border border-dark-border bg-dark-card" />
           ))}
         </div>
         {/* Chart + feed */}
@@ -141,17 +136,16 @@ export default function Dashboard() {
   return (
     <div className="relative z-10 space-y-8 pb-10">
       {/* Welcome Banner */}
-      <div className="relative overflow-hidden rounded-xl border border-dark-border bg-dark-card p-8 text-center">
-        <div className="absolute inset-0 bg-gradient-to-br from-ey-yellow/5 via-transparent to-ey-yellow/3" />
+      <div className="relative overflow-hidden rounded-xl border border-dark-border bg-dark-card p-8 text-center shadow-lg">
         <div className="relative">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-ey-yellow/10 shadow-[0_0_30px_rgba(255,230,0,0.1)]">
-            <img src={logoImg} alt="AuditForge Logo" className="h-7 w-7 object-contain opacity-90 drop-shadow-[0_0_8px_rgba(255,230,0,0.5)]" />
+            <div className="mx-auto mb-4 flex items-center justify-center h-16 w-16">
+              <img src={logoImg} alt="AuditForge Logo" className="h-16 w-16 object-contain" />
           </div>
           <h2 className="text-2xl font-bold text-white">
-            Welcome to <span className="text-ey-yellow">AuditForge</span>
+            Welcome to <span className="text-white">AuditForge</span>
           </h2>
           <p className="mt-2 text-dark-secondary">
-            Automated Configuration Review Platform — Offline-first security auditing
+            Automated Security Audit Platform
           </p>
         </div>
       </div>
@@ -162,31 +156,35 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Stat Cards with Progress Rings */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((stat) => {
-          const Icon = stat.icon;
+      {/* Service Hub Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {serviceCards.map((svc) => {
+          const Icon = svc.icon;
           return (
             <Link
-              key={stat.label}
-              to={stat.link}
-              className="glow-card group relative flex items-center justify-between overflow-hidden rounded-xl border border-dark-border bg-dark-card p-5 transition-all duration-300 hover:border-dark-hover"
+              key={svc.name}
+              to={svc.link}
+              className={`group relative overflow-hidden rounded-xl border border-dark-border bg-dark-card p-5 transition-all duration-300 ${svc.border}`}
             >
-              <div className="z-10">
-                <p className="text-sm font-medium text-dark-secondary">{stat.label}</p>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <p className="text-3xl font-bold text-white tracking-tight">{stat.value}</p>
-                  {stat.label === 'Active Missions' && (
-                    <span className="text-xs text-dark-muted">/ {totalMissions} total</span>
-                  )}
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${svc.bg}`}>
+                  <Icon className={`h-5 w-5 ${svc.accent}`} />
                 </div>
+                <h3 className="text-base font-semibold text-white">{svc.name}</h3>
               </div>
-
-              <div className="relative z-10">
-                <ProgressRing radius={28} stroke={4} progress={stat.progress || 100} colorClass={stat.accent.replace('text-', 'text-')} />
-                <div className={`absolute inset-0 flex items-center justify-center rounded-full`}>
-                  <Icon className={`h-5 w-5 ${stat.accent}`} />
-                </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {svc.stats.map((s) => (
+                  <div key={s.label}>
+                    {s.value !== null ? (
+                      <>
+                        <p className="text-2xl font-bold text-white tracking-tight">{s.value}</p>
+                        <p className="text-xs text-dark-secondary">{s.label}</p>
+                      </>
+                    ) : (
+                      <p className="text-sm text-dark-secondary mt-1">{s.label} &rarr;</p>
+                    )}
+                  </div>
+                ))}
               </div>
             </Link>
           );

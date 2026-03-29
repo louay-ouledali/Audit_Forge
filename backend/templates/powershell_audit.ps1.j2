@@ -51,6 +51,7 @@ $SysInfo = @{
     kernel            = [System.Environment]::OSVersion.VersionString
     arch              = $env:PROCESSOR_ARCHITECTURE
     ip_addresses      = ((Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -notlike "*Loopback*" }).IPAddress -join ", ")
+    open_ports        = @((Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue).LocalPort | Sort-Object -Unique | Select-Object -First 50)
     scan_date         = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
     scan_id           = "{{ scan_id }}"
     benchmark         = "{{ benchmark.name }}"

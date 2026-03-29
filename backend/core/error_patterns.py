@@ -47,6 +47,7 @@ NOT_CONFIGURED_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"ObjectNotFound:", re.IGNORECASE),
     re.compile(r"ItemNotFoundException", re.IGNORECASE),
     re.compile(r"PathNotFound", re.IGNORECASE),
+    re.compile(r"No such file or directory", re.IGNORECASE),
 ]
 
 # ── Service-not-found patterns ─────────────────────────────────

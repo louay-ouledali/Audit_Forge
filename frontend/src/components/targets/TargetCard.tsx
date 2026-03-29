@@ -168,7 +168,7 @@ export default function TargetCard({
 
   return (
     <div
-      className={`glow-card group relative rounded-xl border bg-dark-card p-5 transition-all duration-300 ${cardBorderClass(target, isScanning)}`}
+      className={`group relative rounded-xl border bg-dark-card p-5 transition-all duration-300 ${cardBorderClass(target, isScanning)}`}
     >
       {/* Scanning progress overlay */}
       {isScanning && scanProgress != null && (

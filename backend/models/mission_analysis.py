@@ -14,7 +14,7 @@ class MissionAnalysis(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     mission_id = Column(Integer, ForeignKey("missions.id", ondelete="CASCADE"), nullable=False)
     analysis_type = Column(String, nullable=False)  # "cross_target", "cross_mission", "category_analysis"
-    compared_mission_id = Column(Integer, ForeignKey("missions.id"), nullable=True)
+    compared_mission_id = Column(Integer, ForeignKey("missions.id", ondelete="SET NULL"), nullable=True)
     result_json = Column(Text, nullable=False)
     llm_model_used = Column(String)
     generated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

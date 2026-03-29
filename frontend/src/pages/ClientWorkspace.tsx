@@ -384,7 +384,6 @@ export default function ClientWorkspace() {
 
       {/* Client Header Card */}
       <div className="relative overflow-hidden rounded-2xl border border-dark-border bg-dark-card p-6 shadow-lg">
-        <div className="absolute inset-0 bg-gradient-to-br from-ey-yellow/10 via-transparent to-transparent opacity-50" />
         <div className="relative flex flex-col md:flex-row md:items-start justify-between gap-6">
           <div>
             <div className="flex items-center gap-4">
@@ -452,7 +451,7 @@ export default function ClientWorkspace() {
       {activeTab === 'overview' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="glow-card rounded-xl border border-dark-border bg-dark-card p-5">
+            <div className="rounded-xl border border-dark-border bg-dark-card p-5">
               <h4 className="text-xs font-semibold text-dark-secondary uppercase tracking-wider">Health Score</h4>
               <div className="mt-3 flex items-end gap-2">
                 <span className={`text-4xl font-bold ${dashboardStats.avgCompliance >= 80 ? 'text-emerald-400' : dashboardStats.avgCompliance >= 50 ? 'text-amber-400' : 'text-red-400'}`}>
@@ -468,7 +467,7 @@ export default function ClientWorkspace() {
               </div>
             </div>
 
-            <div className="glow-card rounded-xl border border-dark-border bg-dark-card p-5">
+            <div className="rounded-xl border border-dark-border bg-dark-card p-5">
               <h4 className="text-xs font-semibold text-dark-secondary uppercase tracking-wider">Total Scans</h4>
               <div className="mt-3 flex items-center gap-3">
                 <Activity className="h-8 w-8 text-sky-400" />
@@ -476,7 +475,7 @@ export default function ClientWorkspace() {
               </div>
             </div>
 
-            <div className="glow-card rounded-xl border border-dark-border bg-dark-card p-5">
+            <div className="rounded-xl border border-dark-border bg-dark-card p-5">
               <h4 className="text-xs font-semibold text-dark-secondary uppercase tracking-wider">Strong Scans</h4>
               <div className="mt-3 flex items-center gap-3">
                 <ShieldCheck className="h-8 w-8 text-emerald-400" />
@@ -484,7 +483,7 @@ export default function ClientWorkspace() {
               </div>
             </div>
 
-            <div className="glow-card rounded-xl border border-dark-border bg-dark-card p-5">
+            <div className="rounded-xl border border-dark-border bg-dark-card p-5">
               <h4 className="text-xs font-semibold text-dark-secondary uppercase tracking-wider">Critical Scans</h4>
               <div className="mt-3 flex items-center gap-3">
                 <ShieldAlert className="h-8 w-8 text-red-400" />
@@ -494,7 +493,7 @@ export default function ClientWorkspace() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="col-span-1 lg:col-span-2 glow-card rounded-xl border border-dark-border bg-dark-card p-6">
+            <div className="col-span-1 lg:col-span-2 rounded-xl border border-dark-border bg-dark-card p-6">
               <h4 className="flex items-center gap-2 text-sm font-semibold text-white mb-6">
                 <BarChart3 className="h-4 w-4 text-ey-yellow" /> Client Compliance Trend
               </h4>
@@ -527,7 +526,7 @@ export default function ClientWorkspace() {
               </div>
             </div>
 
-            <div className="col-span-1 glow-card rounded-xl border border-dark-border bg-dark-card p-6 flex flex-col">
+            <div className="col-span-1 rounded-xl border border-dark-border bg-dark-card p-6 flex flex-col">
               <h4 className="flex items-center gap-2 text-sm font-semibold text-white mb-4">
                 <ShieldAlert className="h-4 w-4 text-amber-400" /> Attention Needed
               </h4>
@@ -673,7 +672,7 @@ export default function ClientWorkspace() {
           ) : (
             <div className="grid gap-4">
               {filteredMissions.map(mission => (
-                <div key={mission.id} className="glow-card group rounded-xl border border-dark-border bg-dark-card transition-all duration-300 hover:border-dark-hover shadow-sm">
+                <div key={mission.id} className="group rounded-xl border border-dark-border bg-dark-card transition-all duration-300 hover:border-dark-hover shadow-sm">
                   <div className="flex items-center justify-between p-5">
                     <div
                       className="flex flex-1 cursor-pointer items-center gap-4 pr-6"
@@ -917,6 +916,7 @@ export default function ClientWorkspace() {
           />
         </div>
       )}
+
 
       {/* Shared Confirm Dialog */}
       <ConfirmDialog

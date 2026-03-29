@@ -240,7 +240,7 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
                     className="mt-3 inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-purple-700 disabled:opacity-50"
                   >
                     <Sparkles className="h-4 w-4" />
-                    Start AI Analysis
+                    Start AI Enrichment
                   </button>
                 )}
 
@@ -553,7 +553,7 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
               ) : (
                 <>
                   <Sparkles className="h-4 w-4" />
-                  Create Benchmark from AI Analysis
+                  Create Benchmark from AI Enrichment
                 </>
               )}
             </button>

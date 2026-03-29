@@ -49,6 +49,9 @@ class Benchmark(Base):
     framework = Column(String, default="cis")            # cis/nist/iso/stig/disa/custom/unknown
     is_baseline = Column(Boolean, default=False)         # Primary version in a group for comparison
 
+    # ── Connector routing metadata ──
+    connection_hints = Column(Text, nullable=True)         # JSON: {"sql": "postgresql", "shell": "ssh"}
+
     group = relationship("BenchmarkGroup", back_populates="benchmarks", foreign_keys=[group_id])
     rules = relationship("Rule", back_populates="benchmark", cascade="all, delete-orphan",
                          foreign_keys="[Rule.benchmark_id]")

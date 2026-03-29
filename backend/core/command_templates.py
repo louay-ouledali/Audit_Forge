@@ -1252,6 +1252,7 @@ def _try_show_running_config(rule: dict[str, Any]) -> dict[str, str] | None:
         "expected_output_description": f"Network config check: {search_term}",
         "remediation_command": "",
         "remediation_description": f"Configure the required setting in device configuration.",
+        "command_transport": "cli",
     }
 
 
@@ -1619,7 +1620,11 @@ def match_template(rule: dict[str, Any], platform_family: str) -> dict[str, str]
     extract underlying audit concepts (registry paths, policy settings, etc.)
     that the existing CIS templates can match.
     """
-    templates = _TEMPLATES_BY_FAMILY.get(platform_family, [])
+    # Normalize platform_family: "Unix"→"linux", "Windows"→"windows", etc.
+    pf = platform_family.lower() if platform_family else "linux"
+    if pf in ("unix", "macos"):
+        pf = "linux"
+    templates = _TEMPLATES_BY_FAMILY.get(pf, [])
     for fn in templates:
         result = fn(rule)
         if result:

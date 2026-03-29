@@ -23,6 +23,9 @@ from backend.api.saved_reports import router as saved_reports_router
 from backend.api.targets import router as targets_router
 from backend.api.analyses import router as analyses_router
 from backend.api.ad_discovery import router as ad_discovery_router
+from backend.api.connect import router as connect_router
+from backend.api.copilot import router as copilot_router
+from backend.api.ws_agent import router as ws_agent_router
 from backend.config import settings
 from backend.core.exceptions import (
     AuditForgeError,
@@ -130,6 +133,61 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:
         logger.warning("Preloaded benchmark sync failed: %s", exc)
 
+    # ── Start Connect session expiry background task ──────────────────
+    async def _session_expiry_loop():
+        import asyncio as _aio
+        from backend.models.connect_session import ConnectSession as _CS
+        from backend.models.connect_agent import ConnectAgent as _CA
+        from backend.core import agent_registry as _ar
+
+        while True:
+            await _aio.sleep(60)
+            try:
+                _db = SessionLocal()
+                try:
+                    now = datetime.now(timezone.utc)
+                    # Expire sessions past their deadline
+                    active = _db.query(_CS).filter(_CS.status == "active").all()
+                    for s in active:
+                        exp = s.expires_at
+                        if exp and (exp.tzinfo is None and now.replace(tzinfo=None) > exp
+                                    or exp.tzinfo and now > exp):
+                            s.status = "expired"
+                            # Disconnect live agents
+                            for live in _ar.get_by_session(s.id):
+                                try:
+                                    await live.websocket.send_json({
+                                        "type": "terminate",
+                                        "payload": {"reason": "session_expired"},
+                                    })
+                                    await live.websocket.close()
+                                except Exception:
+                                    pass
+                            logger.info("Connect session %d auto-expired", s.id)
+                    _db.commit()
+                finally:
+                    _db.close()
+            except Exception as exc:
+                logger.debug("Session expiry check error (non-fatal): %s", exc)
+
+    # ── Copilot conversation cleanup background task ──────────────
+    async def _copilot_conversation_cleanup_loop():
+        import asyncio as _aio
+        from backend.api.copilot import cleanup_expired_conversations
+
+        while True:
+            await _aio.sleep(300)  # Every 5 minutes
+            try:
+                cleanup_expired_conversations()
+            except Exception as exc:
+                logger.debug("Copilot conversation cleanup error (non-fatal): %s", exc)
+
+    import asyncio as _asyncio
+    from datetime import datetime, timezone
+    from backend.database import SessionLocal
+    _asyncio.create_task(_session_expiry_loop())
+    _asyncio.create_task(_copilot_conversation_cleanup_loop())
+
     yield
 
 
@@ -163,6 +221,9 @@ app.include_router(reports_router, prefix="/api")
 app.include_router(saved_reports_router, prefix="/api")
 app.include_router(analyses_router, prefix="/api")
 app.include_router(ad_discovery_router, prefix="/api")
+app.include_router(connect_router, prefix="/api")
+app.include_router(copilot_router, prefix="/api")
+app.include_router(ws_agent_router)  # WebSocket at /ws/agent/{token}, no /api prefix
 
 
 @app.exception_handler(AuditForgeError)

@@ -24,10 +24,13 @@ from sqlalchemy.orm import Session
 from backend.config import settings
 from backend.connectors import get_connector
 from backend.connectors.base import BaseConnector, CommandResult
+from backend.connectors.ssh_connector import SSHConnector
+from backend.connectors.winrm_connector import WinRMConnector
 from backend.core.comparison_engine import evaluate as evaluate_expression
 from backend.core.error_patterns import classify_output
 from backend.core.exceptions import ConnectionFailedError, ScanCancelledError  # UNUSED: 'ConnectionFailedError', 'ScanCancelledError' — safe to remove
 from backend.models.discovery_cache import DiscoveryCache
+from backend.models.benchmark import Benchmark
 from backend.models.finding import Finding
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
@@ -42,6 +45,68 @@ _SKIP_STATUSES = {"skipped", "manual", "not_applicable"}
 
 # Commands that already run with elevated privileges or shouldn't be prefixed
 _SUDO_SKIP_PREFIXES = ("sudo ", "cat ", "echo ", "printf ", "id ", "whoami ", "uname ")
+
+# Target types that use a SQL-based primary connector
+_DATABASE_TARGET_TYPES = {"postgresql", "oracle", "mssql", "mysql", "mongodb"}
+
+
+def _infer_transport(cmd: str, target_type: str) -> str:
+    """Infer the command transport from command content and target type.
+
+    Returns one of: 'sql', 'shell', 'powershell', 'cli'.
+    """
+    stripped = cmd.strip()
+    upper = stripped.upper()
+
+    # SQL patterns
+    if upper.startswith(("SELECT ", "SHOW ", "EXEC ", "WITH ", "DBCC ", "GRANT ", "REVOKE ",
+                          "ALTER ", "CREATE ", "DROP ", "SET ", "USE ", "DECLARE ",
+                          "sp_configure", "xp_")):
+        return "sql"
+    # MongoDB shell commands routed through MongoDBConnector
+    if stripped.startswith(("db.", "rs.", "sh.")):
+        return "sql"
+
+    # Shell patterns
+    if stripped.startswith(("grep ", "awk ", "cat ", "stat ", "systemctl ", "ls ",
+                            "find ", "chmod ", "chown ", "mount ", "df ",
+                            "ps ", "netstat ", "ss ", "sysctl ", "journalctl ",
+                            "auditctl ", "sestatus ", "getenforce ",
+                            "psql ", "mysql ", "mongosh ", "mongo ", "cqlsh ",
+                            "openssl ", "dpkg ", "rpm ", "apt ", "dnf ", "yum ",
+                            "fw ")):
+        return "shell"
+    if stripped.startswith(("sudo ", "/usr/", "/bin/", "/sbin/", "/opt/", "/etc/")):
+        return "shell"
+
+    # PowerShell patterns
+    if any(kw in stripped for kw in ("Get-ItemProperty", "Get-Service", "Get-VM",
+                                      "Get-VMHost", "Get-AdvancedSetting",
+                                      "$env:", "Invoke-Sqlcmd", "Get-Acl",
+                                      "Get-SPManagedAccount", "Get-WebBinding",
+                                      "ForEach-Object", "Select-Object",
+                                      "Write-Output", "Format-List")):
+        return "powershell"
+
+    # Network device CLI patterns
+    if stripped.startswith(("show ", "get system ", "get firewall ",
+                            "config ", "execute ", "diagnose ",
+                            "diag ", "clish ", "display ")):
+        return "cli"
+
+    # Default based on target type
+    tt = target_type.lower()
+    if tt in _DATABASE_TARGET_TYPES:
+        return "sql"
+    if tt in ("windows", "sharepoint"):
+        return "powershell"
+    if tt in ("linux", "cassandra", "vmware_esxi"):
+        return "shell"
+    if tt in ("cisco_ios", "cisco_asa", "juniper", "fortinet", "palo_alto",
+              "arista", "hp_procurve", "checkpoint", "pfsense"):
+        return "cli"
+
+    return "shell"
 
 
 def _prepare_linux_command(cmd: str) -> str:
@@ -223,22 +288,34 @@ def _evaluate_result(
     Returns a tuple of (status, explanation) where status is one of:
     PASS, FAIL, ERROR
     """
-    combined_output = (result.stdout or "") + "\n" + (result.stderr or "")
-    output_stripped = result.stdout.strip() if result.stdout else ""
+    stdout_text = result.stdout or ""
+    stderr_text = result.stderr or ""
+    combined_output = (stdout_text + "\n" + stderr_text).strip()
+    output_text = stdout_text if stdout_text.strip() else stderr_text
+    output_stripped = output_text.strip() if output_text else ""
 
     # ── Tier 0: Total failure — non-zero exit and no output at all ──
-    if result.exit_code != 0 and not output_stripped:
+    if result.exit_code != 0 and not combined_output:
         return "ERROR", f"Command failed with exit code {result.exit_code}"
 
     # ── Tier 1: Execution error (bad command, access denied, etc.) → ERROR ──
     category = classify_output(combined_output)
     if category == "execution_error":
+        # If we still have usable output and an expected expression, prefer
+        # deterministic PASS/FAIL over opaque ERROR.
+        if expected_regex and output_stripped:
+            comp_result = evaluate_expression(expected_regex, output_text)
+            if comp_result.matched:
+                return "PASS", f"Evaluated from output despite execution markers: {comp_result.explanation}"
+            return "FAIL", f"Evaluated from output despite execution markers: {comp_result.explanation}"
         return "ERROR", "Command execution error detected in output"
 
     # ── Tier 2: Not configured (missing registry key / GPO path) → FAIL ──
     # Evaluate with empty string so the comparison engine doesn't extract
     # numbers from the error message text.
     if category == "not_configured":
+        if "no such file or directory" in combined_output.lower():
+            return "FAIL", "Required file/path missing on target"
         if expected_regex:
             comp_result = evaluate_expression(expected_regex, "")
             if comp_result.matched:
@@ -264,12 +341,14 @@ def _evaluate_result(
     # ── Tier 3: Normal evaluation via comparison engine ──
     # No expression to check — just confirm the command didn't error
     if not expected_regex:
+        if result.exit_code != 0 and not (stdout_text.strip() if stdout_text else ""):
+            return "ERROR", f"Command failed with exit code {result.exit_code}"
         if result.exit_code == 0:
             return "PASS", "Command executed successfully (no expected output defined)"
         return "FAIL", f"Command failed with exit code {result.exit_code}"
 
     # Evaluate using the comparison engine (handles >=, <=, ==, !=, contains:, regex:, and legacy regex)
-    comp_result = evaluate_expression(expected_regex, result.stdout)
+    comp_result = evaluate_expression(expected_regex, output_text)
     if comp_result.matched:
         return "PASS", comp_result.explanation
     return "FAIL", comp_result.explanation
@@ -294,15 +373,28 @@ async def execute_network_scan(
     """
     db: Session = db_factory()
     connector: BaseConnector | None = None
+    secondary_connector: BaseConnector | None = None
 
     try:
         # 1. Load scan, target, and rules
         scan = db.query(Scan).filter(Scan.id == scan_id).first()
         target = db.query(Target).filter(Target.id == target_id).first()
+        benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
 
         if not scan or not target:
             logger.error("Scan %s or target %s not found", scan_id, target_id)
             return
+
+        # Parse connection_hints from the benchmark (if available)
+        _connection_hints: dict[str, str] = {}
+        if benchmark and benchmark.connection_hints:
+            try:
+                _connection_hints = json.loads(benchmark.connection_hints)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "Invalid connection_hints JSON for benchmark %d",
+                    benchmark_id,
+                )
 
         # 2. Update scan to running
         scan.status = "running"
@@ -331,6 +423,74 @@ async def execute_network_scan(
             scan.notes = f"Connection failed: {exc}"
             db.commit()
             return
+
+        # 5b. Open secondary connector for dual-transport targets
+        #     Uses connection_hints from the benchmark when available,
+        #     falling back to the legacy hardcoded logic for older packs.
+        target_type_lower = (target.target_type or "").lower()
+        if _connection_hints:
+            # Determine what transport the primary connector handles
+            if target_type_lower in _DATABASE_TARGET_TYPES:
+                primary_transport = "sql"
+            elif target_type_lower in ("windows", "sharepoint"):
+                primary_transport = "powershell"
+            elif target_type_lower in ("cisco_ios", "cisco_asa", "juniper",
+                                        "fortinet", "palo_alto", "arista",
+                                        "hp_procurve", "checkpoint", "pfsense"):
+                primary_transport = "cli"
+            else:
+                primary_transport = "shell"
+
+            # Open a secondary connector for the first non-primary transport
+            for transport_key, connector_name in _connection_hints.items():
+                if transport_key != primary_transport:
+                    try:
+                        secondary_connector = get_connector(
+                            target_type_lower,
+                            connection_method=connector_name,
+                        )
+                        await secondary_connector.connect(target)
+                        logger.info(
+                            "Opened secondary %s connector for '%s' transport on %s",
+                            connector_name, transport_key, target.ip_address,
+                        )
+                        break
+                    except Exception as exc:
+                        logger.warning(
+                            "Secondary %s connector failed for %s: %s",
+                            connector_name, target.ip_address, exc,
+                        )
+                        secondary_connector = None
+        else:
+            # Legacy fallback: hardcoded secondary connector logic
+            if target_type_lower in _DATABASE_TARGET_TYPES:
+                try:
+                    secondary_connector = SSHConnector()
+                    await secondary_connector.connect(target)
+                    logger.info(
+                        "Opened secondary SSH connector for database target %s",
+                        target.ip_address,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Secondary SSH connector failed for %s (shell commands will use primary): %s",
+                        target.ip_address, exc,
+                    )
+                    secondary_connector = None
+            elif target_type_lower == "vmware_esxi":
+                try:
+                    secondary_connector = WinRMConnector()
+                    await secondary_connector.connect(target)
+                    logger.info(
+                        "Opened secondary WinRM connector for ESXi target %s",
+                        target.ip_address,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Secondary WinRM connector failed for %s (PowerCLI commands will be skipped): %s",
+                        target.ip_address, exc,
+                    )
+                    secondary_connector = None
 
         # 6. Gather system info
         try:
@@ -404,13 +564,28 @@ async def execute_network_scan(
                 _scan_progress[scan_id]["progress"] = idx + 1
                 _scan_progress[scan_id]["current_rule"] = rule.section_number
 
-            # Execute
+            # Execute — route to the correct connector based on transport
             try:
                 exec_cmd = cmd.audit_command
-                # Auto-prefix sudo for Linux targets
-                if target.target_type and target.target_type.lower() == "linux":
+                transport = cmd.command_transport or _infer_transport(
+                    exec_cmd, target_type_lower
+                )
+
+                # Pick the right connector for this transport
+                if transport == "shell" and secondary_connector:
+                    chosen = secondary_connector
+                elif transport == "powershell" and secondary_connector:
+                    chosen = secondary_connector
+                elif transport in ("sql",) and connector:
+                    chosen = connector
+                else:
+                    chosen = connector
+
+                # Auto-prefix sudo only for shell transport on Linux targets
+                if transport == "shell" and target_type_lower in ("linux", "cassandra"):
                     exec_cmd = _prepare_linux_command(exec_cmd)
-                result = await connector.execute(exec_cmd, timeout=30)
+
+                result = await chosen.execute(exec_cmd, timeout=30)
                 if result.exit_code == 0 or result.stdout.strip():
                     consecutive_errors = 0  # Reset on success
             except Exception as exc:
@@ -512,6 +687,11 @@ async def execute_network_scan(
     finally:
         # Clean up
         try:
+            if secondary_connector:
+                try:
+                    await secondary_connector.disconnect()
+                except Exception:
+                    pass
             if connector:
                 try:
                     await connector.disconnect()

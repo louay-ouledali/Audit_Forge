@@ -5,6 +5,9 @@ from backend.models.benchmark import Benchmark
 from backend.models.benchmark_group import BenchmarkGroup
 from backend.models.client import Client
 from backend.models.command_cache import CommandCache
+from backend.models.connect_agent import ConnectAgent
+from backend.models.copilot_conversation import CopilotConversation
+from backend.models.connect_session import ConnectSession
 from backend.models.discovery_cache import DiscoveryCache
 from backend.models.finding import Finding
 from backend.models.import_record import ImportRecord
@@ -28,6 +31,9 @@ __all__ = [
     "BenchmarkGroup",
     "Client",
     "CommandCache",
+    "ConnectAgent",
+    "ConnectSession",
+    "CopilotConversation",
     "DiscoveryCache",
     "Finding",
     "ImportRecord",

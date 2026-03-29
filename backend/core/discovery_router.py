@@ -206,8 +206,9 @@ async def _proxy_to_agent(
 
     # 2. Poll agent for progress until done
     poll_interval = 1.5  # seconds
-    max_wait = 600  # 10 minute timeout
+    max_wait = 180  # 3 minute hard timeout to avoid hanging UI polls
     elapsed = 0.0
+    consecutive_poll_errors = 0
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         while elapsed < max_wait:
@@ -218,7 +219,23 @@ async def _proxy_to_agent(
                 status_resp = await client.get(
                     f"{AGENT_BASE}/scan/{agent_scan_id}/status"
                 )
+
+                # If the agent no longer knows this scan id (e.g., restart),
+                # fail fast instead of spinning until max_wait.
+                if status_resp.status_code == 404:
+                    _proxy_progress[discovery_id].update({
+                        "status": "failed",
+                        "error": "Discovery agent lost scan state (404). Please retry the scan.",
+                    })
+                    logger.warning(
+                        "Agent scan %s returned 404 while polling; marking discovery %s failed",
+                        agent_scan_id,
+                        discovery_id,
+                    )
+                    break
+
                 status_data = status_resp.json()
+                consecutive_poll_errors = 0
 
                 # Update proxy progress
                 _proxy_progress[discovery_id].update({
@@ -232,23 +249,49 @@ async def _proxy_to_agent(
                     break
 
             except Exception as exc:
-                logger.debug("Agent poll error: %s", exc)
+                consecutive_poll_errors += 1
+                logger.debug("Agent poll error (%d): %s", consecutive_poll_errors, exc)
+                if consecutive_poll_errors >= 10:
+                    _proxy_progress[discovery_id].update({
+                        "status": "failed",
+                        "error": "Discovery polling failed repeatedly. Please retry.",
+                    })
+                    logger.warning(
+                        "Agent poll failed repeatedly for discovery %s; aborting",
+                        discovery_id,
+                    )
+                    break
                 continue
 
     # 3. Fetch results
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            results_resp = await client.get(
-                f"{AGENT_BASE}/scan/{agent_scan_id}/results"
-            )
-            results_data = results_resp.json()
-            hosts = results_data.get("hosts", [])
-    except Exception as exc:
-        logger.error("Failed to fetch agent results: %s", exc)
-        hosts = []
+    hosts: list[dict[str, Any]] = []
+    if _proxy_progress.get(discovery_id, {}).get("status") != "failed":
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                results_resp = await client.get(
+                    f"{AGENT_BASE}/scan/{agent_scan_id}/results"
+                )
+                if results_resp.status_code == 404:
+                    _proxy_progress[discovery_id].update({
+                        "status": "failed",
+                        "error": "Discovery results unavailable on agent (404). Please retry.",
+                    })
+                    logger.warning(
+                        "Agent results for scan %s returned 404; marking discovery %s failed",
+                        agent_scan_id,
+                        discovery_id,
+                    )
+                else:
+                    results_data = results_resp.json()
+                    hosts = results_data.get("hosts", [])
+        except Exception as exc:
+            logger.error("Failed to fetch agent results: %s", exc)
 
     # Update final progress
     final_status = _proxy_progress.get(discovery_id, {}).get("status", "completed")
+    if final_status == "running" and elapsed >= max_wait:
+        final_status = "failed"
+        _proxy_progress[discovery_id]["error"] = "Discovery timed out. Please retry with a smaller subnet or quick profile."
     _proxy_progress[discovery_id].update({
         "status": final_status if final_status in ("failed", "cancelled") else "completed",
         "found": len(hosts),

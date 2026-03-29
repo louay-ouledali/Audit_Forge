@@ -32,9 +32,11 @@ import logging
 import re
 from dataclasses import dataclass
 
-from backend.core.text_utils import normalize_unicode  # UNUSED — safe to remove (BUG: should be applied to inputs)
+from backend.core.text_utils import normalize_unicode
 
 logger = logging.getLogger("auditforge.comparison")
+
+_NOT_EQUAL_NON_EMPTY_SENTINELS = {"none", "null", "nil", "n/a", "na"}
 
 # Operator prefix pattern: >=, <=, >, <, ==, !=, contains:, not_contains:, regex:, not_empty
 _OPERATOR_RE = re.compile(
@@ -44,7 +46,14 @@ _OPERATOR_RE = re.compile(
 
 _PREFIX_RE = re.compile(
     r"^(?P<prefix>contains|not_contains|regex):"
-    r"\s*(?P<value>.+)$",
+    r"\s*(?P<value>.*)$",
+    re.IGNORECASE,
+)
+
+# Common database error patterns that should NOT be treated as valid numeric output
+_DB_ERROR_PATTERNS = re.compile(
+    r"(?:SP2-\d{4}|ORA-\d{5}|ERROR\s+\d{4}|Msg\s+\d+.*Level\s+\d+|"
+    r"SqlException|psycopg2\.\w+Error|pymysql\.err\.|OperationalError)",
     re.IGNORECASE,
 )
 
@@ -120,7 +129,7 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
         )
 
     expr = expression.strip()
-    actual = actual_output.strip()
+    actual = normalize_unicode(actual_output).strip()
 
     # ── Compound expression support (&&) ─────────────────────────────────
     if "&&" in expr:
@@ -183,14 +192,19 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
 
 
 def _extract_number(text: str) -> float | None:
-    """Extract a number from text output.
+    """Extract the most relevant number from text output.
 
-    Handles:
-    - Plain integers: "14"
-    - Negative integers: "-1"
-    - Floats: "14.5"
-    - Numbers with surrounding whitespace: "  14  "
-    - Numbers embedded in short text: "Value: 14" (extracts last number)
+    Strategy (in priority order):
+    1. Entire output is a number → use it directly.
+    2. Key-value pattern (``key = 14``, ``key : 14``) → use the number
+       after the delimiter, since that is the setting's value.
+    3. Otherwise → use the **first** number found.  CIS command output
+       almost always puts the relevant value first (e.g.
+       ``"14 passwords remembered"``).  Taking the *last* number was
+       incorrect — ``"14 passwords remembered, 0 changed"`` would
+       wrongly yield 0.
+
+    Handles plain ints, negative ints, floats, and whitespace padding.
     """
     text = text.strip()
 
@@ -200,11 +214,19 @@ def _extract_number(text: str) -> float | None:
     except ValueError:
         pass
 
-    # Try to find a number in the text (take the last one, as it's usually the value)
+    # Key-value pattern: "SomeKey = 14" or "SomeKey : 14"
+    kv = re.search(r"[=:]\s*(-?\d+(?:\.\d+)?)\s*$", text)
+    if kv:
+        try:
+            return float(kv.group(1))
+        except ValueError:
+            pass
+
+    # Fallback: take the FIRST number in the text
     matches = re.findall(r"-?\d+(?:\.\d+)?", text)
     if matches:
         try:
-            return float(matches[-1])
+            return float(matches[0])
         except ValueError:
             pass
 
@@ -215,6 +237,16 @@ def _evaluate_numeric(
     op: str, expected_str: str, actual: str, full_expr: str
 ) -> ComparisonResult:
     """Evaluate a numeric comparison (>=, <=, >, <)."""
+    # Detect database error patterns before numeric extraction — these contain
+    # digits in error codes/URLs that would produce false positives.
+    if _DB_ERROR_PATTERNS.search(actual):
+        return ComparisonResult(
+            matched=False,
+            expression=full_expr,
+            actual_value=actual,
+            explanation=f"ERROR: database error detected in output, cannot evaluate numerically: '{actual[:120]}'",
+        )
+
     try:
         expected_num = float(expected_str)
     except ValueError:
@@ -305,6 +337,16 @@ def _evaluate_not_equal(
             explanation=f"{'PASS' if matched else 'FAIL'}: output is {'non-empty' if matched else 'empty'}",
         )
 
+    normalized_expected = expected.strip().lower()
+    if normalized_expected in _NOT_EQUAL_NON_EMPTY_SENTINELS:
+        matched = bool(actual.strip())
+        return ComparisonResult(
+            matched=matched,
+            expression=full_expr,
+            actual_value=actual,
+            explanation=f"{'PASS' if matched else 'FAIL'}: output is {'non-empty' if matched else 'empty'}",
+        )
+
     # Try numeric first
     try:
         exp_num = float(expected)
@@ -333,7 +375,18 @@ def _evaluate_not_equal(
 def _evaluate_contains(
     expected: str, actual: str, full_expr: str
 ) -> ComparisonResult:
-    """Evaluate a substring check (contains:)."""
+    """Evaluate a substring check (contains:).
+
+    Special case: if expected is empty (bare ``contains:``), treat as ``not_empty``.
+    """
+    if not expected.strip():
+        matched = bool(actual.strip())
+        return ComparisonResult(
+            matched=matched,
+            expression=full_expr,
+            actual_value=actual,
+            explanation=f"{'PASS' if matched else 'FAIL'}: contains: with no value — output is {'non-empty' if matched else 'empty'}",
+        )
     matched = expected.lower() in actual.lower()
     return ComparisonResult(
         matched=matched,
@@ -491,6 +544,8 @@ def format_expression_display(expression: str) -> str:
 
         # Handle bare != (no value)
         if op == "!=" and not value:
+            return "Output must not be empty"
+        if op == "!=" and value.lower() in _NOT_EQUAL_NON_EMPTY_SENTINELS:
             return "Output must not be empty"
 
         try:
