@@ -53,7 +53,8 @@ _PREFIX_RE = re.compile(
 # Common database error patterns that should NOT be treated as valid numeric output
 _DB_ERROR_PATTERNS = re.compile(
     r"(?:SP2-\d{4}|ORA-\d{5}|ERROR\s+\d{4}|Msg\s+\d+.*Level\s+\d+|"
-    r"SqlException|psycopg2\.\w+Error|pymysql\.err\.|OperationalError)",
+    r"SqlException|psycopg2\.\w+Error|pymysql\.err\.|OperationalError|"
+    r"https?://\S+)",
     re.IGNORECASE,
 )
 
@@ -505,6 +506,12 @@ def validate_expression(expression: str) -> str | None:
     for pattern, message in english_patterns:
         if re.search(pattern, expr, re.IGNORECASE):
             return f"{message}: '{expr}'"
+
+    # Tautological expression detection
+    if expr == ">=0":
+        return "Tautological expression: >=0 always passes for non-negative output"
+    if expr.startswith("contains:") and not expr[len("contains:"):].strip():
+        return "Empty contains: value — matches any non-empty output"
 
     return None
 

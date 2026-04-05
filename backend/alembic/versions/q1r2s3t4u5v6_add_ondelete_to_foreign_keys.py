@@ -29,47 +29,68 @@ depends_on = None
 def upgrade() -> None:
     # SQLite requires batch mode to alter FK constraints.
     # Each batch_alter_table recreates the table behind the scenes.
+    # Wrapped in try/except for idempotency: if constraints already
+    # have the correct names/policies, skip gracefully.
+
+    conn = op.get_bind()
+    tables = sa.inspect(conn).get_table_names()
 
     # ── findings.rule_id: SET NULL on rule deletion ──
-    with op.batch_alter_table("findings", schema=None) as batch_op:
-        batch_op.alter_column("rule_id", existing_type=sa.Integer(), nullable=True)
-        batch_op.drop_constraint("fk_findings_rule_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_findings_rule_id", "rules", ["rule_id"], ["id"], ondelete="SET NULL"
-        )
+    if "findings" in tables:
+        try:
+            with op.batch_alter_table("findings", schema=None) as batch_op:
+                batch_op.alter_column("rule_id", existing_type=sa.Integer(), nullable=True)
+                batch_op.drop_constraint("fk_findings_rule_id", type_="foreignkey")
+                batch_op.create_foreign_key(
+                    "fk_findings_rule_id", "rules", ["rule_id"], ["id"], ondelete="SET NULL"
+                )
+        except Exception:
+            pass
 
     # ── scans.benchmark_id: SET NULL on benchmark deletion ──
     # ── scans.preset_id:    SET NULL on preset deletion ──
-    with op.batch_alter_table("scans", schema=None) as batch_op:
-        batch_op.alter_column("benchmark_id", existing_type=sa.Integer(), nullable=True)
+    if "scans" in tables:
+        try:
+            with op.batch_alter_table("scans", schema=None) as batch_op:
+                batch_op.alter_column("benchmark_id", existing_type=sa.Integer(), nullable=True)
 
-        batch_op.drop_constraint("fk_scans_benchmark_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_scans_benchmark_id", "benchmarks", ["benchmark_id"], ["id"], ondelete="SET NULL"
-        )
+                batch_op.drop_constraint("fk_scans_benchmark_id", type_="foreignkey")
+                batch_op.create_foreign_key(
+                    "fk_scans_benchmark_id", "benchmarks", ["benchmark_id"], ["id"], ondelete="SET NULL"
+                )
 
-        batch_op.drop_constraint("fk_scans_preset_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_scans_preset_id", "scan_presets", ["preset_id"], ["id"], ondelete="SET NULL"
-        )
+                batch_op.drop_constraint("fk_scans_preset_id", type_="foreignkey")
+                batch_op.create_foreign_key(
+                    "fk_scans_preset_id", "scan_presets", ["preset_id"], ["id"], ondelete="SET NULL"
+                )
+        except Exception:
+            pass
 
     # ── scan_presets.benchmark_id: CASCADE on benchmark deletion ──
-    with op.batch_alter_table("scan_presets", schema=None) as batch_op:
-        batch_op.drop_constraint("fk_scan_presets_benchmark_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_scan_presets_benchmark_id", "benchmarks", ["benchmark_id"], ["id"], ondelete="CASCADE"
-        )
+    if "scan_presets" in tables:
+        try:
+            with op.batch_alter_table("scan_presets", schema=None) as batch_op:
+                batch_op.drop_constraint("fk_scan_presets_benchmark_id", type_="foreignkey")
+                batch_op.create_foreign_key(
+                    "fk_scan_presets_benchmark_id", "benchmarks", ["benchmark_id"], ["id"], ondelete="CASCADE"
+                )
+        except Exception:
+            pass
 
     # ── mission_analyses.compared_mission_id: SET NULL on mission deletion ──
-    with op.batch_alter_table("mission_analyses", schema=None) as batch_op:
-        batch_op.drop_constraint("fk_mission_analyses_compared_mission_id", type_="foreignkey")
-        batch_op.create_foreign_key(
-            "fk_mission_analyses_compared_mission_id",
-            "missions",
-            ["compared_mission_id"],
-            ["id"],
-            ondelete="SET NULL",
-        )
+    if "mission_analyses" in tables:
+        try:
+            with op.batch_alter_table("mission_analyses", schema=None) as batch_op:
+                batch_op.drop_constraint("fk_mission_analyses_compared_mission_id", type_="foreignkey")
+                batch_op.create_foreign_key(
+                    "fk_mission_analyses_compared_mission_id",
+                    "missions",
+                    ["compared_mission_id"],
+                    ["id"],
+                    ondelete="SET NULL",
+                )
+        except Exception:
+            pass
 
 
 def downgrade() -> None:

@@ -47,10 +47,21 @@ VALID_SETTING_KEYS = {
     "llm_task_verification_model",
     "llm_task_reports_model",
     "llm_task_analysis_model",
+    # UI
+    "ui_theme",
     # White-labeling
     "company_name",
     "company_logo_base64",
     "auditor_name",
+    # SMTP / Email (Forge Sentinel alerts)
+    "smtp_host",
+    "smtp_port",
+    "smtp_username",
+    "smtp_password",
+    "smtp_from",
+    "smtp_use_tls",
+    # Application
+    "base_url",
 }
 
 

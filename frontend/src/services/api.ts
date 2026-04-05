@@ -1,9 +1,5 @@
-import axios from 'axios';
+import api from './api-client';
 import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo, ADConnectionTestResult, ADDiscoverResponse, ADWinRMCheckResult, ADBulkCreateResult, BenchmarkVersionItem, BenchmarkGroupResponse, VersionDiffResponse, CacheAccelerationStats, ConnectSession, ConnectAgent, CopilotChatResponse, CopilotPendingRule, CopilotPipelineResult, CopilotAction } from '@/types';
-
-const api = axios.create({
-  baseURL: '/api',
-});
 
 export async function getHealth() {
   const { data } = await api.get('/health');
@@ -1133,4 +1129,109 @@ export async function copilotConfirmBatchEdit(benchmarkId: number, ruleIds: numb
     confirmed,
   });
   return data;
+}
+
+// ── Forge Trail ─────────────────────────────────────────────────────
+export interface AuditLogEntry {
+  id: number;
+  username: string;
+  action: string;
+  entity_type: string | null;
+  entity_id: number | null;
+  entity_label: string | null;
+  details_json: string | null;
+  created_at: string | null;
+}
+
+export async function getMissionRecentActivity(missionId: number): Promise<AuditLogEntry[]> {
+  const { data } = await api.get(`/trail/${missionId}/recent`);
+  return data.data;
+}
+
+export async function getMissionActivityLog(missionId: number, skip = 0, limit = 50): Promise<{ total: number; data: AuditLogEntry[] }> {
+  const { data } = await api.get(`/trail/${missionId}`, { params: { skip, limit } });
+  return data;
+}
+
+export async function exportTrailLogs(missionId: number, format: 'csv' | 'json' = 'csv'): Promise<Blob> {
+  const { data } = await api.get(`/trail/${missionId}/export`, {
+    params: { format },
+    responseType: 'blob',
+  });
+  return data;
+}
+
+// ── Forge Sentinel — Schedules ──────────────────────────────────────
+
+export async function getSchedules(missionId?: number): Promise<any[]> {
+  const { data } = await api.get('/schedules', { params: missionId ? { mission_id: missionId } : {} });
+  return data.data;
+}
+
+export async function createSchedule(payload: Record<string, any>): Promise<any> {
+  const { data } = await api.post('/schedules', payload);
+  return data;
+}
+
+export async function getSchedule(scheduleId: number): Promise<any> {
+  const { data } = await api.get(`/schedules/${scheduleId}`);
+  return data;
+}
+
+export async function updateSchedule(scheduleId: number, payload: Record<string, any>): Promise<any> {
+  const { data } = await api.put(`/schedules/${scheduleId}`, payload);
+  return data;
+}
+
+export async function deleteSchedule(scheduleId: number): Promise<void> {
+  await api.delete(`/schedules/${scheduleId}`);
+}
+
+export async function toggleSchedule(scheduleId: number): Promise<any> {
+  const { data } = await api.post(`/schedules/${scheduleId}/toggle`);
+  return data;
+}
+
+export async function runScheduleNow(scheduleId: number): Promise<any> {
+  const { data } = await api.post(`/schedules/${scheduleId}/run-now`);
+  return data;
+}
+
+export async function getScheduleRuns(scheduleId: number, skip = 0, limit = 20): Promise<any> {
+  const { data } = await api.get(`/schedules/${scheduleId}/runs`, { params: { skip, limit } });
+  return data;
+}
+
+export async function getScheduleRunDetail(scheduleId: number, runId: number): Promise<any> {
+  const { data } = await api.get(`/schedules/${scheduleId}/runs/${runId}`);
+  return data;
+}
+
+export async function testScheduleAlerts(scheduleId: number): Promise<any> {
+  const { data } = await api.post(`/schedules/${scheduleId}/test-alerts`);
+  return data;
+}
+
+// ── Forge Sentinel — Notifications ──────────────────────────────────
+
+export async function getNotifications(skip = 0, limit = 50): Promise<any> {
+  const { data } = await api.get('/notifications', { params: { skip, limit } });
+  return data;
+}
+
+export async function getUnreadNotificationCount(): Promise<{ count: number }> {
+  const { data } = await api.get('/notifications/unread-count');
+  return data;
+}
+
+export async function markNotificationRead(notificationId: number): Promise<void> {
+  await api.post(`/notifications/${notificationId}/read`);
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await api.post('/notifications/read-all');
+}
+
+export async function dismissNotification(notificationId: number): Promise<void> {
+  await api.delete(`/notifications/${notificationId}`);
 }

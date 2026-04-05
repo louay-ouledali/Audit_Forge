@@ -1,9 +1,8 @@
-import React from 'react';
 
 export default function AmbientSpotlight() {
   return (
-    <div className="fixed inset-0 z-[-1] pointer-events-none overflow-hidden">
-      <div 
+    <div className="fixed inset-0 z-[0] pointer-events-none overflow-hidden">
+      <div
         className="absolute w-[800px] h-[800px] rounded-full opacity-60 mix-blend-screen"
         style={{
           background: 'radial-gradient(circle at center, rgba(255, 230, 0, 0.05) 0%, transparent 60%)',
@@ -13,7 +12,7 @@ export default function AmbientSpotlight() {
           animation: 'orbit 25s linear infinite'
         }}
       />
-      <div 
+      <div
         className="absolute w-[600px] h-[600px] rounded-full opacity-40 mix-blend-screen"
         style={{
           background: 'radial-gradient(circle at center, rgba(255, 230, 0, 0.04) 0%, transparent 65%)',

@@ -186,6 +186,8 @@ def _insert_rule(db: Session, benchmark_id: int, rule_data: PreloadedRule) -> Ru
         remediation_risk=rule_data.remediation_risk,
         safe_to_automate=rule_data.safe_to_automate,
         requires_restart=rule_data.requires_restart,
+        confidence_score=0.80,
+        confidence_source="curated",
     )
     db.add(cmd)
 
@@ -275,13 +277,9 @@ def upgrade_pack(
     """Upgrade an existing preloaded benchmark with a newer pack.
 
     This is a **destructive replace**: the old rules/commands/tags are deleted
-    and replaced with the new pack's data.  This is safe because preloaded
-    benchmarks don't carry user data (auditor findings are stored on Scan/Finding
-    tables, not on Rule/RuleCommand).
-
-    For fine-grained section-by-section merging, use Phase H's
-    ``benchmark_differ.py`` (not yet built).  For now, full replacement is
-    simpler and correct.
+    and replaced with the new pack's data.  If scans or findings reference
+    this benchmark, the upgrade is skipped to preserve user data (only the
+    pack_hash is updated so we don't retry every startup).
     """
     raw = pack_path.read_text(encoding="utf-8")
     pack = PreloadedBenchmarkPack.model_validate_json(raw)
@@ -290,6 +288,27 @@ def upgrade_pack(
         pack_hash = compute_file_hash(pack_path)
 
     meta = pack.benchmark
+
+    # ── Guard: skip destructive replace if user scan data references this benchmark ──
+    from backend.models.scan import Scan
+    from backend.models.finding import Finding
+    scan_count = db.query(Scan).filter(Scan.benchmark_id == existing_benchmark.id).count()
+    finding_count = (
+        db.query(Finding)
+        .join(Scan, Finding.scan_id == Scan.id)
+        .filter(Scan.benchmark_id == existing_benchmark.id)
+        .count()
+    )
+    if scan_count > 0 or finding_count > 0:
+        logger.warning(
+            "Skipping destructive upgrade of benchmark id=%d (%s): "
+            "%d scans / %d findings would be lost. Updating hash only.",
+            existing_benchmark.id, meta.name, scan_count, finding_count,
+        )
+        existing_benchmark.pack_hash = pack_hash
+        existing_benchmark.connection_hints = _json_dumps(meta.connection_hints)
+        return existing_benchmark
+
     logger.info(
         "Upgrading preloaded benchmark id=%d: %s v%s -> v%s (%d rules)",
         existing_benchmark.id, meta.name, existing_benchmark.version,

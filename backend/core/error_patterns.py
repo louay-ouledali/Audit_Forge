@@ -111,10 +111,14 @@ def classify_output(text: str) -> str:
     # "FATAL" could match a generic error pattern.
     if is_module_not_found(text):
         return "module_not_found"
-    if is_execution_error(text):
-        return "execution_error"
+    # Check not_configured BEFORE execution_error because PowerShell
+    # registry-not-found errors contain both patterns (e.g.
+    # ItemNotFoundException + CategoryInfo + FullyQualifiedErrorId).
+    # "Not configured" is a more specific classification.
     if is_not_configured(text):
         return "not_configured"
+    if is_execution_error(text):
+        return "execution_error"
     if is_service_not_found(text):
         return "service_not_found"
     return "normal"

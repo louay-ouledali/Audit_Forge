@@ -33,7 +33,7 @@ export default function ConnectedAgentsPanel({ sessionId, isActive }: Props) {
   const [scanProgress, setScanProgress] = useState<Record<number, ScanProgress>>({});
   const [scanResults, setScanResults] = useState<Record<number, ScanResult>>({});
   const wsRef = useRef<AgentWSClient | null>(null);
-  const { addToast } = useToast();
+  const toast = useToast();
 
   // Derived scanning state — true while ANY agent has active progress
   const scanning = Object.keys(scanProgress).length > 0;
@@ -69,8 +69,7 @@ export default function ConnectedAgentsPanel({ sessionId, isActive }: Props) {
     const interval = setInterval(async () => {
       try {
         const agts = await api.getConnectAgents(sessionId);
-        setAgents(prev => {
-          // Merge: don't overwrite local status for agents we're tracking progress on
+        setAgents(_prev => {
           return agts.map(a => {
             const prog = scanProgress[a.id];
             const result = scanResults[a.id];
@@ -95,7 +94,7 @@ export default function ConnectedAgentsPanel({ sessionId, isActive }: Props) {
     ws.onStatus((status) => {
       if (status === 'connected') {
         api.getConnectAgents(sessionId).then(agts => {
-          setAgents(prev => {
+          setAgents(_prev => {
             return agts.map(a => {
               if (scanProgress[a.id]) return { ...a, status: 'scanning' as const };
               if (scanResults[a.id]) return { ...a, status: 'completed' as const };
@@ -174,7 +173,7 @@ export default function ConnectedAgentsPanel({ sessionId, isActive }: Props) {
         setAgents(prev => prev.map(a =>
           a.id === agentId ? { ...a, status: 'completed' as const } : a
         ));
-        addToast('Scan completed', 'success');
+        toast.success('Scan completed');
       }
     });
 
@@ -197,7 +196,7 @@ export default function ConnectedAgentsPanel({ sessionId, isActive }: Props) {
   }, []);
 
   const handleScanAll = useCallback(async () => {
-    if (!selectedBenchmark) { addToast('Select a benchmark first', 'error'); return; }
+    if (!selectedBenchmark) { toast.error('Select a benchmark first'); return; }
     // Reset completed agents and clear previous results
     setScanResults({});
     setScanProgress({});
@@ -206,29 +205,29 @@ export default function ConnectedAgentsPanel({ sessionId, isActive }: Props) {
     ));
     try {
       const res = await api.startAgentScan(sessionId, selectedBenchmark);
-      addToast(`${res.scan_ids.length} scan(s) started`, 'success');
+      toast.success(`${res.scan_ids.length} scan(s) started`);
       setAgents(prev => prev.map(a =>
         a.status === 'connected' ? { ...a, status: 'scanning' as const } : a
       ));
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      addToast(detail || 'Failed to start scan', 'error');
+      toast.error(detail || 'Failed to start scan');
     }
-  }, [selectedBenchmark, sessionId, addToast]);
+  }, [selectedBenchmark, sessionId, toast]);
 
   const handleScanAgent = useCallback(async (agentId: number) => {
-    if (!selectedBenchmark) { addToast('Select a benchmark first', 'error'); return; }
+    if (!selectedBenchmark) { toast.error('Select a benchmark first'); return; }
     setScanResults(prev => { const next = { ...prev }; delete next[agentId]; return next; });
     try {
       await api.startAgentScan(sessionId, selectedBenchmark, [agentId]);
-      addToast('Scan started', 'success');
+      toast.success('Scan started');
       setAgents(prev => prev.map(a =>
         a.id === agentId ? { ...a, status: 'scanning' as const } : a
       ));
     } catch {
-      addToast('Failed to start scan', 'error');
+      toast.error('Failed to start scan');
     }
-  }, [selectedBenchmark, sessionId, addToast]);
+  }, [selectedBenchmark, sessionId, toast]);
 
   const connectedCount = agents.filter(a => ['connected', 'scanning', 'completed'].includes(a.status)).length;
   const scannable = agents.filter(a => a.status === 'connected').length;

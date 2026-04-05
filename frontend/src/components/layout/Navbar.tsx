@@ -6,9 +6,12 @@ import {
     FileText,
     BarChart3,
     Settings,
+    LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { logout } from '@/services/auth';
 import logoImg from '../../assets/logo-transparent.png';
+import NotificationBell from './NotificationBell';
 
 const navItems = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
@@ -101,6 +104,18 @@ export default function Navbar() {
                             </Link>
                         );
                     })}
+                </div>
+
+                {/* Notifications + Logout */}
+                <div className="flex items-center gap-1 pl-4 border-l border-dark-border/50">
+                    <NotificationBell />
+                    <button
+                        onClick={logout}
+                        className="flex items-center gap-1.5 rounded-full px-3 py-2 text-sm text-dark-muted transition-colors hover:text-red-400 hover:bg-red-500/10"
+                        title="Sign out"
+                    >
+                        <LogOut className="h-4 w-4" />
+                    </button>
                 </div>
             </nav>
         </div>

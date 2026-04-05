@@ -121,7 +121,7 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
     setImporting(true);
     setImportError('');
     try {
-      const result = await api.confirmUnknownImport({
+      await api.confirmUnknownImport({
         job_id: unknownJobId,
         platform: platformOverride || unknownStatus.platform_detection?.platform || 'unknown',
         platform_family: platformFamilyOverride || unknownStatus.platform_detection?.platform_family || 'other',
@@ -349,7 +349,7 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
                               {rule.severity}
                             </span>
                             {rule.has_cache_match && (
-                              <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" title="Command cache match" />
+                              <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
                             )}
                           </div>
                         ))}

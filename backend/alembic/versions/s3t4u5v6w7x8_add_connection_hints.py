@@ -20,10 +20,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("benchmarks") as batch_op:
-        batch_op.add_column(
-            sa.Column("connection_hints", sa.Text(), nullable=True)
-        )
+    conn = op.get_bind()
+    columns = {c["name"] for c in sa.inspect(conn).get_columns("benchmarks")}
+    if "connection_hints" not in columns:
+        with op.batch_alter_table("benchmarks") as batch_op:
+            batch_op.add_column(
+                sa.Column("connection_hints", sa.Text(), nullable=True)
+            )
 
 
 def downgrade() -> None:

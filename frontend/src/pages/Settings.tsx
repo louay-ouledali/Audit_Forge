@@ -3,10 +3,11 @@ import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import {
   Save, CheckCircle2, XCircle, Download, Upload, Database,
-  AlertTriangle, Zap, Loader2, Trash2
+  AlertTriangle, Zap, Loader2, Trash2, Mail, Building2, KeyRound, Image as ImageIcon
 } from 'lucide-react';
 import type { Settings as SettingsType, LLMTestResult } from '@/types';
 import * as api from '@/services/api';
+import { changePassword } from '@/services/auth';
 
 const defaultSettings: SettingsType = {
   llm_mode: 'offline',
@@ -25,6 +26,16 @@ const defaultSettings: SettingsType = {
   llm_task_reports_model: '',
   llm_task_analysis_model: '',
   ui_theme: 'dark',
+  smtp_host: '',
+  smtp_port: '',
+  smtp_username: '',
+  smtp_password: '',
+  smtp_from: '',
+  smtp_use_tls: 'true',
+  base_url: '',
+  company_name: '',
+  company_logo_base64: '',
+  auditor_name: '',
 };
 
 const applyTheme = (theme: string) => {
@@ -57,6 +68,14 @@ export default function Settings() {
 
   /* Cache stats */
   const [cacheStats, setCacheStats] = useState<{ total_entries: number; total_hits: number } | null>(null);
+
+  /* Password change */
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [changingPw, setChangingPw] = useState(false);
+
+  /* Logo preview */
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (location.pathname !== '/settings') return;
@@ -99,8 +118,9 @@ export default function Settings() {
     try {
       await api.updateSettings(settings);
       setToast({ type: 'success', message: 'Settings saved successfully' });
-    } catch {
-      setToast({ type: 'error', message: 'Failed to save settings' });
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || 'Failed to save settings';
+      setToast({ type: 'error', message: detail });
     } finally {
       setSaving(false);
     }
@@ -180,6 +200,33 @@ export default function Settings() {
     } catch {
       setToast({ type: 'error', message: 'Clear cache failed' });
     }
+  };
+
+  const handleChangePassword = async () => {
+    if (!oldPassword || !newPassword) return;
+    setChangingPw(true);
+    try {
+      await changePassword(oldPassword, newPassword);
+      setToast({ type: 'success', message: 'Password changed successfully' });
+      setOldPassword('');
+      setNewPassword('');
+    } catch {
+      setToast({ type: 'error', message: 'Password change failed — check your current password' });
+    } finally {
+      setChangingPw(false);
+    }
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const b64 = (reader.result as string).split(',')[1] || '';
+      handleChange('company_logo_base64', b64);
+    };
+    reader.readAsDataURL(file);
+    if (logoInputRef.current) logoInputRef.current.value = '';
   };
 
   const inputClass = 'mt-1 block w-full rounded-lg border border-dark-border bg-dark-elevated px-3 py-2 text-sm text-white placeholder-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none';
@@ -510,6 +557,205 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      {/* Email (SMTP) — Forge Sentinel Alerts */}
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Mail className="h-5 w-5 text-ey-yellow" />
+          <h3 className="text-lg font-semibold text-white">Email (SMTP)</h3>
+        </div>
+        <p className="text-sm text-dark-secondary">
+          Configure SMTP for Forge Sentinel email alerts. Leave empty to disable email notifications.
+        </p>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className={labelClass}>Application Base URL</label>
+            <input
+              value={settings.base_url || ''}
+              onChange={(e) => handleChange('base_url', e.target.value)}
+              className={inputClass}
+              placeholder="https://auditforge.example.com"
+            />
+            <p className="mt-1 text-xs text-dark-muted">
+              Used for report download links in email/Slack alerts. Include the protocol (https://).
+            </p>
+          </div>
+          <div>
+            <label className={labelClass}>SMTP Host</label>
+            <input
+              value={settings.smtp_host || ''}
+              onChange={(e) => handleChange('smtp_host', e.target.value)}
+              className={inputClass}
+              placeholder="smtp.gmail.com"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>SMTP Port</label>
+            <input
+              value={settings.smtp_port || ''}
+              onChange={(e) => handleChange('smtp_port', e.target.value)}
+              className={inputClass}
+              placeholder="587"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Username <span className="text-dark-secondary font-normal">(optional)</span></label>
+            <input
+              value={settings.smtp_username || ''}
+              onChange={(e) => handleChange('smtp_username', e.target.value)}
+              className={inputClass}
+              placeholder="user@example.com"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Password <span className="text-dark-secondary font-normal">(optional)</span></label>
+            <input
+              type="password"
+              value={settings.smtp_password || ''}
+              onChange={(e) => handleChange('smtp_password', e.target.value)}
+              className={inputClass}
+              placeholder="••••••••"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>From Address</label>
+            <input
+              value={settings.smtp_from || ''}
+              onChange={(e) => handleChange('smtp_from', e.target.value)}
+              className={inputClass}
+              placeholder="auditforge@company.com"
+            />
+          </div>
+          <div className="flex items-end">
+            <label className="flex items-center gap-3 cursor-pointer pb-2">
+              <input
+                type="checkbox"
+                checked={settings.smtp_use_tls === 'true'}
+                onChange={(e) => handleChange('smtp_use_tls', e.target.checked ? 'true' : 'false')}
+                className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow focus:ring-ey-yellow/50 accent-ey-yellow"
+              />
+              <span className="text-sm text-gray-300">Use TLS</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      {/* Branding / White-Label */}
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-ey-yellow" />
+          <h3 className="text-lg font-semibold text-white">Report Branding</h3>
+        </div>
+        <p className="text-sm text-dark-secondary">
+          White-label your PDF reports with your company name and logo.
+        </p>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className={labelClass}>Company Name</label>
+            <input
+              value={settings.company_name || ''}
+              onChange={(e) => handleChange('company_name', e.target.value)}
+              className={inputClass}
+              placeholder="Your Company"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Auditor Name</label>
+            <input
+              value={settings.auditor_name || ''}
+              onChange={(e) => handleChange('auditor_name', e.target.value)}
+              className={inputClass}
+              placeholder="Auditor / team name"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className={labelClass}>Company Logo</label>
+          <div className="mt-2 flex items-center gap-4">
+            {settings.company_logo_base64 ? (
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dark-border bg-dark-elevated p-1">
+                <img
+                  src={`data:image/png;base64,${settings.company_logo_base64}`}
+                  alt="Logo preview"
+                  className="max-h-14 max-w-14 object-contain"
+                />
+              </div>
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-dark-border text-dark-muted">
+                <ImageIcon className="h-6 w-6" />
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                onClick={() => logoInputRef.current?.click()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-dark-secondary hover:text-white"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                Upload Logo
+              </button>
+              {settings.company_logo_base64 && (
+                <button
+                  onClick={() => handleChange('company_logo_base64', '')}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Remove
+                </button>
+              )}
+            </div>
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/svg+xml"
+              className="hidden"
+              onChange={handleLogoUpload}
+            />
+          </div>
+          <p className={helpClass}>PNG or JPEG recommended. Appears in the PDF report header.</p>
+        </div>
+      </section>
+
+      {/* Change Password */}
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-5 w-5 text-ey-yellow" />
+          <h3 className="text-lg font-semibold text-white">Change Password</h3>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className={labelClass}>Current Password</label>
+            <input
+              type="password"
+              value={oldPassword}
+              onChange={(e) => setOldPassword(e.target.value)}
+              className={inputClass}
+              placeholder="Enter current password"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>New Password</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className={inputClass}
+              placeholder="Enter new password"
+            />
+          </div>
+        </div>
+        <button
+          onClick={handleChangePassword}
+          disabled={!oldPassword || !newPassword || changingPw}
+          className="inline-flex items-center gap-2 rounded-lg border border-ey-yellow/30 bg-ey-yellow/10 px-4 py-2 text-sm font-medium text-ey-yellow hover:bg-ey-yellow/20 disabled:opacity-50"
+        >
+          {changingPw ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+          {changingPw ? 'Changing…' : 'Change Password'}
+        </button>
+      </section>
 
       {/* Database Backup & Restore */}
       <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">

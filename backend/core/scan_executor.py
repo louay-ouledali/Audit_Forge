@@ -27,7 +27,7 @@ from backend.connectors.base import BaseConnector, CommandResult
 from backend.connectors.ssh_connector import SSHConnector
 from backend.connectors.winrm_connector import WinRMConnector
 from backend.core.comparison_engine import evaluate as evaluate_expression
-from backend.core.error_patterns import classify_output
+from backend.core.error_patterns import classify_output, is_execution_error
 from backend.core.exceptions import ConnectionFailedError, ScanCancelledError  # UNUSED: 'ConnectionFailedError', 'ScanCancelledError' — safe to remove
 from backend.models.discovery_cache import DiscoveryCache
 from backend.models.benchmark import Benchmark
@@ -301,13 +301,14 @@ def _evaluate_result(
     # ── Tier 1: Execution error (bad command, access denied, etc.) → ERROR ──
     category = classify_output(combined_output)
     if category == "execution_error":
-        # If we still have usable output and an expected expression, prefer
-        # deterministic PASS/FAIL over opaque ERROR.
-        if expected_regex and output_stripped:
-            comp_result = evaluate_expression(expected_regex, output_text)
+        # Only evaluate against stdout if stdout itself is clean (no error markers).
+        # This prevents false positives from extracting numbers out of error text
+        # like "At line:1 char:2" matching expressions like "==1".
+        if expected_regex and stdout_text.strip() and not is_execution_error(stdout_text):
+            comp_result = evaluate_expression(expected_regex, stdout_text)
             if comp_result.matched:
-                return "PASS", f"Evaluated from output despite execution markers: {comp_result.explanation}"
-            return "FAIL", f"Evaluated from output despite execution markers: {comp_result.explanation}"
+                return "PASS", f"Evaluated from clean stdout despite stderr errors: {comp_result.explanation}"
+            return "FAIL", f"Evaluated from clean stdout despite stderr errors: {comp_result.explanation}"
         return "ERROR", "Command execution error detected in output"
 
     # ── Tier 2: Not configured (missing registry key / GPO path) → FAIL ──
@@ -500,6 +501,17 @@ async def execute_network_scan(
         except Exception as exc:
             logger.warning("Failed to collect system info: %s", exc)
 
+        # 6b. Environment discovery — probe target for actual paths/config
+        from backend.core.environment_discovery import discover_environment, adapt_command as adapt_cmd
+        env_discovered: dict[str, str] = {}
+        try:
+            env_discovered = await discover_environment(
+                connector, secondary_connector, target_type_lower,
+                benchmark.platform if hasattr(benchmark, 'platform') else "",
+            )
+        except Exception as exc:
+            logger.warning("Environment discovery failed: %s", exc)
+
         # 7. Build the list of rules to scan
         rules_query = (
             db.query(Rule)
@@ -567,6 +579,11 @@ async def execute_network_scan(
             # Execute — route to the correct connector based on transport
             try:
                 exec_cmd = cmd.audit_command
+
+                # Adapt command with discovered environment values
+                if env_discovered:
+                    exec_cmd = adapt_cmd(exec_cmd, env_discovered)
+
                 transport = cmd.command_transport or _infer_transport(
                     exec_cmd, target_type_lower
                 )
@@ -596,6 +613,30 @@ async def execute_network_scan(
 
             # Evaluate
             status, explanation = _evaluate_result(result, cmd.expected_output_regex)
+
+            # Self-heal on ERROR: attempt to fix and re-execute once
+            if status == "ERROR" and result.exit_code != 0:
+                try:
+                    from backend.core.self_healing import attempt_self_heal
+                    healed = await attempt_self_heal(
+                        rule_command=cmd,
+                        error_output=result.stderr or result.stdout,
+                        exit_code=result.exit_code,
+                        connector=chosen,
+                        db=db,
+                    )
+                    if healed and healed.get("corrected_command"):
+                        retry_cmd = healed["corrected_command"]
+                        retry_result = await chosen.execute(retry_cmd, timeout=30)
+                        retry_expr = healed.get("corrected_expression") or cmd.expected_output_regex
+                        retry_status, retry_expl = _evaluate_result(retry_result, retry_expr)
+                        if retry_status != "ERROR":
+                            result = retry_result
+                            status = retry_status
+                            explanation = f"[self-healed] {retry_expl}"
+                except Exception as heal_exc:
+                    logger.debug("Self-heal attempt failed: %s", heal_exc)
+
             if status == "PASS":
                 passed += 1
                 consecutive_errors = 0

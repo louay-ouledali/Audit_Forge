@@ -91,6 +91,7 @@ from backend.schemas.benchmark import (
     UnknownImportConfirmRequest,
 )
 from backend.schemas.rule import VerificationReportResponse, VerificationResultsResponse, RuleResponse, RuleFullUpdate
+from backend.utils.datetime_utils import utc_iso
 
 logger = logging.getLogger("auditforge.api.benchmarks")
 
@@ -128,7 +129,7 @@ def get_benchmark_catalog(db: Session = Depends(get_db)):
             "verification_status": b.verification_status or "pending",
             "is_ready": b.is_ready or False,
             "source": b.source or "user_imported",
-            "import_date": b.import_date.isoformat() if b.import_date else None,
+            "import_date": utc_iso(b.import_date),
             "framework": b.framework or "cis",
             "group_id": b.group_id,
             "is_baseline": b.is_baseline or False,

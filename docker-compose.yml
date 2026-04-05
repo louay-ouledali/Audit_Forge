@@ -47,6 +47,8 @@ services:
       - ./frontend/src:/app/src
       - ./frontend/index.html:/app/index.html
       - ./frontend/public:/app/public
+    environment:
+      - VITE_API_TARGET=http://backend:8000
     depends_on:
       - backend
     command: npm run dev -- --host 0.0.0.0

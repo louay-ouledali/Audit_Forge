@@ -1609,17 +1609,33 @@ _TEMPLATES_BY_FAMILY: dict[str, list] = {
 }
 
 
-def match_template(rule: dict[str, Any], platform_family: str) -> dict[str, str] | None:
+def match_template(
+    rule: dict[str, Any],
+    platform_family: str,
+    platform: str = "",
+) -> dict[str, str] | None:
     """Try to match *rule* to a deterministic command template.
 
     Returns a dict with keys ``audit_command``, ``expected_output_regex``,
     ``expected_output_description``, ``remediation_command``,
     ``remediation_description`` — or ``None`` if no template matched.
 
+    When *platform* is provided (e.g. ``"postgresql_16"``), database/
+    network-device-specific templates are tried first via
+    :func:`match_db_template`.
+
     Supports cross-framework matching: STIG/NIST rules are normalised to
     extract underlying audit concepts (registry paths, policy settings, etc.)
     that the existing CIS templates can match.
     """
+    # --- Database / network-device templates (platform-specific) ---
+    if platform:
+        from backend.core.db_command_templates import match_db_template
+        db_result = match_db_template(rule, platform)
+        if db_result:
+            return db_result
+
+    # --- Family-based templates (Windows / Linux / Network) ---
     # Normalize platform_family: "Unix"→"linux", "Windows"→"windows", etc.
     pf = platform_family.lower() if platform_family else "linux"
     if pf in ("unix", "macos"):

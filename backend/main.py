@@ -5,7 +5,7 @@ import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -25,6 +25,10 @@ from backend.api.analyses import router as analyses_router
 from backend.api.ad_discovery import router as ad_discovery_router
 from backend.api.connect import router as connect_router
 from backend.api.copilot import router as copilot_router
+from backend.api.auth import router as auth_router
+from backend.api.trail import router as trail_router
+from backend.api.schedules import router as schedules_router
+from backend.api.notifications import router as notifications_router
 from backend.api.ws_agent import router as ws_agent_router
 from backend.config import settings
 from backend.core.exceptions import (
@@ -36,6 +40,7 @@ from backend.core.exceptions import (
     LLMError,
     ScanError,
 )
+from backend.core.auth import get_current_user
 from backend.database import init_db
 
 # Configure logging for auditforge loggers so Phase 2/AI messages are visible
@@ -108,7 +113,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 s.status = "failed"
                 s.error_message = "Interrupted by backend restart"
 
-            if stale or orphaned:
+            # Reset orphaned Sentinel runs stuck in "running"
+            from backend.models.sentinel_run import SentinelRun
+            from datetime import datetime, timezone
+            orphaned_runs = db.query(SentinelRun).filter(SentinelRun.status == "running").all()
+            for r in orphaned_runs:
+                logger.info("Resetting orphaned sentinel run %d to failed", r.id)
+                r.status = "failed"
+                r.completed_at = datetime.now(timezone.utc)
+
+            if stale or orphaned or orphaned_runs:
                 db.commit()
         finally:
             db.close()
@@ -185,10 +199,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     import asyncio as _asyncio
     from datetime import datetime, timezone
     from backend.database import SessionLocal
-    _asyncio.create_task(_session_expiry_loop())
-    _asyncio.create_task(_copilot_conversation_cleanup_loop())
+
+    _bg_tasks: list[_asyncio.Task] = []
+
+    async def _supervised(name: str, coro_factory, *args, restart_delay: float = 5.0):
+        """Run a coroutine with crash logging and auto-restart."""
+        while True:
+            try:
+                await coro_factory(*args)
+            except _asyncio.CancelledError:
+                logger.info("Background task '%s' cancelled", name)
+                return
+            except Exception as exc:
+                logger.error("Background task '%s' crashed: %s — restarting in %ds", name, exc, restart_delay)
+                await _asyncio.sleep(restart_delay)
+
+    _bg_tasks.append(_asyncio.create_task(_supervised("session_expiry", _session_expiry_loop)))
+    _bg_tasks.append(_asyncio.create_task(_supervised("copilot_cleanup", _copilot_conversation_cleanup_loop)))
+
+    # ── Start Forge Sentinel scheduler background loop ─────────────────
+    from backend.core.sentinel import sentinel_loop
+    _bg_tasks.append(_asyncio.create_task(_supervised("sentinel_loop", sentinel_loop, SessionLocal)))
 
     yield
+
+    # Shutdown — cancel all background tasks
+    for t in _bg_tasks:
+        t.cancel()
+    await _asyncio.gather(*_bg_tasks, return_exceptions=True)
+    logger.info("All background tasks stopped")
 
 
 app = FastAPI(
@@ -207,23 +246,31 @@ app.add_middleware(
 )
 
 # Include routers
+# ── Public routes (no JWT required) ──────────────────────────────────
+app.include_router(auth_router, prefix="/api")
 app.include_router(health_router, prefix="/api")
-app.include_router(clients_router, prefix="/api")
-app.include_router(missions_router, prefix="/api")
-app.include_router(targets_router, prefix="/api")
-app.include_router(settings_router, prefix="/api")
-app.include_router(benchmarks_router, prefix="/api")
-app.include_router(rules_router, prefix="/api")
-app.include_router(scans_router, prefix="/api")
-app.include_router(findings_router, prefix="/api")
-app.include_router(llm_router, prefix="/api")
-app.include_router(reports_router, prefix="/api")
-app.include_router(saved_reports_router, prefix="/api")
-app.include_router(analyses_router, prefix="/api")
-app.include_router(ad_discovery_router, prefix="/api")
-app.include_router(connect_router, prefix="/api")
-app.include_router(copilot_router, prefix="/api")
-app.include_router(ws_agent_router)  # WebSocket at /ws/agent/{token}, no /api prefix
+app.include_router(connect_router, prefix="/api")         # portal endpoints use enrollment codes
+app.include_router(ws_agent_router)                       # WebSocket at /ws/agent/{token}
+
+# ── Protected routes (require valid JWT) ─────────────────────────────
+_auth = [Depends(get_current_user)]
+app.include_router(trail_router, prefix="/api", dependencies=_auth)
+app.include_router(clients_router, prefix="/api", dependencies=_auth)
+app.include_router(missions_router, prefix="/api", dependencies=_auth)
+app.include_router(targets_router, prefix="/api", dependencies=_auth)
+app.include_router(settings_router, prefix="/api", dependencies=_auth)
+app.include_router(benchmarks_router, prefix="/api", dependencies=_auth)
+app.include_router(rules_router, prefix="/api", dependencies=_auth)
+app.include_router(scans_router, prefix="/api", dependencies=_auth)
+app.include_router(findings_router, prefix="/api", dependencies=_auth)
+app.include_router(llm_router, prefix="/api", dependencies=_auth)
+app.include_router(reports_router, prefix="/api", dependencies=_auth)
+app.include_router(saved_reports_router, prefix="/api", dependencies=_auth)
+app.include_router(analyses_router, prefix="/api", dependencies=_auth)
+app.include_router(ad_discovery_router, prefix="/api", dependencies=_auth)
+app.include_router(copilot_router, prefix="/api", dependencies=_auth)
+app.include_router(schedules_router, prefix="/api", dependencies=_auth)
+app.include_router(notifications_router, prefix="/api", dependencies=_auth)
 
 
 @app.exception_handler(AuditForgeError)

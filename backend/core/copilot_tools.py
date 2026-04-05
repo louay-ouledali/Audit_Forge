@@ -552,6 +552,7 @@ def list_rules_handler(
                 "id": r.id,
                 "section_number": r.section_number,
                 "title": r.title,
+                "description": r.description or "",
                 "severity": r.severity,
                 "pending_review": r.pending_review,
                 "has_command": r.id in rule_ids_with_cmds,
@@ -1363,6 +1364,216 @@ def inspect_commands_handler(
     }
 
 
+# ── Deep Quality Check ──────────────────────────────────────
+
+
+def deep_quality_check_handler(
+    db: Session,
+    benchmark_id: int,
+    *,
+    severity_filter: str | None = None,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Run full quality analysis: syntax, transport match, expression logic,
+    confidence scoring, completeness, and platform best-practice checks.
+
+    Returns a structured report with issues grouped by category, plus a
+    ``commands_sample`` with representative commands for LLM commentary.
+    """
+    from backend.core.command_validator import validate_command, Issue
+
+    bm = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    platform_family = bm.platform_family if bm else "unknown"
+    platform = (bm.platform or "").lower() if bm else ""
+
+    query = db.query(Rule).filter(Rule.benchmark_id == benchmark_id)
+    if severity_filter:
+        query = query.filter(Rule.severity == severity_filter)
+    rules = query.order_by(Rule.section_number).limit(limit).all()
+
+    rule_ids = [r.id for r in rules]
+    cmds = db.query(RuleCommand).filter(RuleCommand.rule_id.in_(rule_ids)).all() if rule_ids else []
+    cmds_map = {c.rule_id: c for c in cmds}
+
+    issues_list: list[dict[str, Any]] = []
+    low_confidence: list[dict[str, Any]] = []
+    review_suggestions: list[dict[str, Any]] = []
+    commands_sample: list[dict[str, Any]] = []
+    category_counts: dict[str, int] = {}
+    total_analyzed = 0
+    pass_count = 0
+    warning_count = 0
+    error_count = 0
+    missing_commands = 0
+
+    for rule in rules:
+        cmd = cmds_map.get(rule.id)
+        if not cmd or not cmd.audit_command:
+            missing_commands += 1
+            continue
+
+        total_analyzed += 1
+        transport = (cmd.command_transport or "shell").lower()
+        expression = cmd.expected_output_regex or ""
+        audit_cmd = cmd.audit_command
+        title_lower = (rule.title or "").lower()
+        rule_issues: list[Issue] = []
+
+        # Layer 1: Static validation (syntax, shell-mix, basic expression checks)
+        rule_issues.extend(validate_command(audit_cmd, transport, expression, rule.title))
+
+        # Layer 2: Transport/platform alignment
+        if platform_family in ("database",) and transport == "shell":
+            has_sql_keywords = any(k in audit_cmd.upper() for k in ("SELECT", "SHOW", "EXEC"))
+            if has_sql_keywords:
+                rule_issues.append(Issue("warning", "transport_mismatch",
+                                         "Command contains SQL keywords but uses shell transport"))
+
+        if platform_family == "windows" and transport == "shell":
+            if any(k in audit_cmd for k in ("grep ", "awk ", "/etc/", "/usr/")):
+                rule_issues.append(Issue("error", "platform_mismatch",
+                                         "Linux/Unix command on Windows platform"))
+        elif platform_family == "linux" and transport == "powershell":
+            rule_issues.append(Issue("error", "platform_mismatch",
+                                     "PowerShell transport on Linux platform"))
+
+        # Layer 3: Expression logic review
+        if expression:
+            # Tautology: expression always true (>=0 for numeric, contains: with empty)
+            if expression.strip() in (">=0", ">= 0", ">=0.0"):
+                rule_issues.append(Issue("warning", "expression_tautology",
+                                         f"Expression '{expression}' is always true for non-negative values"))
+            if expression.strip().startswith("contains:") and len(expression.strip()) <= len("contains:"):
+                rule_issues.append(Issue("error", "empty_expression",
+                                         "Empty 'contains:' value matches everything"))
+
+            # Inversion: title says "disabled/denied" but expression checks for "enabled/allowed"
+            disable_words = ("disable", "deny", "restrict", "prevent", "prohibit", "not allow")
+            enable_words = ("enable", "allow", "permit", "accept")
+            title_wants_off = any(w in title_lower for w in disable_words)
+            title_wants_on = any(w in title_lower for w in enable_words)
+
+            expr_lower = expression.lower()
+            if title_wants_off and any(f"equals:{w}" in expr_lower or f"contains:{w}" in expr_lower
+                                       for w in ("enabled", "yes", "true", "1", "allow", "permit", "on")):
+                rule_issues.append(Issue("warning", "logic_inversion",
+                                         f"Rule wants '{title_lower[:50]}' but expression checks for enabled/true"))
+            elif title_wants_on and any(f"equals:{w}" in expr_lower or f"contains:{w}" in expr_lower
+                                        for w in ("disabled", "no", "false", "0", "deny", "off")):
+                rule_issues.append(Issue("warning", "logic_inversion",
+                                         f"Rule wants '{title_lower[:50]}' but expression checks for disabled/false"))
+        else:
+            # No expression at all
+            rule_issues.append(Issue("warning", "missing_expression",
+                                     "No expected_output_regex defined — result cannot be evaluated"))
+
+        # Layer 4: Command completeness
+        if len(audit_cmd.strip()) < 5:
+            rule_issues.append(Issue("error", "stub_command",
+                                     f"Command too short to be valid: '{audit_cmd[:20]}'"))
+        if audit_cmd.strip().lower() in ("todo", "tbd", "manual", "n/a", "not implemented"):
+            rule_issues.append(Issue("error", "stub_command",
+                                     f"Placeholder command: '{audit_cmd[:30]}'"))
+
+        generic_expr = {".*", ".+", "^.*$", "^.+$", "equals:", "contains:"}
+        if expression.strip() in generic_expr:
+            rule_issues.append(Issue("warning", "generic_expression",
+                                     f"Expression '{expression}' is too generic — matches almost anything"))
+
+        # Layer 5: Platform best-practice checks
+        if platform_family == "linux" and transport == "shell":
+            # Commands should ideally use absolute paths
+            first_token = audit_cmd.strip().split()[0] if audit_cmd.strip() else ""
+            relative_tools = {"grep", "awk", "sed", "cat", "stat", "find", "systemctl",
+                              "sysctl", "mount", "df", "ss", "ip", "modprobe", "lsmod",
+                              "auditctl", "journalctl", "chkconfig", "ufw"}
+            if first_token in relative_tools:
+                review_suggestions.append({
+                    "rule_id": rule.id,
+                    "section_number": rule.section_number,
+                    "suggestion": f"Consider absolute path for '{first_token}' (e.g. /usr/bin/{first_token})",
+                })
+
+        # Confidence scoring
+        score = getattr(cmd, "confidence_score", None) or 0.5
+        if score < 0.7:
+            low_confidence.append({
+                "rule_id": rule.id,
+                "section_number": rule.section_number,
+                "title": rule.title,
+                "confidence_score": round(score, 2),
+                "source": getattr(cmd, "confidence_source", None) or "unknown",
+                "command_preview": audit_cmd[:80],
+            })
+
+        # Collect issues
+        if not rule_issues:
+            pass_count += 1
+        else:
+            for issue in rule_issues:
+                sev = issue.severity
+                if sev == "error":
+                    error_count += 1
+                else:
+                    warning_count += 1
+                category_counts[issue.category] = category_counts.get(issue.category, 0) + 1
+                issues_list.append({
+                    "rule_id": rule.id,
+                    "section_number": rule.section_number,
+                    "title": rule.title,
+                    "severity": sev,
+                    "category": issue.category,
+                    "message": issue.message,
+                    "command_preview": audit_cmd[:120],
+                    "expression": expression[:80] if expression else None,
+                    "confidence_score": getattr(cmd, "confidence_score", None),
+                })
+
+        # Sample commands for LLM commentary (pick a spread of issues/passing)
+        if len(commands_sample) < 10:
+            commands_sample.append({
+                "rule_id": rule.id,
+                "section_number": rule.section_number,
+                "title": rule.title[:80],
+                "audit_command": audit_cmd[:200],
+                "expected_output_regex": expression[:100] if expression else None,
+                "transport": transport,
+                "confidence": round(score, 2),
+                "issues_found": len(rule_issues),
+            })
+
+    # Build summary
+    low_conf_total = len(low_confidence)
+    parts = []
+    if error_count:
+        top_errors = sorted(category_counts.items(), key=lambda x: -x[1])[:3]
+        parts.append(f"{error_count} error(s)")
+        for cat, cnt in top_errors:
+            parts.append(f"{cnt} {cat.replace('_', ' ')}")
+    if warning_count:
+        parts.append(f"{warning_count} warning(s)")
+    if missing_commands:
+        parts.append(f"{missing_commands} rule(s) without commands")
+    if low_conf_total:
+        parts.append(f"{low_conf_total} low-confidence command(s) needing review")
+    summary = ". ".join(parts) if parts else f"All {pass_count} commands passed validation"
+
+    return {
+        "total_analyzed": total_analyzed,
+        "pass": pass_count,
+        "warnings": warning_count,
+        "errors": error_count,
+        "missing_commands": missing_commands,
+        "by_category": category_counts,
+        "issues": issues_list[:50],
+        "low_confidence": low_confidence[:20],
+        "low_confidence_total": low_conf_total,
+        "review_suggestions": review_suggestions[:15],
+        "commands_sample": commands_sample,
+        "summary": summary,
+    }
+
+
 # ── Build tool registry (all handlers are defined above) ──────
 
 COPILOT_TOOLS.update({
@@ -1503,5 +1714,10 @@ COPILOT_TOOLS.update({
     "inspect_commands": {
         "description": "Inspect rules with their full commands in a batch (no individual rule IDs needed)",
         "handler": inspect_commands_handler,
+    },
+    # ── Deep Quality Analysis ──
+    "deep_quality_check": {
+        "description": "Run full quality analysis on all commands: syntax, transport match, expression logic, confidence scores",
+        "handler": deep_quality_check_handler,
     },
 })

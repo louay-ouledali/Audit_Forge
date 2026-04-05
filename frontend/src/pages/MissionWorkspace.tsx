@@ -9,16 +9,19 @@ import {
   AlertTriangle,
   BarChart3,
   Calendar,
-  Bot,
   Activity,
   Server,
   Wifi,
+  Shield,
+  ScrollText,
+  Download,
 } from 'lucide-react';
 import type { Mission, Target, Client, ScanDetail } from '@/types';
 import * as api from '@/services/api';
 import { STATUS_STYLES, STATUS_LABELS, inputClass } from '@/components/mission/badgeHelpers';
 import { useNumericParam } from '@/hooks/useNumericParam';
 import { extractApiError } from '@/utils/apiError';
+import { formatDateTime } from '@/utils/time';
 
 /* ── Tab-level components ──────────────────────────────────── */
 import MissionOverview from '@/components/mission/MissionOverview';
@@ -28,9 +31,10 @@ import type { FindingsFilterState } from '@/components/mission/MissionFindings';
 import MissionReports from '@/components/mission/MissionReports';
 import TargetsTab from '@/components/targets/TargetsTab';
 import ConnectSessionManager from '@/components/connect/ConnectSessionManager';
+import SentinelTab from '@/components/sentinel/SentinelTab';
 
 /* ── Tab types ───────────────────────────────────────────────── */
-type MissionTab = 'overview' | 'targets' | 'connect' | 'findings' | 'reports';
+type MissionTab = 'overview' | 'targets' | 'connect' | 'findings' | 'sentinel' | 'reports';
 
 export default function MissionWorkspace() {
   const missionId = useNumericParam('id');
@@ -57,6 +61,26 @@ export default function MissionWorkspace() {
   const [showLockDialog, setShowLockDialog] = useState(false);
   const [lockAction, setLockAction] = useState<'lock' | 'unlock'>('lock');
   const [lockLoading, setLockLoading] = useState(false);
+
+  /* ── Trail log panel state ─────────────────────────────────── */
+  const [showTrailPanel, setShowTrailPanel] = useState(false);
+  const [trailLogs, setTrailLogs] = useState<any[]>([]);
+  const [trailLoading, setTrailLoading] = useState(false);
+  const [trailTotal, setTrailTotal] = useState(0);
+  const [trailSkip, setTrailSkip] = useState(0);
+  const TRAIL_PAGE_SIZE = 25;
+
+  const fetchTrailLogs = useCallback(async (skip = 0) => {
+    setTrailLoading(true);
+    try {
+      const result = await api.getMissionActivityLog(missionId, skip, TRAIL_PAGE_SIZE);
+      const data = result?.data ?? result ?? [];
+      setTrailLogs(skip === 0 ? data : (prev: any[]) => [...prev, ...data]);
+      setTrailTotal(result?.total ?? data.length);
+      setTrailSkip(skip + TRAIL_PAGE_SIZE);
+    } catch { /* silent */ }
+    setTrailLoading(false);
+  }, [missionId]);
 
   /* ── Fetch data ──────────────────────────────────────────── */
   const fetchData = useCallback(async () => {
@@ -199,6 +223,20 @@ export default function MissionWorkspace() {
                 {mission.is_locked ? 'Unlock' : 'Lock'}
               </button>
               <button
+                onClick={() => {
+                  if (!showTrailPanel) { fetchTrailLogs(0); }
+                  setShowTrailPanel(!showTrailPanel);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${showTrailPanel
+                  ? 'border-teal-500/30 bg-teal-500/10 text-teal-400'
+                  : 'border-dark-border bg-dark-elevated text-dark-secondary hover:text-white'
+                }`}
+                title="Mission Activity Log"
+              >
+                <ScrollText className="h-3.5 w-3.5" />
+                Trail
+              </button>
+              <button
                 onClick={() => navigate(`/missions/${missionId}/analysis`)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/20 bg-violet-500/5 px-2 py-1.5 text-xs font-medium text-dark-secondary hover:bg-violet-500/10 transition-colors"
               >
@@ -225,7 +263,100 @@ export default function MissionWorkspace() {
         </div>
       </div>
 
-      {/* Lock Dialog Modal */}
+      {/* Trail Log Panel */}
+      {showTrailPanel && (
+        <div className="rounded-xl border border-teal-500/20 bg-dark-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <ScrollText className="h-4 w-4 text-teal-400" />
+              <h3 className="text-sm font-semibold text-white">Mission Activity Log</h3>
+              <span className="text-[10px] text-dark-muted">Forge Trail</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    const blob = await api.exportTrailLogs(missionId, 'csv');
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `audit_trail_mission_${missionId}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch { /* silent */ }
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-teal-500/20 bg-teal-500/5 px-2 py-1 text-[11px] font-medium text-teal-400 hover:bg-teal-500/15 transition-colors"
+                title="Download raw logs as CSV"
+              >
+                <Download className="h-3 w-3" /> Export CSV
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const blob = await api.exportTrailLogs(missionId, 'json');
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `audit_trail_mission_${missionId}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch { /* silent */ }
+                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-teal-500/20 bg-teal-500/5 px-2 py-1 text-[11px] font-medium text-teal-400 hover:bg-teal-500/15 transition-colors"
+                title="Download raw logs as JSON"
+              >
+                <Download className="h-3 w-3" /> Export JSON
+              </button>
+              <button onClick={() => setShowTrailPanel(false)} className="text-dark-muted hover:text-white text-xs">Close</button>
+            </div>
+          </div>
+          {trailLogs.length === 0 && !trailLoading && (
+            <p className="text-xs text-dark-muted text-center py-4">No activity recorded yet.</p>
+          )}
+          {trailLogs.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-dark-border text-dark-muted uppercase tracking-wider">
+                    <th className="text-left px-2 py-1.5 font-semibold">Time</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">User</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">Action</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">Entity</th>
+                    <th className="text-left px-2 py-1.5 font-semibold">Label</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trailLogs.map((log: any) => (
+                    <tr key={log.id} className="border-b border-dark-border/30 hover:bg-dark-elevated/30">
+                      <td className="px-2 py-1.5 text-dark-muted whitespace-nowrap">
+                        {log.created_at ? formatDateTime(log.created_at) : '—'}
+                      </td>
+                      <td className="px-2 py-1.5 text-ey-yellow font-medium">{log.username}</td>
+                      <td className="px-2 py-1.5 text-dark-secondary">{(log.action || '').replace(/_/g, ' ')}</td>
+                      <td className="px-2 py-1.5 text-dark-secondary">{log.entity_type || '—'}</td>
+                      <td className="px-2 py-1.5 text-white">{log.entity_label || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {trailLogs.length < trailTotal && (
+            <div className="text-center mt-3">
+              <button
+                onClick={() => fetchTrailLogs(trailSkip)}
+                disabled={trailLoading}
+                className="text-xs text-teal-400 hover:text-teal-300 font-medium disabled:opacity-50"
+              >
+                {trailLoading ? 'Loading...' : `Load more (${trailLogs.length} of ${trailTotal})`}
+              </button>
+            </div>
+          )}
+          {trailLoading && trailLogs.length === 0 && (
+            <p className="text-xs text-dark-muted text-center py-4">Loading...</p>
+          )}
+        </div>
+      )}
       {showLockDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowLockDialog(false)}>
           <div
@@ -294,6 +425,7 @@ export default function MissionWorkspace() {
           { key: 'targets' as const, label: 'Targets', icon: Server, count: missionTargets.length },
           { key: 'connect' as const, label: 'Forge Connect', icon: Wifi },
           { key: 'findings' as const, label: 'Findings', icon: AlertTriangle, count: findingsCount || undefined },
+          { key: 'sentinel' as const, label: 'Forge Sentinel', icon: Shield },
           { key: 'reports' as const, label: 'Reports', icon: BarChart3 },
         ]).map(tab => (
           <button
@@ -362,6 +494,14 @@ export default function MissionWorkspace() {
           filterState={findingsFilter}
           onFilterChange={setFindingsFilter}
           onTotalCount={setFindingsCount}
+        />
+      )}
+
+      {activeTab === 'sentinel' && (
+        <SentinelTab
+          missionId={missionId}
+          missionTargets={missionTargets}
+          isLocked={!!mission.is_locked}
         />
       )}
 

@@ -190,6 +190,19 @@ def _check_syntax(audit_command: str | None) -> dict:
         if re.search(pattern, stripped):
             return {"result": "fail", "message": f"Command contains placeholder: {pattern}"}
 
+    # Check for known-unbound environment variables
+    _KNOWN_UNBOUND = {
+        "CATALINA_HOME", "CATALINA_BASE", "APACHE_PREFIX", "HTTPD_ROOT",
+        "BIND_HOME", "BIND_DIR", "NAMED_DIR", "FWDIR", "CPDIR",
+        "RUNDIR", "DYNDIR", "SLAVEDIR", "DATADIR", "LOGDIR", "DOCROOT",
+    }
+    for m in re.finditer(r'\$\{?([A-Z][A-Z_0-9]{2,})\}?', stripped):
+        var = m.group(1)
+        if var in _KNOWN_UNBOUND:
+            # Check if the variable is defined earlier in the same command
+            if not re.search(rf'\b{re.escape(var)}=', stripped[:m.start()]):
+                return {"result": "fail", "message": f"Unbound environment variable: ${var}"}
+
     return {"result": "pass", "message": "Syntax OK"}
 
 
@@ -355,6 +368,64 @@ def _check_regex_quality(regex_str: str) -> str | None:
     return None
 
 
+def _check_semantic_quality(audit_command: str | None, expected_regex: str | None,
+                            command_transport: str | None, platform_family: str) -> dict:
+    """Level 4: Semantic quality check. Catches higher-level quality issues.
+
+    Returns {result: str, message: str, details: list[str]}.
+    """
+    details: list[str] = []
+
+    if not audit_command:
+        return {"result": "skip", "message": "No command to check", "details": []}
+
+    cmd = audit_command.strip()
+    transport = (command_transport or "").lower()
+
+    # 1. Transport-content mismatch: SQL commands with shell pipes
+    if transport == "sql":
+        shell_pipe_re = re.compile(r"\|\s*(?:grep|awk|sed|wc|cut|sort|head|tail|tr|uniq)\b")
+        if shell_pipe_re.search(cmd):
+            m = shell_pipe_re.search(cmd)
+            details.append(f"SQL transport has shell pipe '{m.group(0).strip()}' — DB connector will error")
+
+    # 2. CLI transport with shell builtins
+    if transport == "cli":
+        for builtin in ("echo ", "cat ", "grep ", "awk ", "printf "):
+            if cmd.lower().startswith(builtin):
+                details.append(f"CLI transport starts with shell builtin '{builtin.strip()}'")
+                break
+
+    # 3. Tautological expressions
+    if expected_regex:
+        expr = expected_regex.strip()
+        if expr == ">=0":
+            details.append("Tautological expression: >=0 always passes for non-negative output")
+        if expr.startswith("contains:") and not expr[len("contains:"):].strip():
+            details.append("Empty contains: value — matches any non-empty output")
+
+    # 4. Stub on scored: echo/Write-Output with manual-check content
+    cmd_lower = cmd.lower()
+    stub_prefixes = ("echo ", "write-output ", "write-host ")
+    manual_keywords = ("manual", "not-auditable", "not auditable", "physical inspection",
+                       "requires manual", "cannot be automated")
+    for prefix in stub_prefixes:
+        if cmd_lower.startswith(prefix):
+            for kw in manual_keywords:
+                if kw in cmd_lower:
+                    details.append(f"Stub command '{prefix.strip()} ...{kw}...' — always passes")
+                    break
+            break
+
+    if details:
+        return {
+            "result": "warn",
+            "message": f"Semantic quality issues: {len(details)} found",
+            "details": details,
+        }
+    return {"result": "pass", "message": "Semantic quality OK", "details": []}
+
+
 def verify_command_full(cmd: RuleCommand, platform_family: str, db: Session) -> dict:
     """Run full three-tier verification on a single command and create reports.
 
@@ -401,6 +472,21 @@ def verify_command_full(cmd: RuleCommand, platform_family: str, db: Session) -> 
         run_at=now,
     ))
 
+    # Level 4: Semantic quality
+    semantic = _check_semantic_quality(
+        cmd.audit_command, cmd.expected_output_regex,
+        cmd.command_transport, platform_family,
+    )
+    db.add(VerificationReport(
+        rule_command_id=cmd.id,
+        level="semantic_quality",
+        result=semantic["result"],
+        message=semantic["message"],
+        details=json.dumps(semantic.get("details", [])),
+        auto_fixable=False,
+        run_at=now,
+    ))
+
     # Regex validation — empty regex is acceptable (not every rule needs one)
     regex_result = verify_regex(cmd.expected_output_regex)
     regex_is_empty = not cmd.expected_output_regex or not cmd.expected_output_regex.strip()
@@ -431,6 +517,7 @@ def verify_command_full(cmd: RuleCommand, platform_family: str, db: Session) -> 
         "syntax": syntax,
         "safety": safety,
         "cross_reference": cross_ref,
+        "semantic_quality": semantic,
         "regex": regex_check,
     }
 
@@ -488,7 +575,7 @@ async def run_verification(benchmark_id: int) -> None:
                 cmd.status = "flagged"
                 cmd.flagged_at = now
                 issues = []
-                for level in ("syntax", "safety", "cross_reference", "regex"):
+                for level in ("syntax", "safety", "cross_reference", "semantic_quality", "regex"):
                     check = result[level]
                     if check["result"] == "fail":
                         issues.append(check["message"])

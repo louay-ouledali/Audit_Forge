@@ -17,16 +17,28 @@ depends_on = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+
     # Benchmark: Phase 3 status tracking
-    op.add_column('benchmarks', sa.Column('phase3_status', sa.String(), nullable=True))
-    op.add_column('benchmarks', sa.Column('phase3_stats', sa.Text(), nullable=True))
+    bench_cols = {c["name"] for c in inspector.get_columns("benchmarks")}
+    if "phase3_status" not in bench_cols:
+        op.add_column('benchmarks', sa.Column('phase3_status', sa.String(), nullable=True))
+    if "phase3_stats" not in bench_cols:
+        op.add_column('benchmarks', sa.Column('phase3_stats', sa.Text(), nullable=True))
 
     # RuleCommand: Per-rule validation results
-    op.add_column('rule_commands', sa.Column('validation_status', sa.String(), nullable=True))
-    op.add_column('rule_commands', sa.Column('validation_confidence', sa.String(), nullable=True))
-    op.add_column('rule_commands', sa.Column('validation_corrections', sa.Text(), nullable=True))
-    op.add_column('rule_commands', sa.Column('validation_notes', sa.Text(), nullable=True))
-    op.add_column('rule_commands', sa.Column('validated_at', sa.DateTime(), nullable=True))
+    rc_cols = {c["name"] for c in inspector.get_columns("rule_commands")}
+    if "validation_status" not in rc_cols:
+        op.add_column('rule_commands', sa.Column('validation_status', sa.String(), nullable=True))
+    if "validation_confidence" not in rc_cols:
+        op.add_column('rule_commands', sa.Column('validation_confidence', sa.String(), nullable=True))
+    if "validation_corrections" not in rc_cols:
+        op.add_column('rule_commands', sa.Column('validation_corrections', sa.Text(), nullable=True))
+    if "validation_notes" not in rc_cols:
+        op.add_column('rule_commands', sa.Column('validation_notes', sa.Text(), nullable=True))
+    if "validated_at" not in rc_cols:
+        op.add_column('rule_commands', sa.Column('validated_at', sa.DateTime(), nullable=True))
 
 
 def downgrade() -> None:

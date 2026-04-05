@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -38,6 +38,10 @@ class RuleCommand(Base):
     regeneration_count = Column(Integer, default=0)
     last_regenerated_at = Column(DateTime)
     previous_commands = Column(Text)
+
+    # Quality tracking
+    confidence_score = Column(Float, nullable=True, default=0.5)
+    confidence_source = Column(String, nullable=True)  # template, llm_generated, llm_validated, self_healed, calibrated, user_verified, curated
 
     # Phase 3: LLM validation results (optional)
     validation_status = Column(String)  # null=not validated, validated/corrected/flagged

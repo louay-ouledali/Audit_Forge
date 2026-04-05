@@ -13,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.core.auth import get_current_user
 from backend.models.connect_agent import ConnectAgent
 from backend.models.connect_session import ConnectSession
 from backend.models.client import Client
@@ -106,7 +107,7 @@ def _get_valid_session(
 # ── Session CRUD ──────────────────────────────────────────────────
 
 @router.post("/sessions", response_model=dict)
-async def create_session(payload: ConnectSessionCreate, db: Session = Depends(get_db)):
+async def create_session(payload: ConnectSessionCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
     """Create a new AuditForge Connect enrollment session."""
     client = db.query(Client).filter(Client.id == payload.client_id).first()
     if not client:
@@ -141,6 +142,7 @@ async def list_sessions(
     client_id: int | None = None,
     mission_id: int | None = None,
     db: Session = Depends(get_db),
+    _=Depends(get_current_user),
 ):
     """List active connect sessions."""
     q = db.query(ConnectSession)
@@ -153,7 +155,7 @@ async def list_sessions(
 
 
 @router.get("/sessions/{session_id}", response_model=dict)
-async def get_session(session_id: int, db: Session = Depends(get_db)):
+async def get_session(session_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
     """Get connect session details with agents."""
     session = _get_valid_session(db, session_id=session_id)
     if not session:
@@ -162,7 +164,7 @@ async def get_session(session_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/sessions/{session_id}")
-async def terminate_session(session_id: int, db: Session = Depends(get_db)):
+async def terminate_session(session_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
     """Terminate a connect session and disconnect all agents."""
     session = db.query(ConnectSession).filter(ConnectSession.id == session_id).first()
     if not session:
@@ -281,7 +283,7 @@ async def get_agent_script(
 # ── Agent listing ─────────────────────────────────────────────────
 
 @router.get("/sessions/{session_id}/agents", response_model=dict)
-async def list_agents(session_id: int, db: Session = Depends(get_db)):
+async def list_agents(session_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
     """List agents for a connect session, including live status."""
     session = db.query(ConnectSession).filter(ConnectSession.id == session_id).first()
     if not session:
@@ -308,7 +310,7 @@ async def list_agents(session_id: int, db: Session = Depends(get_db)):
 
 @router.post("/sessions/{session_id}/scan", response_model=dict)
 async def start_agent_scan(
-    session_id: int, payload: AgentScanRequest, db: Session = Depends(get_db)
+    session_id: int, payload: AgentScanRequest, db: Session = Depends(get_db), _=Depends(get_current_user)
 ):
     """Start scanning connected agents via their WebSocket channels."""
     session = _get_valid_session(db, session_id=session_id)

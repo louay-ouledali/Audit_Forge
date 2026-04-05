@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils';
-import { Hexagon, Network, Compass, Aperture } from 'lucide-react';
+import { Hexagon, Network, Compass, Aperture, Shield, ScrollText, Bell, Lightbulb, Terminal } from 'lucide-react';
 
-type SubService = 'lens' | 'connect' | 'discovery' | 'copilot';
+type SubService = 'lens' | 'connect' | 'discovery' | 'copilot' | 'gatekeeper' | 'trail' | 'sentinel' | 'insights' | 'cli';
 type Size = 'sm' | 'md' | 'lg' | 'xl';
 
 interface BrandLockupProps {
@@ -39,14 +39,49 @@ const CONFIG = {
     bgClasses: 'bg-ey-yellow/10 border-ey-yellow/20 text-ey-yellow',
     iconShadow: 'drop-shadow-[0_0_8px_rgba(255,230,0,0.5)]',
     textGradient: 'from-ey-yellow to-amber-200'
+  },
+  gatekeeper: {
+    name: 'Forge Gatekeeper',
+    icon: Shield,
+    bgClasses: 'bg-ey-yellow/10 border-ey-yellow/20 text-ey-yellow',
+    iconShadow: 'drop-shadow-[0_0_8px_rgba(255,230,0,0.5)]',
+    textGradient: 'from-ey-yellow to-amber-200'
+  },
+  trail: {
+    name: 'Forge Trail',
+    icon: ScrollText,
+    bgClasses: 'bg-ey-yellow/10 border-ey-yellow/20 text-ey-yellow',
+    iconShadow: 'drop-shadow-[0_0_8px_rgba(255,230,0,0.5)]',
+    textGradient: 'from-ey-yellow to-amber-200'
+  },
+  sentinel: {
+    name: 'Forge Sentinel',
+    icon: Bell,
+    bgClasses: 'bg-ey-yellow/10 border-ey-yellow/20 text-ey-yellow',
+    iconShadow: 'drop-shadow-[0_0_8px_rgba(255,230,0,0.5)]',
+    textGradient: 'from-ey-yellow to-amber-200'
+  },
+  insights: {
+    name: 'Forge Insights',
+    icon: Lightbulb,
+    bgClasses: 'bg-ey-yellow/10 border-ey-yellow/20 text-ey-yellow',
+    iconShadow: 'drop-shadow-[0_0_8px_rgba(255,230,0,0.5)]',
+    textGradient: 'from-ey-yellow to-amber-200'
+  },
+  cli: {
+    name: 'Forge CLI',
+    icon: Terminal,
+    bgClasses: 'bg-ey-yellow/10 border-ey-yellow/20 text-ey-yellow',
+    iconShadow: 'drop-shadow-[0_0_8px_rgba(255,230,0,0.5)]',
+    textGradient: 'from-ey-yellow to-amber-200'
   }
 };
 
 const SIZES = {
-  sm: { iconBox: 'h-6 w-6 rounded-md', icon: 'h-3.5 w-3.5', text: 'text-xs' },  
-  md: { iconBox: 'h-8 w-8 rounded-lg', icon: 'h-4 w-4', text: 'text-sm' },      
-  lg: { iconBox: 'h-10 w-10 rounded-xl', icon: 'h-5 w-5', text: 'text-base' },  
-  xl: { iconBox: 'h-14 w-14 rounded-2xl', icon: 'h-7 w-7', text: 'text-2xl' }   
+  sm: { iconBox: 'h-6 w-6 rounded-md', icon: 'h-3.5 w-3.5', text: 'text-xs' },
+  md: { iconBox: 'h-8 w-8 rounded-lg', icon: 'h-4 w-4', text: 'text-sm' },
+  lg: { iconBox: 'h-10 w-10 rounded-xl', icon: 'h-5 w-5', text: 'text-base' },
+  xl: { iconBox: 'h-14 w-14 rounded-2xl', icon: 'h-7 w-7', text: 'text-2xl' }
 };
 
 export default function BrandLockup({ service, size = 'md', className, hideText = false }: BrandLockupProps) {

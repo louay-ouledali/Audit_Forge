@@ -1,7 +1,9 @@
-import { useState } from 'react';
-import { Server, Calendar, Flag, Activity, Play, CheckCircle2, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Server, Calendar, Flag, Activity, Play, CheckCircle2, ChevronDown, ScrollText, Target as TargetIcon, Scan, Lock, Unlock, FileWarning, FileOutput, User } from 'lucide-react';
 import type { ScanDetail, Target, Mission } from '@/types';
 import { scanStatusBadge } from './badgeHelpers';
+import { getMissionRecentActivity, type AuditLogEntry } from '@/services/api';
+import { formatTimeAgo as formatTimeAgoUtil } from '@/utils/time';
 
 interface Props {
   mission: Mission;
@@ -12,6 +14,23 @@ interface Props {
 
 export default function MissionOverview({ mission, scans, missionTargets, onScanClick }: Props) {
   const [showAllTimeline, setShowAllTimeline] = useState(false);
+  const [activity, setActivity] = useState<AuditLogEntry[]>([]);
+
+  useEffect(() => {
+    getMissionRecentActivity(mission.id).then(setActivity).catch(() => {});
+  }, [mission.id, scans.length]);
+
+  const actionMeta: Record<string, { icon: React.ElementType; label: string; color: string }> = {
+    scan_started:       { icon: Scan,        label: 'started a scan',      color: 'text-sky-400' },
+    scan_cancelled:     { icon: Scan,        label: 'cancelled a scan',    color: 'text-amber-400' },
+    target_assigned:    { icon: TargetIcon,  label: 'assigned a target',   color: 'text-emerald-400' },
+    target_unassigned:  { icon: TargetIcon,  label: 'unassigned a target', color: 'text-red-400' },
+    mission_locked:     { icon: Lock,        label: 'locked the mission',  color: 'text-amber-400' },
+    mission_unlocked:   { icon: Unlock,      label: 'unlocked the mission',color: 'text-emerald-400' },
+    finding_overridden: { icon: FileWarning, label: 'overrode a finding',  color: 'text-violet-400' },
+    report_generated:   { icon: FileOutput,  label: 'generated a report',  color: 'text-ey-yellow' },
+  };
+
   // Sort scans chronologically by creation or start time
   const sortedScans = [...scans].sort((a, b) => {
     const timeA = new Date(a.started_at || a.created_at || 0).getTime();
@@ -186,6 +205,40 @@ export default function MissionOverview({ mission, scans, missionTargets, onScan
             </div>
           )}
         </div>
+      </div>
+
+      {/* Forge Trail — Activity Feed */}
+      <div className="rounded-xl border border-dark-border bg-dark-card p-5">
+        <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white uppercase tracking-wider">
+          <ScrollText className="h-4 w-4 text-teal-400" /> Recent Activity
+          <span className="ml-auto text-[10px] font-medium text-dark-muted normal-case tracking-normal">Forge Trail</span>
+        </h3>
+        {activity.length > 0 ? (
+          <div className="space-y-1">
+            {activity.map((entry) => {
+              const meta = actionMeta[entry.action] || { icon: Activity, label: entry.action.replace(/_/g, ' '), color: 'text-dark-secondary' };
+              const Icon = meta.icon;
+              const timeAgo = entry.created_at ? formatTimeAgoUtil(entry.created_at) : '';
+              return (
+                <div key={entry.id} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-dark-elevated/30 transition-colors">
+                  <div className={`h-7 w-7 rounded-lg bg-dark-elevated flex items-center justify-center shrink-0`}>
+                    <Icon className={`h-3.5 w-3.5 ${meta.color}`} />
+                  </div>
+                  <div className="flex-1 min-w-0 text-sm">
+                    <span className="font-medium text-ey-yellow">{entry.username}</span>
+                    <span className="text-dark-secondary"> {meta.label}</span>
+                    {entry.entity_label && (
+                      <span className="text-white font-medium"> — {entry.entity_label}</span>
+                    )}
+                  </div>
+                  <span className="text-[11px] text-dark-muted shrink-0">{timeAgo}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-dark-muted text-center py-4">No activity recorded yet.</p>
+        )}
       </div>
     </div>
   );

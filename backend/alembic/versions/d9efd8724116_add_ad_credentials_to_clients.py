@@ -20,12 +20,20 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.add_column('clients', sa.Column('ad_domain', sa.String(), nullable=True))
-    op.add_column('clients', sa.Column('ad_dc_host', sa.String(), nullable=True))
-    op.add_column('clients', sa.Column('ad_username', sa.String(), nullable=True))
-    op.add_column('clients', sa.Column('ad_password_encrypted', sa.Text(), nullable=True))
-    op.add_column('clients', sa.Column('ad_use_ssl', sa.Integer(), nullable=True))
-    op.add_column('clients', sa.Column('ad_base_ou', sa.String(), nullable=True))
+    conn = op.get_bind()
+    columns = {c["name"] for c in sa.inspect(conn).get_columns("clients")}
+    if "ad_domain" not in columns:
+        op.add_column('clients', sa.Column('ad_domain', sa.String(), nullable=True))
+    if "ad_dc_host" not in columns:
+        op.add_column('clients', sa.Column('ad_dc_host', sa.String(), nullable=True))
+    if "ad_username" not in columns:
+        op.add_column('clients', sa.Column('ad_username', sa.String(), nullable=True))
+    if "ad_password_encrypted" not in columns:
+        op.add_column('clients', sa.Column('ad_password_encrypted', sa.Text(), nullable=True))
+    if "ad_use_ssl" not in columns:
+        op.add_column('clients', sa.Column('ad_use_ssl', sa.Integer(), nullable=True))
+    if "ad_base_ou" not in columns:
+        op.add_column('clients', sa.Column('ad_base_ou', sa.String(), nullable=True))
 
 
 def downgrade() -> None:

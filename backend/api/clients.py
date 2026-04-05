@@ -16,6 +16,9 @@ from backend.schemas.client import (
     ClientUpdate,
 )
 from backend.utils.encryption import encrypt_value
+from backend.core.trail import log_action
+from backend.core.auth import get_current_user
+from backend.models.user import User
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -61,7 +64,7 @@ def list_clients(
 
 
 @router.post("", response_model=ClientDetailEnvelope, status_code=201)
-def create_client(payload: ClientCreate, db: Session = Depends(get_db)) -> dict:
+def create_client(payload: ClientCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict:
     data = payload.model_dump(exclude={"ad_password"})
     # Encrypt AD password if provided
     if payload.ad_password:
@@ -73,6 +76,8 @@ def create_client(payload: ClientCreate, db: Session = Depends(get_db)) -> dict:
     db.add(client)
     db.commit()
     db.refresh(client)
+    log_action(db, user=current_user, action="client_created", entity_type="client", entity_id=client.id, entity_label=client.name)
+    db.commit()
     return {"data": _build_response(client, 0), "message": "Client created"}
 
 
@@ -85,7 +90,7 @@ def get_client(client_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.put("/{client_id}", response_model=ClientDetailEnvelope)
-def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(get_db)) -> dict:
+def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict:
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -101,16 +106,19 @@ def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(g
         updates["ad_use_ssl"] = 1 if updates["ad_use_ssl"] else 0
     for field, value in updates.items():
         setattr(client, field, value)
+    log_action(db, user=current_user, action="client_updated", entity_type="client", entity_id=client_id, entity_label=client.name)
     db.commit()
     db.refresh(client)
     return {"data": _build_response(client, _client_mission_count(db, client_id)), "message": "Client updated"}
 
 
 @router.delete("/{client_id}")
-def delete_client(client_id: int, db: Session = Depends(get_db)) -> dict:
+def delete_client(client_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict:
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
+    client_name = client.name
     db.delete(client)
+    log_action(db, user=current_user, action="client_deleted", entity_type="client", entity_id=client_id, entity_label=client_name)
     db.commit()
     return {"data": None, "message": "Client deleted"}

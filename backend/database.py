@@ -18,14 +18,21 @@ engine = create_engine(
 )
 
 # Enable WAL mode for SQLite (better concurrent read/write performance)
+# NOTE: WAL requires mmap which fails on Windows→Docker bind mounts,
+# so fall back to DELETE journal mode when WAL activation fails.
 if settings.resolved_database_url.startswith("sqlite"):
     from sqlalchemy import event as _sa_event
 
     @_sa_event.listens_for(engine, "connect")
     def _set_sqlite_wal(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+        except Exception:
+            # Fallback for environments where WAL is unsupported (e.g. Docker bind mounts)
+            cursor.execute("PRAGMA journal_mode=DELETE")
+            cursor.execute("PRAGMA synchronous=FULL")
         cursor.close()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

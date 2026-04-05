@@ -187,10 +187,12 @@ async def generate_commands_for_batch(
     llm_needed: list[tuple[int, dict[str, Any]]] = []  # (original_index, rule)
 
     for idx, rule in enumerate(rules_batch):
-        tmpl = match_template(rule, platform_family)
+        tmpl = match_template(rule, platform_family, platform=platform)
         if tmpl:
             tmpl["section_number"] = rule.get("section_number", "")
             tmpl["_source"] = "template"
+            tmpl["_confidence_score"] = 0.85
+            tmpl["_confidence_source"] = "template"
             all_results[idx] = tmpl
             logger.info(
                 "Template matched for %s: %s",
@@ -304,6 +306,18 @@ def _post_process_llm_result(result: dict) -> dict:
         if transport:
             result["command_transport"] = transport
 
+        # Strip shell pipes from SQL transport commands (LLM sometimes appends | grep)
+        effective_transport = result.get("command_transport", "")
+        if effective_transport == "sql" and re.search(r"\|\s*(?:grep|awk|sed|wc|cut|sort|head|tail|tr)\b", cmd):
+            pipe_pos = cmd.find("|")
+            if pipe_pos > 0:
+                cleaned = cmd[:pipe_pos].rstrip().rstrip(";").rstrip('"').rstrip("'")
+                logger.warning(
+                    "Stripped shell pipe from SQL command for %s: ...%s",
+                    result.get("section_number", "?"), cmd[pipe_pos:pipe_pos+40],
+                )
+                cmd = cleaned
+
         # --- Fix commands that test compliance instead of retrieving values ---
         cmd = _fix_compliance_testing_command(cmd)
         cmd = _sanitize_command(cmd)
@@ -325,6 +339,11 @@ def _post_process_llm_result(result: dict) -> dict:
                 "Cleared bad LLM expression for %s: %s",
                 result.get("section_number", "?"), error,
             )
+
+    # --- Confidence tracking for LLM-generated commands ---
+    if "_confidence_score" not in result:
+        result["_confidence_score"] = 0.50
+        result["_confidence_source"] = "llm_generated"
 
     return result
 
@@ -581,6 +600,15 @@ def _sanitize_command(cmd: str) -> str:
         if len(pattern_text) > 150:
             logger.warning("Rejected grep with excessively long pattern (%d chars): %s",
                           len(pattern_text), cmd[:100])
+            return ""
+
+    # ── 7. Reject echo/Write-Output stub commands ──
+    cmd_lower = cmd.lower().strip()
+    _STUB_KEYWORDS = ("manual", "not-auditable", "not auditable", "physical inspection",
+                      "requires manual", "cannot be automated", "manual verification")
+    if cmd_lower.startswith(("echo ", "write-output ", "write-host ")):
+        if any(kw in cmd_lower for kw in _STUB_KEYWORDS):
+            logger.warning("Rejected stub/manual-check command: %s", cmd[:80])
             return ""
 
     if cmd != original:

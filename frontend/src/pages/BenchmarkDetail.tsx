@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Shield, Pencil, GitCompare, Database, MoreHorizontal } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ArrowLeft, Play, Pause, ShieldOff, Search, ChevronDown, ChevronUp, AlertCircle, CheckCircle2, Flag, RefreshCw, Lock, Unlock, History, ShieldCheck, CheckCheck, AlertTriangle, Download, Upload, Sparkles, Check, X, Plus, Trash2, Zap, Activity, BarChart3, Pencil, GitCompare, Database, MoreHorizontal } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { Benchmark, Rule, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, RuleCommand, CommandHistoryEntry, VerificationReport, AIRuleCreateResponse, MigrationReadiness, BenchmarkVersionItem, VersionDiffResponse, CacheAccelerationStats } from '@/types';
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';

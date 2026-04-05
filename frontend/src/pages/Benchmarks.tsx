@@ -279,13 +279,12 @@ function BenchmarkRow({ benchmark, onNavigate, onDelete }: { benchmark: CatalogB
             <span className="shrink-0 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">Custom</span>
           )}
           {benchmark.framework && benchmark.framework !== 'cis' && (
-            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-              benchmark.framework === 'stig' ? 'bg-amber-500/15 text-amber-300' :
-              benchmark.framework === 'nist' ? 'bg-green-500/15 text-green-300' :
-              benchmark.framework === 'iso' ? 'bg-purple-500/15 text-purple-300' :
-              benchmark.framework === 'disa' ? 'bg-orange-500/15 text-orange-300' :
-              'bg-gray-500/15 text-gray-300'
-            }`}>{benchmark.framework}</span>
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${benchmark.framework === 'stig' ? 'bg-amber-500/15 text-amber-300' :
+                benchmark.framework === 'nist' ? 'bg-green-500/15 text-green-300' :
+                  benchmark.framework === 'iso' ? 'bg-purple-500/15 text-purple-300' :
+                    benchmark.framework === 'disa' ? 'bg-orange-500/15 text-orange-300' :
+                      'bg-gray-500/15 text-gray-300'
+              }`}>{benchmark.framework}</span>
           )}
         </div>
         <div className="mt-1 flex items-center gap-3 text-xs text-dark-secondary">
@@ -550,36 +549,36 @@ export default function Benchmarks() {
 
   return (
     <div className="space-y-6">
-        {/* ── Branded Header: Benchmark Studio ── */}
-        <div className="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-dark-card/60 p-8 shadow-[0_0_40px_rgba(139,92,246,0.05)] backdrop-blur-md">
-          {/* Subtle violet knowledge node motif */}
-          <div className="absolute top-0 right-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-violet-600/10 blur-[80px] pointer-events-none" />
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9InJnYmEoMTM5LCA5MiwgMjQ2LCAwLjE1KSIvPjwvc3ZnPg==')] pointer-events-none mask-image:linear-gradient(to_bottom,white,transparent)" />
-          
-          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="flex flex-row items-center gap-5">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 border border-violet-500/20 shadow-[0_0_20px_rgba(139,92,246,0.15)]">
-                <Database className="h-7 w-7 text-violet-400" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-white tracking-tight">Benchmark Studio</h1>
-                <p className="mt-1 text-sm text-dark-secondary max-w-md">Import, enrich, and manage security frameworks and knowledge bases</p>
-              </div>
+      {/* ── Branded Header: Benchmark Studio ── */}
+      <div className="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-dark-card/60 p-8 shadow-[0_0_40px_rgba(139,92,246,0.05)] backdrop-blur-md">
+        {/* Subtle violet knowledge node motif */}
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-violet-600/10 blur-[80px] pointer-events-none" />
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMiIgY3k9IjIiIHI9IjEiIGZpbGw9InJnYmEoMTM5LCA5MiwgMjQ2LCAwLjE1KSIvPjwvc3ZnPg==')] pointer-events-none mask-image:linear-gradient(to_bottom,white,transparent)" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="flex flex-row items-center gap-5">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-500/10 border border-violet-500/20 shadow-[0_0_20px_rgba(139,92,246,0.15)]">
+              <Database className="h-7 w-7 text-violet-400" />
             </div>
-            <div className="flex flex-wrap gap-3">
-              <button onClick={fetchCatalog} className="h-10 rounded-xl border border-dark-border bg-dark-card/80 px-4 py-2 text-sm text-dark-secondary hover:border-violet-500/30 hover:bg-violet-500/5 hover:text-violet-300 transition-all shadow-sm">
-                <RefreshCw className="h-4 w-4" />
-              </button>
-              <button onClick={() => setShowCreateDialog(true)}
-                className="h-10 inline-flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-5 py-2 text-sm font-medium text-violet-300 hover:bg-violet-500/20 transition-all shadow-sm">
-                <Plus className="h-4 w-4" /> Custom Base
-              </button>
-              <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                className="h-10 inline-flex items-center gap-2 rounded-xl bg-ey-yellow px-5 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-all shadow-[0_0_15px_rgba(255,230,0,0.2)] hover:shadow-[0_0_20px_rgba(255,230,0,0.3)]">
-                <Upload className="h-4 w-4" /> {uploading ? 'Importing...' : 'Import Framework'}
-              </button>
-              <input ref={fileRef} type="file" accept=".pdf,.csv,.html,.htm,.json,.nessus,.xml" className="hidden" onChange={handleUpload} />
+            <div>
+              <h1 className="text-3xl font-bold text-white tracking-tight">Benchmark Studio</h1>
+              <p className="mt-1 text-sm text-dark-secondary max-w-md">Import, enrich, and manage security frameworks and knowledge bases</p>
             </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button onClick={fetchCatalog} className="h-10 rounded-xl border border-dark-border bg-dark-card/80 px-4 py-2 text-sm text-dark-secondary hover:border-violet-500/30 hover:bg-violet-500/5 hover:text-violet-300 transition-all shadow-sm">
+              <RefreshCw className="h-4 w-4" />
+            </button>
+            <button onClick={() => setShowCreateDialog(true)}
+              className="h-10 inline-flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-5 py-2 text-sm font-medium text-violet-300 hover:bg-violet-500/20 transition-all shadow-sm">
+              <Plus className="h-4 w-4" /> Custom Base
+            </button>
+            <button onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="h-10 inline-flex items-center gap-2 rounded-xl bg-ey-yellow px-5 py-2 text-sm font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50 transition-all shadow-[0_0_15px_rgba(255,230,0,0.2)] hover:shadow-[0_0_20px_rgba(255,230,0,0.3)]">
+              <Upload className="h-4 w-4" /> {uploading ? 'Importing...' : 'Import Framework'}
+            </button>
+            <input ref={fileRef} type="file" accept=".pdf,.csv,.html,.htm,.json,.nessus,.xml" className="hidden" onChange={handleUpload} />
+          </div>
         </div>
       </div>
 

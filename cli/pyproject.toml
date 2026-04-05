@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auditforge-cli"
+version = "1.0.0"
+description = "Forge CLI — AuditForge command-line pipeline automation"
+requires-python = ">=3.10"
+dependencies = [
+    "typer[all]>=0.9.0",
+    "httpx>=0.25.0",
+    "rich>=13.0.0",
+]
+
+[project.scripts]
+auditforge = "cli.main:app"
+
+[tool.setuptools.packages.find]
+include = ["cli*"]

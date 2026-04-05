@@ -17,7 +17,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column('findings', sa.Column('evaluation_explanation', sa.Text(), nullable=True))
+    conn = op.get_bind()
+    columns = {c["name"] for c in sa.inspect(conn).get_columns("findings")}
+    if "evaluation_explanation" not in columns:
+        op.add_column('findings', sa.Column('evaluation_explanation', sa.Text(), nullable=True))
 
 
 def downgrade() -> None:

@@ -54,7 +54,8 @@ Rule IDs are auto-assigned by the database (e.g. 47, 203, 1058) — they are NOT
 
 ### Command Lifecycle
 - **generate_commands** {{ "rule_ids": [<DB_ID>,...] }} — Generate audit commands for specific rules
-- **inspect_commands** {{ "severity": "high", "has_command": true, "limit": 20 }} — Batch inspect rules with full command details (no IDs needed — use this to review command quality!)
+- **inspect_commands** {{ "severity": "high", "has_command": true, "limit": 20 }} — Batch inspect rules with full command details
+- **deep_quality_check** {{ "severity_filter": "high", "limit": 50 }} — Full quality analysis: syntax, transport match, expression logic, confidence
 - **edit_command** {{ "rule_id": <DB_ID>, "field_name": "audit_command|expected_output_regex|expected_output_description|remediation_command", "new_value": "..." }} — Edit a command field
 - **verify_command** {{ "rule_id": <DB_ID> }} — Static verification of a single command
 - **flag_command** {{ "rule_id": <DB_ID>, "reason": "..." }} — Flag a command for review
@@ -74,21 +75,33 @@ Rule IDs are auto-assigned by the database (e.g. 47, 203, 1058) — they are NOT
 - **diff_benchmarks** {{ "other_benchmark_id": 5 }} — Compare with another benchmark
 - **get_benchmark_info** {{}} — Benchmark metadata and stats
 
-## Workflow Guidance
-The standard benchmark lifecycle: **Phase 1** (import/create rules) → **Phase 2** (generate commands) → **Verification** (static checks) → **Phase 3** (LLM quality review) → **Ready**
+## MANDATORY BEHAVIORS (you MUST follow these exactly)
 
-When the user asks about command quality:
-1. Use **inspect_commands** to review rules and their commands in batch.
-2. For individual deep inspection, first get real IDs from list_rules, then use get_rule_details.
-3. Never use verify_command with guessed IDs.
+1. **Command quality/review requests**: When the user asks to check, review, verify, inspect, or validate commands:
+   -> Call **deep_quality_check** FIRST, then present the results.
+   -> NEVER fabricate a table of "Verified" or "Pass" results without calling a tool.
+   -> If the user wants individual detail, follow up with **get_rule_details** for specific rules.
 
-Always check pipeline status before starting a pipeline operation.
+2. **Improve/rewrite descriptions or titles**: When the user wants to improve, expand, lengthen, or rewrite rule descriptions or titles:
+   -> Call **list_rules** with limit=50 to get rule IDs.
+   -> Then call **edit_rules_batch** with the appropriate field_name and new values.
+   -> Show a preview before applying.
+
+3. **References to "the commands" or "these rules"**: When the user refers to rules/commands without specifying which ones:
+   -> Call **inspect_commands** or **list_rules** with limit=20.
+   -> Do NOT make up data. Always fetch real data first.
+
+4. **Fix/regenerate broken commands**: When the user wants to fix or regenerate commands:
+   -> Call **deep_quality_check** to find issues.
+   -> For each error, call **flag_command** then **regenerate_command**.
+
+5. **NEVER fabricate data**: If you do not have real data from a tool call, say "Let me check that for you" and call the appropriate tool. DO NOT generate fake tables, fake status reports, or fake verification results.
 
 ## Constraints
 1. All rule creations are staged as pending_review. You CANNOT bypass this.
 2. You CANNOT modify verified or protected commands — flag them first.
 3. You do NOT have access to scan results or findings. Never claim to.
-4. Phase 2 does NOT overwrite copilot-generated commands. Use explain_phase2_behavior for details.
+4. Phase 2 does NOT overwrite copilot-generated commands.
 5. For mass edits, show a preview first and ask the user to confirm.
 6. Be concise. Use markdown formatting for readability.
 """
@@ -97,8 +110,38 @@ COPILOT_TOOL_RESULTS = """\
 You called tools and got these results:
 {tool_results}
 
-Now provide a helpful response to the user based on these results.
-Respond with JSON: {{ "tool_calls": [], "response": "your markdown response to the user" }}
+INSTRUCTIONS FOR YOUR RESPONSE:
+- Summarize key findings clearly — do NOT dump raw JSON.
+- If results contain quality issues, group them by severity (errors first, then warnings).
+- Show section_number and title when referring to rules (not raw database IDs).
+- For command quality results: highlight the most critical issues first, give specific details (e.g. "Rule 1.1.1 has a shell pipe in SQL transport").
+- If results suggest actions (e.g. regenerate, fix), offer to do them.
+- If an error occurred, explain what went wrong and suggest alternatives.
+- Keep the response concise but specific.
+
+Respond with JSON: {{ "tool_calls": [], "response": "your markdown response" }}
+"""
+
+COPILOT_QUALITY_ANALYSIS = """\
+You are analyzing command quality results for benchmark "{benchmark_name}" ({platform}).
+
+Quality check results:
+{quality_results}
+
+INSTRUCTIONS — you MUST follow these exactly:
+
+1. **Overall health line**: "X/Y commands analyzed, Z errors, W warnings"
+2. **Critical issues (errors)**: List EVERY error with section number, rule title, the actual command snippet, and what's wrong. Do NOT summarize as "all good" if there are warnings or low-confidence commands.
+3. **Warnings**: Group by category (transport_mismatch, logic_inversion, missing_expression, generic_expression, etc.). For each, cite specific rules.
+4. **Low-confidence commands**: List each with section number and confidence score. Explain what low confidence means (the command may be incorrect and needs manual review).
+5. **Command samples review**: The results include a `commands_sample` with actual commands. For EACH sample command, give a one-line assessment: is the command correct for the stated rule? Does the expression make sense? Any concerns?
+6. **Recommended next steps**: Specific actions the user can take (e.g., "regenerate commands for rules X, Y, Z", "review expression logic for section A.B.C").
+
+CRITICAL: If all commands passed static validation but there are low-confidence commands OR warnings, you MUST still report those — do NOT say "all commands are perfect".
+CRITICAL: NEVER fabricate "Verified ✅" tables. Every claim must be backed by data from the quality_results above.
+
+Format as markdown. Be thorough and specific.
+Respond with JSON: {{ "tool_calls": [], "response": "your markdown analysis" }}
 """
 
 INTENT_CLASSIFIER_PROMPT = """\

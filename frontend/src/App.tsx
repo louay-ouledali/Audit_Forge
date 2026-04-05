@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import MainLayout from './components/layout/MainLayout';
+import AuthGuard from './components/layout/AuthGuard';
+import Login from './pages/Login';
 import ClientWorkspace from './pages/ClientWorkspace';
 import MissionWorkspace from './pages/MissionWorkspace';
 import BenchmarkDetail from './pages/BenchmarkDetail';
@@ -13,10 +15,11 @@ function App() {
     <ToastProvider>
     <BrowserRouter>
       <Routes>
-        {/* Portal page — standalone, outside MainLayout */}
+        {/* Standalone pages — outside MainLayout */}
+        <Route path="/login" element={<Login />} />
         <Route path="/connect/:code" element={<ConnectPortal />} />
 
-        <Route path="/" element={<MainLayout />}>
+        <Route path="/" element={<AuthGuard><MainLayout /></AuthGuard>}>
           {/* Persistent pages are rendered by MainLayout via keep-alive.
               We still need index + catch-all so React Router matches them. */}
           <Route index element={<></>} />

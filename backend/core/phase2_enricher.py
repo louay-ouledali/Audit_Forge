@@ -211,6 +211,8 @@ async def run_phase2(benchmark_id: int) -> None:
                         status="generated",
                         source=source,
                         created_at=now,
+                        confidence_score=result.get("_confidence_score", 0.50),
+                        confidence_source=result.get("_confidence_source", source),
                     )
                     db.add(cmd)
                     batch_had_success = True

@@ -14,6 +14,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.api.missions import check_mission_lock
+from backend.core.auth import get_current_user
+from backend.utils.datetime_utils import utc_iso
 from backend.core.discovery_router import (
     cancel_discovery,
     check_agent_health,
@@ -35,6 +37,8 @@ from backend.models.mission_target import MissionTarget
 from backend.models.scan import Scan
 from backend.models.scan_batch import ScanBatch, ScanBatchItem
 from backend.models.target import Target
+from backend.models.user import User
+from backend.core.trail import log_action
 from backend.schemas.scan import (
     GenerateScriptRequest,
     NetworkScanRequest,
@@ -603,6 +607,7 @@ def start_network_scan(
     payload: NetworkScanRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Start a network scan against a target."""
 
@@ -644,6 +649,12 @@ def start_network_scan(
         preset_id=payload.preset_id,
     )
 
+    if payload.mission_id:
+        try:
+            log_action(db, user=current_user, mission_id=payload.mission_id, action="scan_started", entity_type="scan", entity_id=scan.id, entity_label=target.hostname or target.ip_address)
+        except Exception as exc:
+            logger.warning("Trail log failed: %s", exc)
+
     return NetworkScanResponse(scan_id=scan.id, status="running")
 
 
@@ -677,10 +688,17 @@ def get_scan_status(scan_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{scan_id}/cancel", response_model=ScanCancelResponse)
-def cancel_running_scan(scan_id: int, db: Session = Depends(get_db)):
+def cancel_running_scan(scan_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Cancel a running scan gracefully."""
 
     if cancel_scan(scan_id):
+        # Log cancellation for in-memory active scan
+        scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        if scan and scan.mission_id:
+            try:
+                log_action(db, user=current_user, mission_id=scan.mission_id, action="scan_cancelled", entity_type="scan", entity_id=scan_id, entity_label=f"Scan #{scan_id}")
+            except Exception as exc:
+                logger.warning("Trail log failed: %s", exc)
         return ScanCancelResponse(
             scan_id=scan_id,
             status="cancelling",
@@ -700,6 +718,11 @@ def cancel_running_scan(scan_id: int, db: Session = Depends(get_db)):
     # Mark as cancelled in DB directly
     scan.status = "cancelled"
     db.commit()
+    if scan.mission_id:
+        try:
+            log_action(db, user=current_user, mission_id=scan.mission_id, action="scan_cancelled", entity_type="scan", entity_id=scan_id, entity_label=f"Scan #{scan_id}")
+        except Exception as exc:
+            logger.warning("Trail log failed: %s", exc)
     return ScanCancelResponse(
         scan_id=scan_id,
         status="cancelled",
@@ -797,9 +820,9 @@ def list_scans(
             "mission_id": s.mission_id,
             "scan_mode": s.scan_mode,
             "status": s.status,
-            "started_at": s.started_at.isoformat() if s.started_at else None,
-            "completed_at": s.completed_at.isoformat() if s.completed_at else None,
-            "results_imported_at": s.results_imported_at.isoformat() if s.results_imported_at else None,
+            "started_at": utc_iso(s.started_at),
+            "completed_at": utc_iso(s.completed_at),
+            "results_imported_at": utc_iso(s.results_imported_at),
             "total_rules": s.total_rules or 0,
             "total_rules_checked": s.total_rules_checked or 0,
             "passed": s.passed or 0,
@@ -809,7 +832,7 @@ def list_scans(
             "manual_review": s.manual_review or 0,
             "compliance_percentage": s.compliance_percentage,
             "notes": s.notes,
-            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "created_at": utc_iso(s.created_at),
             # Enriched naming fields
             "benchmark_name": bm.name if bm else None,
             "benchmark_version": bm.version if bm else None,
@@ -1197,9 +1220,9 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db)):
             "mission_id": scan.mission_id,
             "scan_mode": scan.scan_mode,
             "status": scan.status,
-            "started_at": scan.started_at.isoformat() if scan.started_at else None,
-            "completed_at": scan.completed_at.isoformat() if scan.completed_at else None,
-            "results_imported_at": scan.results_imported_at.isoformat() if scan.results_imported_at else None,
+            "started_at": utc_iso(scan.started_at),
+            "completed_at": utc_iso(scan.completed_at),
+            "results_imported_at": utc_iso(scan.results_imported_at),
             "total_rules": scan.total_rules or 0,
             "total_rules_checked": scan.total_rules_checked or 0,
             "passed": scan.passed or 0,
@@ -1209,7 +1232,7 @@ def get_scan_detail(scan_id: int, db: Session = Depends(get_db)):
             "manual_review": scan.manual_review or 0,
             "compliance_percentage": scan.compliance_percentage,
             "notes": scan.notes,
-            "created_at": scan.created_at.isoformat() if scan.created_at else None,
+            "created_at": utc_iso(scan.created_at),
         }
     }
 
@@ -1283,10 +1306,10 @@ def list_scan_findings(
             "expected_output": f.expected_output,
             "severity": f.severity,
             "ai_advice": f.ai_advice,
-            "ai_advice_generated_at": f.ai_advice_generated_at.isoformat() if f.ai_advice_generated_at else None,
+            "ai_advice_generated_at": utc_iso(f.ai_advice_generated_at),
             "auditor_notes": f.auditor_notes,
             "auditor_override": f.auditor_override,
-            "created_at": f.created_at.isoformat() if f.created_at else None,
+            "created_at": utc_iso(f.created_at),
             "section_number": rule.section_number if rule else None,
             "rule_title": rule.title if rule else None,
         })
@@ -1444,6 +1467,7 @@ def start_scan_batch(
     payload: ScanBatchRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Launch a batch scan ("Scan All") for a mission."""
     from backend.models.mission import Mission
@@ -1553,6 +1577,12 @@ def start_scan_batch(
             mission_id=payload.mission_id,
             concurrency=payload.concurrency,
         )
+
+    if payload.mission_id:
+        try:
+            log_action(db, user=current_user, mission_id=payload.mission_id, action="scan_started", entity_type="scan_batch", entity_id=batch.id, entity_label=f"Batch scan ({len(targets)} targets)")
+        except Exception as exc:
+            logger.warning("Trail log failed: %s", exc)
 
     return ScanBatchResponse(
         batch_id=batch.id,
@@ -1741,7 +1771,7 @@ def get_batch_status(batch_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/batch/{batch_id}/cancel")
-def cancel_batch(batch_id: int, db: Session = Depends(get_db)):
+def cancel_batch(batch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Cancel all remaining (pending/running) items in a batch."""
     batch = db.query(ScanBatch).filter(ScanBatch.id == batch_id).first()
     if not batch:
@@ -1778,6 +1808,13 @@ def cancel_batch(batch_id: int, db: Session = Depends(get_db)):
     batch.skipped_targets = sum(1 for it in all_items if it.status == "skipped")
 
     db.commit()
+
+    # Log the cancellation to Forge Trail
+    if batch.mission_id:
+        try:
+            log_action(db, user=current_user, mission_id=batch.mission_id, action="scan_cancelled", entity_type="scan_batch", entity_id=batch_id)
+        except Exception as exc:
+            logger.warning("Trail log failed: %s", exc)
 
     return {
         "batch_id": batch_id,

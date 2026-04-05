@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import type { ScanDetail, BuilderFinding, ReportGenerateRequest, RuleGroup } from '@/types';
 import * as api from '@/services/api';
+import BrandLockup from '@/components/common/BrandLockup';
 import RulePill from '@/components/report/RulePill';
 
 interface ReportBuilderProps {
@@ -919,7 +920,8 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                                 Group your <span className="text-white font-medium">{selectedCount}</span> rules into report sections. Drag rules between groups or use AI.
                               </p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
+                              <BrandLockup service="insights" size="sm" />
                               <button onClick={handleAutoGroup} disabled={loadingAutoGroup || selectedCount === 0}
                                 className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-sm font-medium text-purple-400 transition-colors hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-50">
                                 {loadingAutoGroup ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
@@ -1175,6 +1177,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                           <input type="checkbox" className="h-4 w-4 rounded border-dark-border bg-dark-elevated text-ey-yellow accent-ey-yellow"
                             checked={includeAiSummary} onChange={e => setIncludeAiSummary(e.target.checked)} />
                           <span className="text-xs text-gray-300 whitespace-nowrap">AI Summary</span>
+                          <BrandLockup service="insights" size="sm" hideText />
                         </label>
                         <span className="text-[11px] text-dark-muted border-l border-dark-border pl-3">
                           {AUDIENCES.find(a => a.value === audience)?.icon} {audience}

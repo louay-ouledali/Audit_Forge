@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from backend.models.app_settings import AppSettings
+from backend.models.audit_log import AuditLog
 from backend.models.benchmark import Benchmark
 from backend.models.benchmark_group import BenchmarkGroup
 from backend.models.client import Client
 from backend.models.command_cache import CommandCache
+from backend.models.command_correction import CommandCorrection
 from backend.models.connect_agent import ConnectAgent
 from backend.models.copilot_conversation import CopilotConversation
 from backend.models.connect_session import ConnectSession
@@ -15,6 +17,7 @@ from backend.models.llm_cache import LLMCache
 from backend.models.mission import Mission
 from backend.models.mission_analysis import MissionAnalysis
 from backend.models.mission_target import MissionTarget
+from backend.models.notification import Notification
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
 from backend.models.rule_tag import RuleTag
@@ -22,15 +25,20 @@ from backend.models.saved_report import SavedReport
 from backend.models.scan import Scan
 from backend.models.scan_batch import ScanBatch, ScanBatchItem
 from backend.models.scan_preset import ScanPreset
+from backend.models.schedule import Schedule
+from backend.models.sentinel_run import SentinelRun
 from backend.models.target import Target
+from backend.models.user import User
 from backend.models.verification_report import VerificationReport
 
 __all__ = [
     "AppSettings",
+    "AuditLog",
     "Benchmark",
     "BenchmarkGroup",
     "Client",
     "CommandCache",
+    "CommandCorrection",
     "ConnectAgent",
     "ConnectSession",
     "CopilotConversation",
@@ -41,6 +49,7 @@ __all__ = [
     "Mission",
     "MissionAnalysis",
     "MissionTarget",
+    "Notification",
     "Rule",
     "RuleCommand",
     "RuleTag",
@@ -49,6 +58,9 @@ __all__ = [
     "ScanBatch",
     "ScanBatchItem",
     "ScanPreset",
+    "Schedule",
+    "SentinelRun",
     "Target",
+    "User",
     "VerificationReport",
 ]

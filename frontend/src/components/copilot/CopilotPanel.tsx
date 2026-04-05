@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Send, Loader2, ClipboardList, Search, HelpCircle, ShieldAlert, BarChart3, X, Activity, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Sparkles, Send, Loader2, ClipboardList, Search, ShieldAlert, BarChart3, X, Activity, RefreshCw, ShieldCheck, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/common/Toast';
 import CopilotMessage, { type CopilotMessageData } from './CopilotMessage';
@@ -123,7 +123,7 @@ export default function CopilotPanel({
 
       if (res.intent === 'create_benchmark' || res.intent === 'add_rules') {
         addMessage({ role: 'copilot', content: 'Starting the rule generation pipeline...' });
-        const description = res.actions?.[0]?.description || msg;
+        const description = (res.actions?.[0]?.params?.description as string) || msg;
         const pipeline = await copilotGenerateBenchmark(benchmarkId, description, platform, platformFamily, controller.signal);
         const progressText = pipeline.progress.join('\n');
         addMessage({
@@ -134,8 +134,8 @@ export default function CopilotPanel({
         await refreshPending();
         onRulesChanged();
       } else {
-        const createdRules = res.actions?.find((a: any) => a.tool === 'create_rules_batch')?.result?.rules;
-        const searchResults = res.actions?.find((a: any) => a.tool === 'search_rules')?.result;
+        const createdRules = res.actions?.find((a: any) => a.tool === 'create_rules_batch')?.result?.rules as CopilotPendingRule[] | undefined;
+        const searchResults = res.actions?.find((a: any) => a.tool === 'search_rules')?.result as CopilotPendingRule[] | undefined;
         addMessage({
           role: 'copilot',
           content: res.response,
@@ -194,15 +194,15 @@ export default function CopilotPanel({
   };
 
   const quickActions = [
-    // Row 1 — Rules
+    // Row 1 — Quality & Rules
+    { label: 'Review command quality', prompt: 'Run a full quality check on all commands and show me what needs fixing', icon: ShieldCheck },
+    { label: 'Improve descriptions', prompt: 'Find rules with short descriptions and make them more detailed', icon: FileText },
     { label: `Create rules for ${platform}`, prompt: `Create hardening rules for ${platform}`, icon: Sparkles },
     { label: 'Analyze gaps', prompt: 'What security areas are we missing coverage for?', icon: ShieldAlert },
-    { label: 'Search rules', prompt: 'Search for rules about ', icon: Search },
-    { label: 'Explain a rule', prompt: 'Explain rule ', icon: HelpCircle },
-    // Row 2 — Pipeline & Quality
+    // Row 2 — Pipeline & Search
     { label: 'Pipeline status', prompt: 'Show me the current pipeline status and what I should do next', icon: Activity },
     { label: 'Start enrichment', prompt: 'Start Phase 2 enrichment for rules without commands', icon: RefreshCw },
-    { label: 'Review corrections', prompt: 'Show me the Phase 3 validation corrections', icon: CheckCircle2 },
+    { label: 'Search rules', prompt: 'Search for rules about ', icon: Search },
     { label: 'Migration readiness', prompt: 'Is this benchmark ready for deployment?', icon: BarChart3 },
   ];
 

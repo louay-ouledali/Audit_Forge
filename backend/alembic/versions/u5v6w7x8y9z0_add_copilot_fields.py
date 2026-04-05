@@ -16,10 +16,15 @@ depends_on = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    columns = {c["name"] for c in sa.inspect(conn).get_columns("rules")}
     with op.batch_alter_table("rules") as batch_op:
-        batch_op.add_column(sa.Column("pending_review", sa.Boolean(), nullable=False, server_default="0"))
-        batch_op.add_column(sa.Column("copilot_confidence", sa.Float(), nullable=True))
-        batch_op.add_column(sa.Column("copilot_source_benchmark", sa.String(), nullable=True))
+        if "pending_review" not in columns:
+            batch_op.add_column(sa.Column("pending_review", sa.Boolean(), nullable=False, server_default="0"))
+        if "copilot_confidence" not in columns:
+            batch_op.add_column(sa.Column("copilot_confidence", sa.Float(), nullable=True))
+        if "copilot_source_benchmark" not in columns:
+            batch_op.add_column(sa.Column("copilot_source_benchmark", sa.String(), nullable=True))
 
 
 def downgrade() -> None:

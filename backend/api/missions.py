@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,10 +9,13 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.core.auth import get_current_user
+from backend.core.trail import log_action
 from backend.models.client import Client
 from backend.models.mission import Mission
 from backend.models.target import Target  # UNUSED — safe to remove
 from backend.models.mission_target import MissionTarget
+from backend.models.user import User
 from backend.schemas.mission import (
     MissionCreate,
     MissionDetailEnvelope,
@@ -23,6 +27,7 @@ from backend.schemas.mission import (
 )
 
 router = APIRouter(tags=["missions"])
+logger = logging.getLogger("auditforge.api.missions")
 
 
 def _hash_password(password: str) -> str:
@@ -122,6 +127,8 @@ def create_mission(payload: MissionCreate, db: Session = Depends(get_db)) -> dic
     db.add(mission)
     db.commit()
     db.refresh(mission)
+    log_action(db, mission_id=mission.id, action="mission_created", entity_type="mission", entity_id=mission.id, entity_label=mission.name)
+    db.commit()
     resp = MissionResponse.model_validate(mission)
     resp.target_count = 0
     return {"data": resp, "message": "Mission created"}
@@ -146,6 +153,7 @@ def update_mission(mission_id: int, payload: MissionUpdate, db: Session = Depend
         raise HTTPException(status_code=403, detail="Mission is locked. Unlock it first.")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(mission, field, value)
+    log_action(db, mission_id=mission_id, action="mission_updated", entity_type="mission", entity_id=mission_id, entity_label=mission.name)
     db.commit()
     db.refresh(mission)
     resp = MissionResponse.model_validate(mission)
@@ -160,7 +168,9 @@ def delete_mission(mission_id: int, db: Session = Depends(get_db)) -> dict:
         raise HTTPException(status_code=404, detail="Mission not found")
     if mission.is_locked:
         raise HTTPException(status_code=403, detail="Mission is locked. Unlock it before deleting.")
+    mission_name = mission.name
     db.delete(mission)
+    log_action(db, mission_id=mission_id, action="mission_deleted", entity_type="mission", entity_id=mission_id, entity_label=mission_name)
     db.commit()
     return {"data": None, "message": "Mission deleted"}
 
@@ -170,7 +180,7 @@ def delete_mission(mission_id: int, db: Session = Depends(get_db)) -> dict:
 
 @router.post("/missions/{mission_id}/lock")
 def lock_mission(
-    mission_id: int, payload: MissionLockRequest, db: Session = Depends(get_db)
+    mission_id: int, payload: MissionLockRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ) -> dict:
     mission = db.query(Mission).filter(Mission.id == mission_id).first()
     if not mission:
@@ -183,6 +193,10 @@ def lock_mission(
     mission.locked_at = datetime.now(timezone.utc)
     mission.locked_by = "auditor"  # placeholder — can be enriched with auth later
     db.commit()
+    try:
+        log_action(db, user=current_user, mission_id=mission_id, action="mission_locked", entity_type="mission", entity_id=mission_id, entity_label=mission.name)
+    except Exception as exc:
+        logger.warning("Trail log failed: %s", exc)
     db.refresh(mission)
     resp = MissionResponse.model_validate(mission)
     resp.target_count = _target_count(db, mission_id)
@@ -191,7 +205,7 @@ def lock_mission(
 
 @router.post("/missions/{mission_id}/unlock")
 def unlock_mission(
-    mission_id: int, payload: MissionUnlockRequest, db: Session = Depends(get_db)
+    mission_id: int, payload: MissionUnlockRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ) -> dict:
     mission = db.query(Mission).filter(Mission.id == mission_id).first()
     if not mission:
@@ -207,6 +221,10 @@ def unlock_mission(
     mission.locked_at = None
     mission.locked_by = None
     db.commit()
+    try:
+        log_action(db, user=current_user, mission_id=mission_id, action="mission_unlocked", entity_type="mission", entity_id=mission_id, entity_label=mission.name)
+    except Exception as exc:
+        logger.warning("Trail log failed: %s", exc)
     db.refresh(mission)
     resp = MissionResponse.model_validate(mission)
     resp.target_count = _target_count(db, mission_id)

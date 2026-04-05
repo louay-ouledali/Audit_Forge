@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Bot, Trash2, RefreshCw, AlertTriangle, ChevronDown, ChevronUp, Target, BarChart3 } from 'lucide-react';
+import { ArrowLeft, Bot, Trash2, RefreshCw, ChevronDown, ChevronUp, Target, BarChart3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Mission, MissionAnalysisResult, ComparableMission } from '@/types';
 import * as api from '@/services/api';
@@ -20,7 +20,7 @@ export default function MissionAnalysis() {
   const [selectedCompareId, setSelectedCompareId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzingType, setAnalyzingType] = useState<AnalysisTab | null>(null);
-  const [error, setError] = useState('');
+  const [_error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const fetchData = async () => {

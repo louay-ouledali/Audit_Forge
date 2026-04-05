@@ -20,10 +20,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("rule_commands") as batch_op:
-        batch_op.add_column(
-            sa.Column("command_transport", sa.String(), nullable=True)
-        )
+    conn = op.get_bind()
+    columns = {c["name"] for c in sa.inspect(conn).get_columns("rule_commands")}
+    if "command_transport" not in columns:
+        with op.batch_alter_table("rule_commands") as batch_op:
+            batch_op.add_column(
+                sa.Column("command_transport", sa.String(), nullable=True)
+            )
 
 
 def downgrade() -> None:

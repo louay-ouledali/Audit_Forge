@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.core.auth import get_current_user
+from backend.core.trail import log_action
 from backend.models.finding import Finding
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
 from backend.models.scan import Scan
 from backend.models.benchmark import Benchmark
+from backend.models.user import User
 from backend.schemas.finding import (
     FindingAIAdviceResponse,
     FindingResponse,
@@ -20,6 +24,7 @@ from backend.schemas.finding import (
 )
 
 router = APIRouter(prefix="/findings", tags=["findings"])
+logger = logging.getLogger("auditforge.api.findings")
 
 VALID_OVERRIDES = {"confirmed", "false_positive", "accepted_risk", ""}
 
@@ -83,6 +88,7 @@ def update_finding(
     finding_id: int,
     payload: FindingUpdateRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Update auditor notes and/or override on a finding."""
     from datetime import datetime, timezone as tz
@@ -134,6 +140,15 @@ def update_finding(
 
     db.commit()
     db.refresh(finding)
+
+    # Log override to Forge Trail
+    if has_override and scan and scan.mission_id:
+        rule = db.query(Rule).filter(Rule.id == finding.rule_id).first()
+        try:
+            log_action(db, user=current_user, mission_id=scan.mission_id, action="finding_overridden", entity_type="finding", entity_id=finding_id, entity_label=rule.title if rule else None, details={"new_status": payload.auditor_status_override} if payload.auditor_status_override else None)
+        except Exception as exc:
+            logger.warning("Trail log failed: %s", exc)
+
     return _finding_to_response(finding, db)
 
 

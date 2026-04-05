@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import time
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.ai.copilot_prompts import COPILOT_SYSTEM, COPILOT_TOOL_RESULTS
+from backend.ai.copilot_prompts import COPILOT_SYSTEM, COPILOT_TOOL_RESULTS, COPILOT_QUALITY_ANALYSIS
 from backend.ai.llm_manager import llm_manager
 from backend.core.copilot_engine import run_copilot_pipeline
 from backend.core.copilot_tools import (
@@ -65,8 +65,8 @@ class BatchEditConfirmRequest(BaseModel):
 
 # ── Conversation Store (DB-backed) ───────────────────────────
 
-_CONV_TTL = 30 * 60  # 30 minutes
-_CONV_MAX_MESSAGES = 20
+_CONV_TTL = 120 * 60  # 2 hours
+_CONV_MAX_MESSAGES = 50
 
 
 def _get_conversation(conv_id: str, db: Session) -> list[dict]:
@@ -143,22 +143,16 @@ def _get_benchmark_or_404(benchmark_id: int, db: Session) -> Benchmark:
     return bm
 
 
-def _build_system_prompt(bm: Benchmark, db: Session, conv_history: list[dict]) -> str:
-    """Build the LLM system prompt with context and conversation history."""
+def _build_system_prompt(bm: Benchmark, db: Session) -> str:
+    """Build the LLM system prompt with benchmark context (no conversation history)."""
     rule_count = db.query(Rule).filter(Rule.benchmark_id == bm.id).count()
-    prompt = COPILOT_SYSTEM.format(
+    return COPILOT_SYSTEM.format(
         benchmark_name=bm.name,
         benchmark_id=bm.id,
         platform=bm.platform,
         platform_family=bm.platform_family,
         rule_count=rule_count,
     )
-    if conv_history:
-        prompt += "\n\n## Conversation so far:\n"
-        for msg in conv_history[-10:]:
-            role = msg["role"].upper()
-            prompt += f"\n{role}: {msg['content'][:500]}\n"
-    return prompt
 
 
 async def _execute_tool(tool_name: str, params: dict, db: Session, benchmark_id: int) -> Any:
@@ -228,6 +222,11 @@ def _validate_llm_response(raw: Any) -> CopilotLLMResponse:
         resp = CopilotLLMResponse(**raw)
         # Filter out hallucinated tool names
         resp.tool_calls = [tc for tc in resp.tool_calls if tc.name in COPILOT_TOOLS]
+        # Hallucination guard: reject fabricated verification tables
+        if (not resp.tool_calls and '|' in resp.response
+                and any(w in resp.response.lower() for w in ('verified', '✅', '✓', 'pass |', 'correct |'))):
+            logger.warning("Hallucination guard: LLM fabricated verification table without tool calls")
+            resp.response = ""
         return resp
     except Exception:
         # Extract response text if present; never fall back to str(raw) which leaks internals
@@ -251,77 +250,93 @@ async def copilot_chat(
     history = _get_conversation(conv_id, db)
     _save_message(conv_id, benchmark_id, "user", payload.message, db)
 
-    # Build system prompt
-    system_prompt = _build_system_prompt(bm, db, history)
+    # Build system prompt (without conversation — those go as proper messages)
+    system_prompt = _build_system_prompt(bm, db)
 
-    # Agentic loop: LLM → tools → LLM (max 5 iterations for multi-step workflows)
     all_actions: list[dict] = []
     response_text = ""
-    max_iterations = 5
 
-    user_prompt = payload.message
+    # ── Phase 1: Check for forced workflows (anti-hallucination) ──
+    forced = await _detect_forced_workflow(payload.message, bm, db, benchmark_id, system_prompt, history)
+    if forced is not None:
+        all_actions = forced["actions"]
+        response_text = forced["response"]
+    else:
+        # ── Agentic loop: LLM -> tools -> LLM (max 5 iterations) ──
+        max_iterations = 5
+        user_prompt = payload.message
 
-    for iteration in range(max_iterations):
-        # LLM call with single retry
-        llm_response = None
-        for attempt in range(2):
-            try:
-                llm_response = await llm_manager.invoke_json(
-                    user_prompt, system_prompt=system_prompt, task="copilot"
-                )
+        for iteration in range(max_iterations):
+            # Build multi-turn messages
+            chat_messages = [{"role": "system", "content": system_prompt}]
+            for msg in history[-15:]:
+                role = "assistant" if msg["role"] == "copilot" else msg["role"]
+                chat_messages.append({"role": role, "content": msg["content"][:2000]})
+            chat_messages.append({"role": "user", "content": user_prompt})
+
+            # LLM call with single retry
+            llm_response = None
+            for attempt in range(2):
+                try:
+                    llm_response = await llm_manager.invoke_json_with_history(
+                        chat_messages, task="copilot"
+                    )
+                    break
+                except Exception as e:
+                    if attempt == 0:
+                        logger.warning("LLM call failed (attempt 1), retrying: %s", e)
+                        await asyncio.sleep(2)
+                    else:
+                        logger.warning("LLM call failed (attempt 2): %s", e)
+
+            if llm_response is None:
+                # Context-aware fallback: try zero-LLM tools
+                response_text = await _context_aware_fallback(payload.message, bm, db, benchmark_id, all_actions)
                 break
-            except Exception as e:
-                if attempt == 0:
-                    logger.warning("LLM call failed (attempt 1), retrying: %s", e)
-                    await asyncio.sleep(2)
-                else:
-                    logger.warning("LLM call failed (attempt 2): %s", e)
 
-        if llm_response is None:
-            # Context-aware fallback: try zero-LLM tools
-            response_text = await _context_aware_fallback(payload.message, bm, db, benchmark_id, all_actions)
-            break
+            # Validate response shape
+            parsed = _validate_llm_response(llm_response)
 
-        # Validate response shape
-        parsed = _validate_llm_response(llm_response)
+            # Keep the latest non-empty LLM response (don't overwrite good text with blank)
+            if parsed.response.strip():
+                response_text = parsed.response
 
-        # Keep the latest non-empty LLM response (don't overwrite good text with blank)
-        if parsed.response.strip():
-            response_text = parsed.response
+            if not parsed.tool_calls:
+                break
 
-        if not parsed.tool_calls:
-            break
+            # Execute tools
+            tool_results = []
+            for tc in parsed.tool_calls:
+                name = tc.name
+                params = tc.params
+                logger.info("Copilot tool call: %s(%s)", name, json.dumps(params, default=str)[:200])
 
-        # Execute tools
-        tool_results = []
-        for tc in parsed.tool_calls:
-            name = tc.name
-            params = tc.params
-            logger.info("Copilot tool call: %s(%s)", name, json.dumps(params, default=str)[:200])
+                result = await _execute_tool(name, params, db, benchmark_id)
+                tool_results.append({
+                    "tool": name,
+                    "params": params,
+                    "result": result,
+                })
+                all_actions.append({"tool": name, "params": params, "result": result})
 
-            result = await _execute_tool(name, params, db, benchmark_id)
-            tool_results.append({
-                "tool": name,
-                "params": params,
-                "result": result,
-            })
-            all_actions.append({"tool": name, "params": params, "result": result})
+            # If this is the last iteration, don't call LLM again
+            if iteration >= max_iterations - 1:
+                break
 
-        # If this is the last iteration, don't call LLM again
-        if iteration >= max_iterations - 1:
-            break
-
-        # Feed tool results back to LLM for a human-readable response
-        results_text = json.dumps(tool_results, default=str, indent=2)[:4000]
-        user_prompt = COPILOT_TOOL_RESULTS.format(tool_results=results_text)
+            # Feed tool results back to LLM for a human-readable response
+            results_text = json.dumps(tool_results, default=str, indent=2)[:4000]
+            user_prompt = COPILOT_TOOL_RESULTS.format(tool_results=results_text)
 
     # Guard: if response_text is still empty after the loop, synthesize from tool results
     if not response_text.strip() and all_actions:
         response_text = _synthesize_response_from_actions(all_actions)
     elif not response_text.strip():
+        # Always reference the user's actual message, not just generic greeting
+        user_msg = payload.message[:100]
         response_text = (
-            f"I'm Forge Copilot for benchmark **{bm.name}**. "
-            f"How can I help you with your {bm.platform} rules?"
+            f"I had trouble processing your request: *\"{user_msg}\"*. "
+            f"Could you rephrase that? I can help with reviewing commands, "
+            f"editing rules, running pipeline operations, and more."
         )
 
     # Save copilot response to conversation
@@ -354,6 +369,218 @@ async def copilot_chat(
     }
 
 
+# ── Forced Workflows (anti-hallucination) ─────────────────────
+
+_FORCED_WORKFLOW_PATTERNS: list[tuple[str, str, list[str]]] = [
+    # (name, regex_pattern, tool_names_to_force)
+    (
+        "command_review",
+        r"(?:check|review|verify|inspect|audit|validate|are.*correct|quality).*(?:command|cmd|script|audit)",
+        ["deep_quality_check"],
+    ),
+    (
+        "command_review_alt",
+        r"(?:command|cmd|script|audit).*(?:check|review|verify|correct|quality|good|bad|wrong)",
+        ["deep_quality_check"],
+    ),
+    (
+        "fix_commands",
+        r"(?:fix|repair|correct|heal|regenerate).*(?:command|cmd|broken|error|bad)",
+        ["deep_quality_check"],
+    ),
+    (
+        "improve_descriptions",
+        r"(?:improve|enhance|lengthen|expand|rewrite|update|better|more\s+(?:detail|length|verbose)).*(?:description|desc)",
+        ["_workflow_improve_descriptions"],
+    ),
+    (
+        "improve_descriptions_alt",
+        r"(?:description|desc).*(?:poor|short|bad|brief|lacking|improve|better|more|length|detail)",
+        ["_workflow_improve_descriptions"],
+    ),
+]
+
+
+async def _detect_forced_workflow(
+    message: str, bm: Benchmark, db: Session, benchmark_id: int, system_prompt: str,
+    history: list[dict] | None = None,
+) -> dict[str, Any] | None:
+    """Check if the user message matches a forced-workflow pattern.
+
+    If matched, executes the required tools server-side and formats the
+    results via the LLM (or falls back to synthesis).  Returns None if
+    no pattern matches (agentic loop should run instead).
+    """
+    msg_lower = message.lower()
+    matched_name = None
+    matched_tools: list[str] = []
+
+    for name, pattern, tools in _FORCED_WORKFLOW_PATTERNS:
+        if re.search(pattern, msg_lower):
+            matched_name = name
+            matched_tools = tools
+            break
+
+    if not matched_name:
+        return None
+
+    logger.info("Forced workflow matched: %s (tools=%s)", matched_name, matched_tools)
+
+    all_actions: list[dict] = []
+    tool_results: list[dict] = []
+
+    for tool_name in matched_tools:
+        # Check for special workflow functions
+        if tool_name == "_workflow_improve_descriptions":
+            return await _workflow_improve_descriptions(bm, db, benchmark_id, system_prompt)
+
+        # Normal tool execution
+        result = await _execute_tool(tool_name, {}, db, benchmark_id)
+        entry = {"tool": tool_name, "params": {}, "result": result}
+        tool_results.append(entry)
+        all_actions.append(entry)
+
+    # Ask LLM to format the results using conversation history for context
+    results_text = json.dumps(tool_results, default=str, indent=2)[:6000]
+
+    # Use the quality-specific prompt for quality checks
+    if matched_name in ("command_review", "command_review_alt", "fix_commands"):
+        format_prompt = COPILOT_QUALITY_ANALYSIS.format(
+            benchmark_name=bm.name,
+            platform=bm.platform,
+            quality_results=results_text,
+        )
+    else:
+        format_prompt = COPILOT_TOOL_RESULTS.format(tool_results=results_text)
+
+    # Build multi-turn messages so LLM has conversation context
+    chat_messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        for msg in history[-10:]:
+            role = "assistant" if msg["role"] == "copilot" else msg["role"]
+            chat_messages.append({"role": role, "content": msg["content"][:2000]})
+    chat_messages.append({"role": "user", "content": format_prompt})
+
+    response_text = ""
+    try:
+        llm_result = await llm_manager.invoke_json_with_history(
+            chat_messages, task="copilot"
+        )
+        parsed = _validate_llm_response(llm_result)
+        response_text = parsed.response
+    except Exception as e:
+        logger.warning("LLM formatting failed for forced workflow: %s", e)
+
+    if not response_text.strip():
+        response_text = _synthesize_response_from_actions(all_actions)
+
+    return {"actions": all_actions, "response": response_text}
+
+
+async def _workflow_improve_descriptions(
+    bm: Benchmark, db: Session, benchmark_id: int, system_prompt: str,
+) -> dict[str, Any]:
+    """Forced workflow: find rules with short descriptions and generate improved ones."""
+    from backend.core.copilot_tools import list_rules_handler
+
+    result = list_rules_handler(db, benchmark_id, limit=200)
+    rules = result.get("rules", []) if isinstance(result, dict) else []
+
+    short_rules = [
+        r for r in rules
+        if isinstance(r, dict) and len(r.get("description", "") or "") < 100
+    ]
+
+    if not short_rules:
+        return {
+            "actions": [{"tool": "list_rules", "params": {}, "result": {"total": len(rules)}}],
+            "response": f"All {len(rules)} rules already have adequate descriptions (100+ characters each). "
+                        "If you'd like me to rewrite specific rules, tell me which section numbers.",
+        }
+
+    # Generate improved descriptions via LLM (batches of 15)
+    batch_size = 15
+    improvements: list[dict] = []
+
+    for batch_start in range(0, min(len(short_rules), 60), batch_size):
+        batch = short_rules[batch_start:batch_start + batch_size]
+        rules_text = "\n".join(
+            f"- id={r['id']} | {r.get('section_number', '?')} | \"{r.get('title', '')}\" | "
+            f"current_desc=\"{(r.get('description', '') or '')[:80]}\""
+            for r in batch
+        )
+        gen_prompt = (
+            f"Improve the descriptions for these {bm.platform} security audit rules. "
+            f"Each description must be 1-3 sentences explaining: what the rule checks, "
+            f"why it matters for security, and what a failing result means.\n\n"
+            f"Rules:\n{rules_text}\n\n"
+            f"Return JSON array: [{{\"id\": <rule_id>, \"description\": \"<improved>\"}}]"
+        )
+        try:
+            gen_result = await llm_manager.invoke_json(gen_prompt, task="copilot")
+            if isinstance(gen_result, list):
+                improvements.extend(gen_result)
+        except Exception as e:
+            logger.warning("Description generation failed for batch: %s", e)
+
+    if not improvements:
+        return {
+            "actions": [],
+            "response": f"Found **{len(short_rules)}** rules with short descriptions but "
+                        "the AI model couldn't generate improvements right now. Please try again.",
+        }
+
+    # Build a before/after preview
+    rules_by_id = {r["id"]: r for r in short_rules}
+    valid_improvements = []
+    for imp in improvements:
+        rid = imp.get("id")
+        new_desc = imp.get("description", "")
+        if rid in rules_by_id and new_desc and len(new_desc) > 20:
+            valid_improvements.append({
+                "rule_id": rid,
+                "section": rules_by_id[rid].get("section_number", "?"),
+                "title": rules_by_id[rid].get("title", "?"),
+                "old_desc": (rules_by_id[rid].get("description", "") or "")[:60],
+                "new_desc": new_desc,
+            })
+
+    if not valid_improvements:
+        return {
+            "actions": [],
+            "response": "Couldn't generate valid improvements. Try asking me to improve specific rules by section number.",
+        }
+
+    lines = [
+        f"Generated improved descriptions for **{len(valid_improvements)}** rules. "
+        f"Here's a preview:\n",
+        "| Section | Title | Before | After |",
+        "|---------|-------|--------|-------|",
+    ]
+    for imp in valid_improvements[:15]:
+        old = imp["old_desc"][:40] + ("..." if len(imp["old_desc"]) > 40 else "")
+        new = imp["new_desc"][:60] + ("..." if len(imp["new_desc"]) > 60 else "")
+        lines.append(f"| {imp['section']} | {imp['title'][:35]} | {old or '*(empty)*'} | {new} |")
+    if len(valid_improvements) > 15:
+        lines.append(f"| ... | *and {len(valid_improvements) - 15} more* | | |")
+
+    lines.append("\nSay **\"apply\"** to apply these improvements, or **\"cancel\"** to discard them.")
+
+    return {
+        "actions": [
+            {
+                "tool": "_workflow_improve_descriptions",
+                "params": {},
+                "result": {
+                    "preview_count": len(valid_improvements),
+                    "improvements": valid_improvements,
+                },
+            }
+        ],
+        "response": "\n".join(lines),
+    }
+
+
 def _synthesize_response_from_actions(actions: list[dict]) -> str:
     """Build a readable response from tool results when LLM gives no text."""
     lines: list[str] = []
@@ -362,6 +589,59 @@ def _synthesize_response_from_actions(actions: list[dict]) -> str:
         result = a.get("result", {})
         if isinstance(result, dict) and "error" in result:
             lines.append(f"**{tool}**: {result['error']}")
+        elif tool == "deep_quality_check" and isinstance(result, dict):
+            total = result.get("total_analyzed", 0)
+            ok = result.get("pass", 0)
+            errs = result.get("errors", 0)
+            warns = result.get("warnings", 0)
+            missing = result.get("missing_commands", 0)
+            summary = result.get("summary", "")
+            lines.append("## Command Quality Report\n")
+            lines.append(f"**{ok}/{total}** commands passed | **{errs}** errors | **{warns}** warnings")
+            if missing:
+                lines.append(f" | **{missing}** rules without commands")
+            lines.append("")
+            if summary:
+                lines.append(f"**Summary**: {summary}\n")
+            issues = result.get("issues", [])
+            if issues:
+                lines.append("### Issues Found\n")
+                lines.append("| Section | Severity | Category | Message |")
+                lines.append("|---------|----------|----------|---------|")
+                for issue in issues[:20]:
+                    sec = issue.get("section_number", "?")
+                    sev = issue.get("severity", "?")
+                    cat = issue.get("category", "?").replace("_", " ")
+                    msg = issue.get("message", "?")[:60]
+                    lines.append(f"| {sec} | {sev} | {cat} | {msg} |")
+                if len(issues) > 20:
+                    lines.append(f"\n*...and {len(issues) - 20} more issues*")
+            low_conf = result.get("low_confidence", [])
+            if low_conf:
+                lines.append(f"\n### Low Confidence Commands ({len(low_conf)})\n")
+                lines.append("These commands may be incorrect and need manual review:\n")
+                for lc in low_conf[:10]:
+                    lines.append(
+                        f"- **{lc.get('section_number', '?')}** {lc.get('title', '')[:40]} "
+                        f"- confidence: {lc.get('confidence_score', '?')} "
+                        f"({lc.get('source', 'unknown')})"
+                    )
+            suggestions = result.get("review_suggestions", [])
+            if suggestions:
+                lines.append(f"\n### Suggestions ({len(suggestions)})\n")
+                for s in suggestions[:10]:
+                    lines.append(f"- **{s.get('section_number', '?')}**: {s.get('suggestion', '')}")
+            samples = result.get("commands_sample", [])
+            if samples and not issues:
+                # Show command samples when there are no errors (so the report isn't empty)
+                lines.append("\n### Command Samples\n")
+                lines.append("| Section | Command | Expression | Confidence |")
+                lines.append("|---------|---------|------------|------------|")
+                for s in samples[:8]:
+                    cmd_prev = (s.get("audit_command", "")[:50] + "...") if len(s.get("audit_command", "")) > 50 else s.get("audit_command", "")
+                    expr = s.get("expected_output_regex", "-") or "-"
+                    expr_prev = (expr[:30] + "...") if len(expr) > 30 else expr
+                    lines.append(f"| {s.get('section_number', '?')} | `{cmd_prev}` | `{expr_prev}` | {s.get('confidence', '?')} |")
         elif tool == "count_rules" and isinstance(result, dict):
             lines.append(
                 f"**Rule count**: {result.get('total_rules', '?')} total, "

@@ -16,15 +16,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "copilot_conversations",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("conversation_id", sa.String(), nullable=False, unique=True, index=True),
-        sa.Column("benchmark_id", sa.Integer(), sa.ForeignKey("benchmarks.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("messages_json", sa.Text(), server_default="[]"),
-        sa.Column("created_at", sa.DateTime()),
-        sa.Column("updated_at", sa.DateTime()),
-    )
+    conn = op.get_bind()
+    tables = sa.inspect(conn).get_table_names()
+    if "copilot_conversations" not in tables:
+        op.create_table(
+            "copilot_conversations",
+            sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column("conversation_id", sa.String(), nullable=False, unique=True, index=True),
+            sa.Column("benchmark_id", sa.Integer(), sa.ForeignKey("benchmarks.id", ondelete="CASCADE"), nullable=False),
+            sa.Column("messages_json", sa.Text(), server_default="[]"),
+            sa.Column("created_at", sa.DateTime()),
+            sa.Column("updated_at", sa.DateTime()),
+        )
 
 
 def downgrade() -> None:

@@ -19,6 +19,9 @@ from backend.core.report_generator import (
     generate_pdf_report,
 )
 from backend.database import get_db
+from backend.core.auth import get_current_user
+from backend.core.trail import log_action
+from backend.models.user import User
 from backend.schemas.report import (
     AISummaryRequest,
     AISummaryResponse,
@@ -78,7 +81,7 @@ def _build_report_filename(data: dict, fmt: str) -> str:
 
 
 @router.post("/generate")
-async def generate_report(payload: ReportGenerateRequest, db: Session = Depends(get_db)):
+async def generate_report(payload: ReportGenerateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Generate a report file based on scope and format."""
     if payload.scope not in VALID_SCOPES:
         raise HTTPException(status_code=400, detail=f"Invalid scope. Must be one of: {', '.join(VALID_SCOPES)}")
@@ -104,6 +107,14 @@ async def generate_report(payload: ReportGenerateRequest, db: Session = Depends(
 
     # Inject Phase 2 builder data (groups, audience, sections, summaries)
     _inject_builder_data(data, payload)
+
+    # Log report generation to Forge Trail
+    mission_id = payload.scope_id if payload.scope == "mission" else None
+    if mission_id:
+        try:
+            log_action(db, user=current_user, mission_id=mission_id, action="report_generated", entity_type="report", details={"format": payload.format})
+        except Exception as exc:
+            logger.warning("Trail log failed: %s", exc)
 
     filename = _build_report_filename(data, payload.format)
 

@@ -93,13 +93,16 @@ class LLMManager:
         """
         config = self.get_current_config(task=task)
 
-        # ── Cache lookup ──
+        # ── Cache lookup (skip for interactive tasks like copilot) ──
+        _no_cache_tasks = {"copilot"}
+        skip_cache = task in _no_cache_tasks
         model_name = config.get("offline_model") if config["mode"] == "offline" else config.get("online_model", "")
         cache_key = self._make_cache_key(prompt, system_prompt, model_name, task)
-        cached = self._cache_get(cache_key)
-        if cached is not None:
-            logger.debug("Cache HIT for task=%s key=%s", task, cache_key[:12])
-            return cached
+        if not skip_cache:
+            cached = self._cache_get(cache_key)
+            if cached is not None:
+                logger.debug("Cache HIT for task=%s key=%s", task, cache_key[:12])
+                return cached
 
         last_exc: Exception | None = None
 
@@ -109,8 +112,9 @@ class LLMManager:
                     result = await self._invoke_ollama(prompt, system_prompt, config, timeout, json_mode=json_mode)
                 else:
                     result = await self._invoke_online(prompt, system_prompt, config, timeout, json_mode=json_mode)
-                # ── Cache the successful response ──
-                self._cache_put(cache_key, result, task, model_name, prompt)
+                # ── Cache the successful response (skip for interactive tasks) ──
+                if not skip_cache:
+                    self._cache_put(cache_key, result, task, model_name, prompt)
                 return result
             except httpx.TimeoutException as exc:
                 last_exc = exc
@@ -187,6 +191,46 @@ class LLMManager:
                     "LLM failed to return valid JSON after retry",
                     detail=raw2[:500],
                 ) from exc
+
+    async def invoke_json_with_history(
+        self,
+        messages: list[dict[str, str]],
+        timeout: float = 300.0,
+        task: str | None = None,
+    ) -> Any:
+        """Send a multi-turn conversation and parse the response as JSON.
+
+        Accepts a list of chat messages (role/content dicts) instead of a single
+        prompt string.  Both Ollama and online providers natively support this.
+        """
+        config = self.get_current_config(task=task)
+
+        for attempt in range(2):
+            try:
+                if config["mode"] == "offline":
+                    raw = await self._invoke_ollama_messages(messages, config, timeout)
+                else:
+                    raw = await self._invoke_online_messages(messages, config, timeout)
+                try:
+                    return self._parse_json(raw)
+                except (json.JSONDecodeError, ValueError):
+                    if attempt == 0:
+                        logger.warning("JSON parse failed on multi-turn (len=%d), retrying", len(raw))
+                        # Append a nudge message and retry
+                        messages = messages + [
+                            {"role": "user", "content": "Return ONLY valid JSON. No other text."}
+                        ]
+                        continue
+                    raise LLMResponseError("LLM failed to return valid JSON", detail=raw[:500])
+            except (httpx.TimeoutException, httpx.ConnectError) as exc:
+                if attempt == 0:
+                    logger.warning("Multi-turn LLM call failed (attempt 1): %s", exc)
+                    await asyncio.sleep(2)
+                    continue
+                raise LLMUnavailableError(
+                    "LLM unavailable after 2 attempts", detail=str(exc)
+                ) from exc
+        raise LLMResponseError("invoke_json_with_history failed unexpectedly")
 
     async def check_availability(self) -> dict[str, Any]:
         """Check if the configured LLM is reachable."""
@@ -442,6 +486,58 @@ class LLMManager:
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
+        timeouts = httpx.Timeout(timeout, connect=30.0)
+        async with httpx.AsyncClient(timeout=timeouts) as client:
+            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
+
+    async def _invoke_ollama_messages(
+        self,
+        messages: list[dict[str, str]],
+        config: dict,
+        timeout: float,
+    ) -> str:
+        """Call Ollama /api/chat with a full multi-turn message list."""
+        url = f"{config['ollama_url']}/api/chat"
+        payload: dict[str, Any] = {
+            "model": config["offline_model"],
+            "messages": messages,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": LLM_TEMPERATURE, "num_predict": LLM_MAX_TOKENS},
+        }
+        timeouts = httpx.Timeout(timeout, connect=30.0)
+        async with httpx.AsyncClient(timeout=timeouts) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("message", {}).get("content", "")
+
+    async def _invoke_online_messages(
+        self,
+        messages: list[dict[str, str]],
+        config: dict,
+        timeout: float,
+    ) -> str:
+        """Call OpenAI-compatible API with a full multi-turn message list."""
+        provider = config.get("online_provider", "openai")
+        base_url = config.get("online_base_url", "").strip()
+        if not base_url:
+            base_url = self.PROVIDER_BASE_URLS.get(provider, "https://api.openai.com/v1")
+
+        headers = {
+            "Authorization": f"Bearer {config['online_api_key']}",
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "model": config["online_model"],
+            "messages": messages,
+            "temperature": LLM_TEMPERATURE,
+            "max_tokens": LLM_MAX_TOKENS,
+            "response_format": {"type": "json_object"},
+        }
         timeouts = httpx.Timeout(timeout, connect=30.0)
         async with httpx.AsyncClient(timeout=timeouts) as client:
             resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)

@@ -1,0 +1,337 @@
+@startuml AuditForge_UseCase_Diagram
+
+' ============================================================
+'  AuditForge — UML Use Case Diagram
+'  Comprehensive view of all system actors and use cases
+' ============================================================
+
+skinparam backgroundColor #FAFAFA
+skinparam handwritten false
+
+skinparam usecase {
+  BackgroundColor #FFFDE7
+  BorderColor #333333
+  ArrowColor #555555
+  FontSize 11
+}
+
+skinparam actor {
+  BackgroundColor #FFE600
+  BorderColor #2E2E38
+  FontSize 12
+  FontStyle bold
+}
+
+skinparam package {
+  BackgroundColor #F5F5F5
+  BorderColor #2E2E38
+  FontSize 13
+  FontStyle bold
+}
+
+skinparam rectangle {
+  BackgroundColor #FAFAFA
+  BorderColor #2E2E38
+  RoundCorner 15
+}
+
+' ════════════════════════════════════════
+'  ACTORS
+' ════════════════════════════════════════
+
+actor "Auditor" as auditor #FFE600
+actor "Administrator" as admin #FFE600
+
+actor "Target\nSystem" as target <<external>> #E0E0E0
+actor "LLM Engine\n(Ollama / OpenAI)" as llm <<external>> #E0E0E0
+actor "Discovery\nAgent" as dagent <<external>> #E0E0E0
+actor "Connect\nAgent" as cagent <<external>> #E0E0E0
+actor "Email / Slack\nService" as notif_svc <<external>> #E0E0E0
+
+admin -|> auditor : <<extends>>
+
+' ════════════════════════════════════════
+'  USE CASE PACKAGES
+' ════════════════════════════════════════
+
+rectangle "AuditForge Platform" {
+
+  ' ── Authentication & Administration ──
+  package "Authentication & Administration" as pkg_auth {
+    usecase "Log In / Log Out" as UC_LOGIN
+    usecase "Manage Users" as UC_USERS
+    usecase "Configure App\nSettings" as UC_SETTINGS
+    usecase "View Audit Trail" as UC_TRAIL
+  }
+
+  ' ── Client & Mission Management ──
+  package "Client & Mission Management" as pkg_client {
+    usecase "Manage Clients" as UC_CLIENTS
+    usecase "Manage Missions" as UC_MISSIONS
+    usecase "Assign Targets\nto Mission" as UC_ASSIGN_TGT
+  }
+
+  ' ── Target Management ──
+  package "Target Management" as pkg_target {
+    usecase "Create / Edit\nTargets" as UC_TARGETS
+    usecase "Configure\nCredentials" as UC_CREDS
+    usecase "Test\nConnectivity" as UC_TEST_CONN
+  }
+
+  ' ── Network Discovery ──
+  package "Network Discovery" as pkg_disc {
+    usecase "Discover Network\nHosts" as UC_DISCOVER
+    usecase "Active Directory\nDiscovery" as UC_AD_DISC
+    usecase "Nmap-Enhanced\nScan" as UC_NMAP
+    usecase "Auto-Create\nTargets" as UC_AUTO_TGT
+  }
+
+  ' ── Benchmark Management ──
+  package "Benchmark Management" as pkg_bench {
+    usecase "Browse / Search\nBenchmarks" as UC_BROWSE_BENCH
+    usecase "Import Benchmark\n(PDF)" as UC_IMPORT_BENCH
+    usecase "Parse Rules\n(Phase 1)" as UC_PHASE1
+    usecase "Enrich Rules with\nCommands (Phase 2)" as UC_PHASE2
+    usecase "Validate Commands\n(Phase 3)" as UC_PHASE3
+    usecase "Verify Commands\n(Phase 4)" as UC_PHASE4
+    usecase "Load Preloaded\nCIS Packs" as UC_PRELOADED
+    usecase "Match Command\nTemplate" as UC_TEMPLATE
+  }
+
+  ' ── Smart Import ──
+  package "Smart Import" as pkg_import {
+    usecase "Import Findings\n(14 Formats)" as UC_SMART_IMPORT
+    usecase "Auto-Detect\nFormat" as UC_DETECT_FMT
+    usecase "Map Findings\nto Benchmark" as UC_MAP_BENCH
+    usecase "Enrich\nSeverity" as UC_ENRICH_SEV
+  }
+
+  ' ── Scan Execution ──
+  package "Scan Execution" as pkg_scan {
+    usecase "Execute Direct\nScan" as UC_SCAN
+    usecase "Execute Remote\nScan (Connect)" as UC_REMOTE_SCAN
+    usecase "Batch Scan\n(Multi-Target)" as UC_BATCH
+    usecase "View Scan\nResults" as UC_RESULTS
+    usecase "Self-Heal Failed\nCommands" as UC_SELF_HEAL
+    usecase "Compare Expected\nvs Actual" as UC_COMPARE
+  }
+
+  ' ── Findings & Analysis ──
+  package "Findings & Analysis" as pkg_findings {
+    usecase "View / Filter\nFindings" as UC_FINDINGS
+    usecase "AI-Powered\nAnalysis" as UC_ANALYSIS
+    usecase "Cross-Target\nCorrelation" as UC_CROSS_TGT
+    usecase "Cross-Mission\nTrend Analysis" as UC_CROSS_MISS
+    usecase "Detect False\nPositives" as UC_FP_DETECT
+  }
+
+  ' ── Report Generation ──
+  package "Report Generation" as pkg_report {
+    usecase "Generate PDF\nReport" as UC_PDF
+    usecase "Generate Excel\nReport" as UC_EXCEL
+    usecase "Export CSV" as UC_CSV
+    usecase "Generate HTML\nReport" as UC_HTML
+    usecase "AI Executive\nSummary" as UC_AI_SUMMARY
+    usecase "Save / Manage\nReports" as UC_SAVE_RPT
+  }
+
+  ' ── Copilot ──
+  package "Copilot (AI Assistant)" as pkg_copilot {
+    usecase "Chat with\nCopilot" as UC_CHAT
+    usecase "Ask About\nFindings" as UC_ASK_FIND
+    usecase "Generate\nRemediation Script" as UC_REMED
+    usecase "Compliance\nGap Analysis" as UC_GAP
+  }
+
+  ' ── Sentinel (Scheduled Automation) ──
+  package "Sentinel (Scheduled Scans)" as pkg_sentinel {
+    usecase "Create / Edit\nSchedule" as UC_SCHEDULE
+    usecase "Auto-Execute\nScans" as UC_AUTO_SCAN
+    usecase "Compare Scan\nResults Over Time" as UC_SENT_COMPARE
+    usecase "Send Drift\nAlerts" as UC_ALERT
+  }
+
+  ' ── Forge Connect ──
+  package "Forge Connect (Remote Agents)" as pkg_connect {
+    usecase "Enroll Remote\nAgent" as UC_ENROLL
+    usecase "Manage Agent\nSessions" as UC_AGENT_SESS
+  }
+
+  ' ── Notifications ──
+  package "Notifications" as pkg_notif {
+    usecase "View\nNotifications" as UC_VIEW_NOTIF
+    usecase "Configure\nAlert Channels" as UC_CONF_ALERT
+  }
+
+}
+
+' ════════════════════════════════════════
+'  ACTOR → USE CASE ASSOCIATIONS
+' ════════════════════════════════════════
+
+' ── Auditor (primary) ──
+auditor --> UC_LOGIN
+auditor --> UC_TRAIL
+
+auditor --> UC_CLIENTS
+auditor --> UC_MISSIONS
+auditor --> UC_ASSIGN_TGT
+
+auditor --> UC_TARGETS
+auditor --> UC_CREDS
+auditor --> UC_TEST_CONN
+
+auditor --> UC_DISCOVER
+auditor --> UC_AD_DISC
+
+auditor --> UC_BROWSE_BENCH
+auditor --> UC_IMPORT_BENCH
+
+auditor --> UC_SMART_IMPORT
+
+auditor --> UC_SCAN
+auditor --> UC_REMOTE_SCAN
+auditor --> UC_BATCH
+auditor --> UC_RESULTS
+
+auditor --> UC_FINDINGS
+auditor --> UC_ANALYSIS
+
+auditor --> UC_PDF
+auditor --> UC_EXCEL
+auditor --> UC_CSV
+auditor --> UC_HTML
+auditor --> UC_SAVE_RPT
+
+auditor --> UC_CHAT
+
+auditor --> UC_SCHEDULE
+
+auditor --> UC_ENROLL
+auditor --> UC_AGENT_SESS
+
+auditor --> UC_VIEW_NOTIF
+
+' ── Administrator ──
+admin --> UC_USERS
+admin --> UC_SETTINGS
+admin --> UC_CONF_ALERT
+admin --> UC_PRELOADED
+
+' ════════════════════════════════════════
+'  EXTERNAL ACTOR ASSOCIATIONS
+' ════════════════════════════════════════
+
+' ── Target System ──
+UC_TEST_CONN --> target
+UC_SCAN --> target
+UC_REMOTE_SCAN --> target
+
+' ── LLM Engine ──
+UC_PHASE1 --> llm
+UC_PHASE2 --> llm
+UC_PHASE3 --> llm
+UC_PHASE4 --> llm
+UC_ANALYSIS --> llm
+UC_AI_SUMMARY --> llm
+UC_CHAT --> llm
+UC_SELF_HEAL --> llm
+UC_FP_DETECT ..> llm : <<optional>>
+
+' ── Discovery Agent ──
+UC_DISCOVER --> dagent
+UC_NMAP --> dagent
+
+' ── Connect Agent ──
+UC_REMOTE_SCAN --> cagent
+UC_ENROLL --> cagent
+
+' ── Notification Services ──
+UC_ALERT --> notif_svc
+UC_CONF_ALERT --> notif_svc
+
+' ════════════════════════════════════════
+'  <<include>> RELATIONSHIPS
+' ════════════════════════════════════════
+
+UC_IMPORT_BENCH ..> UC_PHASE1 : <<include>>
+UC_PHASE1 ..> UC_PHASE2 : <<include>>
+UC_PHASE2 ..> UC_TEMPLATE : <<include>>
+UC_PHASE2 ..> UC_PHASE3 : <<include>>
+UC_PHASE3 ..> UC_PHASE4 : <<include>>
+
+UC_SCAN ..> UC_COMPARE : <<include>>
+UC_REMOTE_SCAN ..> UC_COMPARE : <<include>>
+
+UC_SMART_IMPORT ..> UC_DETECT_FMT : <<include>>
+UC_SMART_IMPORT ..> UC_MAP_BENCH : <<include>>
+UC_SMART_IMPORT ..> UC_ENRICH_SEV : <<include>>
+
+UC_DISCOVER ..> UC_AUTO_TGT : <<include>>
+UC_AD_DISC ..> UC_AUTO_TGT : <<include>>
+
+UC_AUTO_SCAN ..> UC_SCAN : <<include>>
+UC_AUTO_SCAN ..> UC_SENT_COMPARE : <<include>>
+
+UC_PDF ..> UC_AI_SUMMARY : <<include>>
+
+' ════════════════════════════════════════
+'  <<extend>> RELATIONSHIPS
+' ════════════════════════════════════════
+
+UC_SCAN ..> UC_SELF_HEAL : <<extend>>
+UC_SCAN ..> UC_BATCH : <<extend>>
+
+UC_DISCOVER ..> UC_NMAP : <<extend>>
+
+UC_FINDINGS ..> UC_FP_DETECT : <<extend>>
+UC_FINDINGS ..> UC_CROSS_TGT : <<extend>>
+UC_FINDINGS ..> UC_CROSS_MISS : <<extend>>
+
+UC_CHAT ..> UC_ASK_FIND : <<extend>>
+UC_CHAT ..> UC_REMED : <<extend>>
+UC_CHAT ..> UC_GAP : <<extend>>
+
+UC_SENT_COMPARE ..> UC_ALERT : <<extend>>
+
+}
+
+' ════════════════════════════════════════
+'  NOTES
+' ════════════════════════════════════════
+
+note bottom of pkg_bench
+  4-phase AI pipeline:
+  Parse → Enrich → Validate → Verify
+  Template-first, LLM fallback
+  33 preloaded CIS packs (4938 rules)
+end note
+
+note bottom of pkg_scan
+  10 connector types:
+  SSH, WinRM, Netmiko,
+  PostgreSQL, Oracle, MSSQL,
+  MySQL, MongoDB, AD/LDAP
+end note
+
+note bottom of pkg_import
+  14 format parsers:
+  Nessus, Qualys, OpenVAS,
+  STIG, NIST, ISO, Generic XCCDF,
+  AI-powered unknown format
+end note
+
+note right of pkg_disc
+  12+ detection layers:
+  ICMP, ARP, TCP (60 ports),
+  UDP probes, SMB, SNMP,
+  UPnP, mDNS, HTTP, RDP, WinRM
+end note
+
+note right of pkg_copilot
+  28 tools, 4-agent pipeline:
+  DB miner → Template matcher
+  → Gap analyzer → LLM generator
+end note
+
+@enduml

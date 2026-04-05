@@ -28,65 +28,88 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+
     # ── Benchmark table ──────────────────────────────────────
+    bench_cols = {c["name"] for c in inspector.get_columns("benchmarks")}
     with op.batch_alter_table("benchmarks") as batch_op:
-        batch_op.add_column(
-            sa.Column("source", sa.String(), server_default="user_imported", nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("preloaded_version", sa.String(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("pack_hash", sa.String(), nullable=True)
-        )
+        if "source" not in bench_cols:
+            batch_op.add_column(
+                sa.Column("source", sa.String(), server_default="user_imported", nullable=True)
+            )
+        if "preloaded_version" not in bench_cols:
+            batch_op.add_column(
+                sa.Column("preloaded_version", sa.String(), nullable=True)
+            )
+        if "pack_hash" not in bench_cols:
+            batch_op.add_column(
+                sa.Column("pack_hash", sa.String(), nullable=True)
+            )
 
     # ── Rule table ───────────────────────────────────────────
+    rule_cols = {c["name"] for c in inspector.get_columns("rules")}
     with op.batch_alter_table("rules") as batch_op:
-        batch_op.add_column(
-            sa.Column("narrative_group", sa.String(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("security_themes_json", sa.Text(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("attack_chain_tags_json", sa.Text(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("mitre_attack_json", sa.Text(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("risk_weight", sa.Integer(), nullable=True, server_default="5")
-        )
-        batch_op.add_column(
-            sa.Column("related_rules_json", sa.Text(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("group_with_json", sa.Text(), nullable=True)
-        )
+        if "narrative_group" not in rule_cols:
+            batch_op.add_column(
+                sa.Column("narrative_group", sa.String(), nullable=True)
+            )
+        if "security_themes_json" not in rule_cols:
+            batch_op.add_column(
+                sa.Column("security_themes_json", sa.Text(), nullable=True)
+            )
+        if "attack_chain_tags_json" not in rule_cols:
+            batch_op.add_column(
+                sa.Column("attack_chain_tags_json", sa.Text(), nullable=True)
+            )
+        if "mitre_attack_json" not in rule_cols:
+            batch_op.add_column(
+                sa.Column("mitre_attack_json", sa.Text(), nullable=True)
+            )
+        if "risk_weight" not in rule_cols:
+            batch_op.add_column(
+                sa.Column("risk_weight", sa.Integer(), nullable=True, server_default="5")
+            )
+        if "related_rules_json" not in rule_cols:
+            batch_op.add_column(
+                sa.Column("related_rules_json", sa.Text(), nullable=True)
+            )
+        if "group_with_json" not in rule_cols:
+            batch_op.add_column(
+                sa.Column("group_with_json", sa.Text(), nullable=True)
+            )
 
     # ── RuleCommand table ────────────────────────────────────
+    rc_cols = {c["name"] for c in inspector.get_columns("rule_commands")}
     with op.batch_alter_table("rule_commands") as batch_op:
-        batch_op.add_column(
-            sa.Column("empty_output_interpretation", sa.Text(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("output_value_map_json", sa.Text(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("fp_conditions_json", sa.Text(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("remediation_gpo_path", sa.Text(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("remediation_risk", sa.String(), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column("safe_to_automate", sa.Boolean(), nullable=True, server_default="0")
-        )
-        batch_op.add_column(
-            sa.Column("requires_restart", sa.Boolean(), nullable=True, server_default="0")
-        )
+        if "empty_output_interpretation" not in rc_cols:
+            batch_op.add_column(
+                sa.Column("empty_output_interpretation", sa.Text(), nullable=True)
+            )
+        if "output_value_map_json" not in rc_cols:
+            batch_op.add_column(
+                sa.Column("output_value_map_json", sa.Text(), nullable=True)
+            )
+        if "fp_conditions_json" not in rc_cols:
+            batch_op.add_column(
+                sa.Column("fp_conditions_json", sa.Text(), nullable=True)
+            )
+        if "remediation_gpo_path" not in rc_cols:
+            batch_op.add_column(
+                sa.Column("remediation_gpo_path", sa.Text(), nullable=True)
+            )
+        if "remediation_risk" not in rc_cols:
+            batch_op.add_column(
+                sa.Column("remediation_risk", sa.String(), nullable=True)
+            )
+        if "safe_to_automate" not in rc_cols:
+            batch_op.add_column(
+                sa.Column("safe_to_automate", sa.Boolean(), nullable=True, server_default="0")
+            )
+        if "requires_restart" not in rc_cols:
+            batch_op.add_column(
+                sa.Column("requires_restart", sa.Boolean(), nullable=True, server_default="0")
+            )
 
 
 def downgrade() -> None:

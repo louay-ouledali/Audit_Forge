@@ -139,7 +139,7 @@ export default function Clients() {
         {/* Subtle emerald radar motif */}
         <div className="absolute top-0 right-0 -mr-16 -mt-16 h-64 w-64 rounded-full bg-emerald-600/10 blur-[80px] pointer-events-none" />
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMTkiIGZpbGw9Im5vbmUiIHN0cm9rZT0icmdiYSgxNiwgMTg1LCAxMjksIDAuMSkiIHN0cm9rZS13aWR0aD0iMSIvPjwvc3ZnPg==')] pointer-events-none mask-image:radial-gradient(ellipse_at_center,white,transparent_80%)" />
-        
+
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
           <div className="flex flex-row items-center gap-5">
             <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_20px_rgba(16,185,129,0.15)]">
@@ -221,43 +221,43 @@ export default function Clients() {
         <>
           <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={handleCancel} />
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
-          <form onSubmit={handleSubmit} className="pointer-events-auto w-full max-w-lg rounded-xl border border-dark-border bg-dark-elevated p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-between border-b border-dark-border pb-4">
-              <h3 className="text-xl font-semibold text-white">{editingId ? 'Edit Client' : 'New Client'}</h3>
-              <button type="button" onClick={handleCancel} className="rounded-md p-1.5 text-dark-muted hover:bg-dark-overlay hover:text-white transition-colors"><X className="h-5 w-5" /></button>
-            </div>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-2">
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-dark-secondary">Name *</label>
-                <input name="name" value={form.name} onChange={handleChange} required placeholder="e.g. Acme Corporation"
-                  className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all" />
+            <form onSubmit={handleSubmit} className="pointer-events-auto w-full max-w-lg rounded-xl border border-dark-border bg-dark-elevated p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between border-b border-dark-border pb-4">
+                <h3 className="text-xl font-semibold text-white">{editingId ? 'Edit Client' : 'New Client'}</h3>
+                <button type="button" onClick={handleCancel} className="rounded-md p-1.5 text-dark-muted hover:bg-dark-overlay hover:text-white transition-colors"><X className="h-5 w-5" /></button>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-dark-secondary">Industry</label>
-                <input name="industry" value={form.industry} onChange={handleChange} placeholder="e.g. Finance, Healthcare"
-                  className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all" />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-2">
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Name *</label>
+                  <input name="name" value={form.name} onChange={handleChange} required placeholder="e.g. Acme Corporation"
+                    className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Industry</label>
+                  <input name="industry" value={form.industry} onChange={handleChange} placeholder="e.g. Finance, Healthcare"
+                    className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Contact Name</label>
+                  <input name="contact_name" value={form.contact_name} onChange={handleChange} placeholder="Primary contact"
+                    className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Contact Email</label>
+                  <input name="contact_email" type="email" value={form.contact_email} onChange={handleChange} placeholder="email@company.com"
+                    className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all" />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-dark-secondary">Notes</label>
+                  <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} placeholder="Internal notes about this client…"
+                    className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all resize-none custom-scrollbar" />
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-dark-secondary">Contact Name</label>
-                <input name="contact_name" value={form.contact_name} onChange={handleChange} placeholder="Primary contact"
-                  className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all" />
+              <div className="flex justify-end gap-3 border-t border-dark-border pt-5">
+                <button type="button" onClick={handleCancel} className="rounded-lg border border-dark-border bg-dark-card px-4 py-2 text-sm font-medium text-dark-secondary hover:bg-dark-overlay hover:text-white transition-colors">Cancel</button>
+                <button type="submit" disabled={submitting} className="rounded-lg bg-ey-yellow px-5 py-2 text-sm font-semibold text-black hover:bg-ey-yellow-hover shadow-lg shadow-ey-yellow/10 transition-all disabled:opacity-50">{submitting ? 'Saving…' : editingId ? 'Save Changes' : 'Create Client'}</button>
               </div>
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-dark-secondary">Contact Email</label>
-                <input name="contact_email" type="email" value={form.contact_email} onChange={handleChange} placeholder="email@company.com"
-                  className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all" />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-dark-secondary">Notes</label>
-                <textarea name="notes" value={form.notes} onChange={handleChange} rows={3} placeholder="Internal notes about this client…"
-                  className="block w-full rounded-lg border border-dark-border bg-dark-card px-3 py-2 text-sm text-white placeholder:text-dark-muted focus:border-ey-yellow/50 focus:ring-1 focus:ring-ey-yellow/30 focus:outline-none transition-all resize-none custom-scrollbar" />
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 border-t border-dark-border pt-5">
-              <button type="button" onClick={handleCancel} className="rounded-lg border border-dark-border bg-dark-card px-4 py-2 text-sm font-medium text-dark-secondary hover:bg-dark-overlay hover:text-white transition-colors">Cancel</button>
-              <button type="submit" disabled={submitting} className="rounded-lg bg-ey-yellow px-5 py-2 text-sm font-semibold text-black hover:bg-ey-yellow-hover shadow-lg shadow-ey-yellow/10 transition-all disabled:opacity-50">{submitting ? 'Saving…' : editingId ? 'Save Changes' : 'Create Client'}</button>
-            </div>
-          </form>
+            </form>
           </div>
         </>,
         document.body,

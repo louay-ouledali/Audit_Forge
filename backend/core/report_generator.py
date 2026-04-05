@@ -1662,7 +1662,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
             _clean(f.get("ai_advice", "")),
             _clean(f.get("auditor_notes", "")),
             _clean(f.get("auditor_override", "")),
-            ", ".join(f"{rp['service']}:{rp['port']}" for rp in f.get("related_ports", [])) or "",
+            ", ".join(f"{rp.get('service_name', rp.get('service', ''))}:{rp.get('port', '')}" for rp in f.get("related_ports", [])) or "",
         ])
         # Color-code severity
         sev_fill = SEVERITY_FILLS.get(f["severity"])

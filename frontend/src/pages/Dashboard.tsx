@@ -138,8 +138,8 @@ export default function Dashboard() {
       {/* Welcome Banner */}
       <div className="relative overflow-hidden rounded-xl border border-dark-border bg-dark-card p-8 text-center shadow-lg">
         <div className="relative">
-            <div className="mx-auto mb-4 flex items-center justify-center h-16 w-16">
-              <img src={logoImg} alt="AuditForge Logo" className="h-16 w-16 object-contain" />
+          <div className="mx-auto mb-4 flex items-center justify-center h-16 w-16">
+            <img src={logoImg} alt="AuditForge Logo" className="h-16 w-16 object-contain" />
           </div>
           <h2 className="text-2xl font-bold text-white">
             Welcome to <span className="text-white">AuditForge</span>

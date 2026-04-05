@@ -19,7 +19,7 @@ export default function ConnectSessionManager({ clientId, missionId }: Props) {
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const { addToast } = useToast();
+  const toast = useToast();
 
   // Form state
   const [expiryHours, setExpiryHours] = useState(24);
@@ -31,7 +31,7 @@ export default function ConnectSessionManager({ clientId, missionId }: Props) {
       const data = await api.getConnectSessions(clientId, missionId);
       setSessions(data);
     } catch {
-      addToast('Failed to load connect sessions', 'error');
+      toast.error('Failed to load connect sessions');
     } finally {
       setLoading(false);
     }
@@ -60,9 +60,9 @@ export default function ConnectSessionManager({ clientId, missionId }: Props) {
       setShowForm(false);
       setNotes('');
       setExpandedId(session.id);
-      addToast('Connect session created', 'success');
+      toast.success('Connect session created');
     } catch {
-      addToast('Failed to create session', 'error');
+      toast.error('Failed to create session');
     } finally {
       setCreating(false);
     }
@@ -72,16 +72,16 @@ export default function ConnectSessionManager({ clientId, missionId }: Props) {
     try {
       await api.terminateConnectSession(sessionId);
       setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, status: 'terminated' as const } : s));
-      addToast('Session terminated', 'success');
+      toast.success('Session terminated');
     } catch {
-      addToast('Failed to terminate session', 'error');
+      toast.error('Failed to terminate session');
     }
   };
 
   const copyPortalUrl = (code: string) => {
     const url = `${window.location.origin}/connect/${code}`;
     navigator.clipboard.writeText(url);
-    addToast('Portal URL copied to clipboard', 'success');
+    toast.success('Portal URL copied to clipboard');
   };
 
   const statusColor = (status: string) => {

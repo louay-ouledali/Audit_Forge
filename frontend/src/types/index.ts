@@ -999,3 +999,66 @@ export interface CopilotPipelineResult {
   };
   created?: { created: number; rules: CopilotPendingRule[] };
 }
+
+// ── Forge Sentinel ──────────────────────────────────────────────
+
+export interface Schedule {
+  id: number;
+  name: string;
+  mission_id: number;
+  target_ids: number[];
+  frequency: 'daily' | 'weekly' | 'monthly' | 'custom';
+  day_of_week: number | null;
+  day_of_month: number | null;
+  time_of_day: string;
+  custom_interval_hours: number | null;
+  timezone: string;
+  enabled: boolean;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  last_compliance: number | null;
+  compliance_delta: number | null;
+  next_run_at: string;
+  notify_on_regression: boolean;
+  notify_on_critical: boolean;
+  regression_threshold: number;
+  alert_channels: string[];
+  alert_emails: string | null;
+  slack_webhook_url: string | null;
+  auto_generate_report: boolean;
+  report_format: string;
+  created_at: string;
+}
+
+export interface SentinelRun {
+  id: number;
+  schedule_id: number;
+  scan_ids: number[];
+  previous_scan_ids: number[];
+  status: 'running' | 'completed' | 'failed';
+  compliance_current: number | null;
+  compliance_previous: number | null;
+  compliance_delta: number | null;
+  rules_regressed: number;
+  rules_improved: number;
+  critical_openings: number;
+  comparison_details: Record<string, unknown> | null;
+  alerts_sent: unknown[];
+  started_at: string;
+  completed_at: string | null;
+}
+
+export interface AppNotification {
+  id: number;
+  user_id: number | null;
+  mission_id: number | null;
+  title: string;
+  body: string | null;
+  type: 'info' | 'warning' | 'critical' | 'success';
+  icon: string | null;
+  entity_type: string | null;
+  entity_id: number | null;
+  link: string | null;
+  is_read: boolean;
+  created_at: string;
+}

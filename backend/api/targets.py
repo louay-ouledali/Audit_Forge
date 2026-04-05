@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session
 from backend.api.missions import check_mission_lock
 from backend.config import settings
 from backend.connectors import get_connector
+from backend.core.auth import get_current_user
+from backend.core.trail import log_action
+from backend.utils.datetime_utils import utc_iso
 from backend.database import get_db
 from backend.models.benchmark import Benchmark
 from backend.models.client import Client
@@ -18,6 +21,7 @@ from backend.models.mission import Mission
 from backend.models.mission_target import MissionTarget
 from backend.models.scan import Scan
 from backend.models.target import Target
+from backend.models.user import User
 from backend.schemas.target import (
     TargetCreate,
     TargetDetailEnvelope,
@@ -120,7 +124,7 @@ def list_targets_for_mission(mission_id: int, db: Session = Depends(get_db)) -> 
 # ── Assign / unassign target to mission ──────────────────────
 @router.post("/missions/{mission_id}/targets/{target_id}")
 def assign_target_to_mission(
-    mission_id: int, target_id: int, db: Session = Depends(get_db)
+    mission_id: int, target_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ) -> dict:
     mission = db.query(Mission).filter(Mission.id == mission_id).first()
     if not mission:
@@ -141,12 +145,16 @@ def assign_target_to_mission(
         return {"data": None, "message": "Target already assigned to mission"}
     db.add(MissionTarget(mission_id=mission_id, target_id=target_id))
     db.commit()
+    try:
+        log_action(db, user=current_user, mission_id=mission_id, action="target_assigned", entity_type="target", entity_id=target_id, entity_label=target.hostname or target.ip_address)
+    except Exception as exc:
+        logger.warning("Trail log failed: %s", exc)
     return {"data": None, "message": "Target assigned to mission"}
 
 
 @router.delete("/missions/{mission_id}/targets/{target_id}")
 def unassign_target_from_mission(
-    mission_id: int, target_id: int, db: Session = Depends(get_db)
+    mission_id: int, target_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ) -> dict:
     check_mission_lock(mission_id, db)
     link = (
@@ -158,6 +166,11 @@ def unassign_target_from_mission(
         raise HTTPException(status_code=404, detail="Target not assigned to this mission")
     db.delete(link)
     db.commit()
+    target = db.query(Target).filter(Target.id == target_id).first()
+    try:
+        log_action(db, user=current_user, mission_id=mission_id, action="target_unassigned", entity_type="target", entity_id=target_id, entity_label=(target.hostname or target.ip_address) if target else None)
+    except Exception as exc:
+        logger.warning("Trail log failed: %s", exc)
     return {"data": None, "message": "Target unassigned from mission"}
 
 
@@ -484,8 +497,8 @@ def last_scan(target_id: int, db: Session = Depends(get_db)) -> dict:
             "scan_id": scan.id,
             "status": scan.status,
             "scan_mode": scan.scan_mode,
-            "started_at": scan.started_at.isoformat() if scan.started_at else None,
-            "completed_at": scan.completed_at.isoformat() if scan.completed_at else None,
+            "started_at": utc_iso(scan.started_at),
+            "completed_at": utc_iso(scan.completed_at),
             "compliance_percentage": scan.compliance_percentage,
             "passed": scan.passed or 0,
             "failed": scan.failed or 0,
