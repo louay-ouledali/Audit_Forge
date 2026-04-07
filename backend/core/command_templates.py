@@ -382,7 +382,7 @@ def _try_net_accounts(rule: dict[str, Any]) -> dict[str, str] | None:
         "audit_command": audit_cmd,
         "expected_output_regex": comparison,
         "expected_output_description": f"{field_label} value (must be {comparison})",
-        "remediation_command": "",
+        "remediation_command": f"net accounts /{field_label.replace(' ', '')}:{comparison.lstrip('><=')}" if re.match(r'^[><=]+\d+$', comparison) else "",
         "remediation_description": f"Set {field_label} to the required value via Group Policy.",
     }
 
@@ -478,7 +478,7 @@ def _try_registry(rule: dict[str, Any]) -> dict[str, str] | None:
         "audit_command": audit_cmd,
         "expected_output_regex": comparison,
         "expected_output_description": f"Registry value {value_name} (expected: {comparison})",
-        "remediation_command": "",
+        "remediation_command": f"Set-ItemProperty -Path '{ps_key_path}' -Name '{value_name}' -Value {comparison.lstrip('><=')}" if re.match(r'^[><=]+\d+$', comparison) else "",
         "remediation_description": f"Set {key_path}\\{value_name} via Group Policy or reg add.",
     }
 
@@ -594,11 +594,19 @@ def _try_auditpol(rule: dict[str, Any]) -> dict[str, str] | None:
 
     comparison = _determine_audit_comparison(title_lower, remediation)
 
+    # Build auditpol remediation command
+    audit_flags = []
+    if "success" in comparison.lower():
+        audit_flags.append("/success:enable")
+    if "failure" in comparison.lower():
+        audit_flags.append("/failure:enable")
+    rem_cmd = f'auditpol /set /subcategory:"{guid}" {" ".join(audit_flags)}' if audit_flags else f'auditpol /set /subcategory:"{guid}" /success:enable /failure:enable'
+
     return {
         "audit_command": f'auditpol /get /subcategory:"{guid}"',
         "expected_output_regex": comparison,
         "expected_output_description": f"Audit policy subcategory {guid} ({comparison})",
-        "remediation_command": "",
+        "remediation_command": rem_cmd,
         "remediation_description": "Configure via Advanced Audit Policy in Group Policy.",
     }
 
@@ -680,11 +688,13 @@ def _try_windows_service(rule: dict[str, Any]) -> dict[str, str] | None:
         # of these rules require services to be Disabled or Not Installed
         comparison = "==Disabled"
 
+    rem_cmd = f"Set-Service -Name {svc_name} -StartupType {comparison.lstrip('==')}; Stop-Service -Name {svc_name} -Force -ErrorAction SilentlyContinue" if "Disabled" in comparison else f"Set-Service -Name {svc_name} -StartupType Automatic; Start-Service -Name {svc_name}"
+
     return {
         "audit_command": f"(Get-Service -Name {svc_name} -ErrorAction Stop).StartType",
         "expected_output_regex": comparison,
         "expected_output_description": f"Service {svc_name} start type (expected: {comparison})",
-        "remediation_command": "",
+        "remediation_command": rem_cmd,
         "remediation_description": f"Set service {svc_name} startup type via Group Policy or sc.exe.",
     }
 
@@ -811,7 +821,7 @@ def _try_sysctl(rule: dict[str, Any]) -> dict[str, str] | None:
         "audit_command": f"sysctl -n {param}",
         "expected_output_regex": f"=={expected_val}",
         "expected_output_description": f"{param} value (expected: =={expected_val})",
-        "remediation_command": "",
+        "remediation_command": f"sysctl -w {param}={expected_val} && echo '{param} = {expected_val}' >> /etc/sysctl.d/99-auditforge.conf",
         "remediation_description": f"Set {param} = {expected_val} in /etc/sysctl.conf and run sysctl -p.",
     }
 
@@ -847,14 +857,16 @@ def _try_systemctl(rule: dict[str, Any]) -> dict[str, str] | None:
 
     if "not enabled" in title_lower or "disabled" in title_lower or "not installed" in title_lower:
         comparison = "==disabled"
+        rem_cmd = f"systemctl --now disable {svc_name}"
     else:
         comparison = "==enabled"
+        rem_cmd = f"systemctl --now enable {svc_name}"
 
     return {
         "audit_command": f"systemctl is-enabled {svc_name} 2>/dev/null || echo not-found",
         "expected_output_regex": comparison,
         "expected_output_description": f"Service {svc_name} state (expected: {comparison})",
-        "remediation_command": "",
+        "remediation_command": rem_cmd,
         "remediation_description": f"Configure {svc_name} via systemctl.",
     }
 
@@ -883,7 +895,7 @@ def _try_file_permissions(rule: dict[str, Any]) -> dict[str, str] | None:
         "audit_command": f"stat -c '%a' {filepath}",
         "expected_output_regex": comparison,
         "expected_output_description": f"File {filepath} permissions (expected: {comparison})",
-        "remediation_command": "",
+        "remediation_command": f"chmod {perms if perm_match else '644'} {filepath}",
         "remediation_description": f"Set correct permissions on {filepath}.",
     }
 
@@ -933,17 +945,20 @@ def _try_grep_config(rule: dict[str, Any]) -> dict[str, str] | None:
     title_lower = (rule.get("title") or "").lower()
     # Determine expected value
     val_match = re.search(r"is\s+set\s+to\s+['\"]?(\w+)", title_lower)
+    param_name = pattern.strip("^$").split("\\s")[0].split("[")[0].rstrip("=\\s ")
     if val_match:
         expected_val = val_match.group(1)
         comparison = f"contains:{expected_val}"
+        rem_cmd = f"sed -i 's/^#\\?{param_name}.*/{param_name} {expected_val}/' {filepath}"
     else:
         comparison = f"contains:{pattern.strip('^$')}"
+        rem_cmd = f"# Edit {filepath} — ensure line matching '{pattern.strip('^$')}' is present"
 
     return {
         "audit_command": f"grep -E '{pattern}' {filepath}",
         "expected_output_regex": comparison,
         "expected_output_description": f"Config check in {filepath} ({comparison})",
-        "remediation_command": "",
+        "remediation_command": rem_cmd,
         "remediation_description": f"Edit {filepath} to set the required value.",
     }
 
@@ -1217,7 +1232,7 @@ def _try_modprobe(rule: dict[str, Any]) -> dict[str, str] | None:
         "audit_command": f"modprobe -n -v {module} 2>&1",
         "expected_output_regex": "contains:install /bin/true",
         "expected_output_description": f"Kernel module {module} is disabled (install /bin/true)",
-        "remediation_command": "",
+        "remediation_command": f"echo 'install {module} /bin/true' >> /etc/modprobe.d/{module}.conf && echo 'blacklist {module}' >> /etc/modprobe.d/{module}.conf",
         "remediation_description": f"Disable {module} via /etc/modprobe.d/ and blacklist.",
     }
 

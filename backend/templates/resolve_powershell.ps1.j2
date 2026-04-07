@@ -1,0 +1,75 @@
+# ═══════════════════════════════════════════════════════════════════════
+# AuditForge Remediation Script (PowerShell)
+# ═══════════════════════════════════════════════════════════════════════
+# Target:    {{ target.hostname }} ({{ target.ip }})
+# Platform:  {{ target.platform }}
+# Session:   #{{ session_id }}
+# Generated: {{ generation_date }}
+# Commands:  {{ total }} selected remediation commands
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️  REVIEW EACH COMMAND BEFORE EXECUTION
+# ⚠️  Run as Administrator
+# ⚠️  Test on a non-production system first
+#
+# Usage:
+#   .\remediate.ps1              # Execute all
+#   .\remediate.ps1 -WhatIf     # Preview only (dry run)
+#
+# ═══════════════════════════════════════════════════════════════════════
+
+[CmdletBinding(SupportsShouldProcess)]
+param()
+
+$ErrorActionPreference = "Continue"
+$Total = {{ total }}
+$Passed = 0
+$Failed = 0
+$Skipped = 0
+
+function Log-Step {
+    param([string]$Message)
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $Message"
+}
+
+Write-Host "═══════════════════════════════════════════════════════"
+Write-Host "  AuditForge Remediation — {{ target.hostname }}"
+Write-Host "  {{ total }} commands queued"
+Write-Host "═══════════════════════════════════════════════════════"
+Write-Host ""
+
+{% for item in items %}
+# ── [{{ item.index }}/{{ total }}] Rule {{ item.section_number }} ─────────────
+# Title:    {{ item.rule_title }}
+# Severity: {{ item.severity | upper }}
+{% if item.requires_privilege %}# ⚠️  Requires Administrator privileges
+{% endif %}
+Log-Step "[{{ item.index }}/{{ total }}] {{ item.severity | upper }} — {{ item.section_number }}: {{ item.rule_title }}"
+if ($PSCmdlet.ShouldProcess("{{ item.section_number }}: {{ item.rule_title }}", "Apply remediation")) {
+    try {
+        {{ item.remediation_command }}
+        Log-Step "  ✓ Success"
+        $Passed++
+    }
+    catch {
+        Log-Step "  ✗ Failed: $_"
+        $Failed++
+    }
+}
+else {
+    Write-Host "  [WhatIf] Would execute: {{ item.remediation_command | replace('"', '`"') }}"
+    $Skipped++
+}
+Write-Host ""
+
+{% endfor %}
+# ═══════════════════════════════════════════════════════════════════════
+# Summary
+# ═══════════════════════════════════════════════════════════════════════
+Write-Host ""
+Write-Host "═══════════════════════════════════════════════════════"
+Write-Host "  Remediation Complete"
+Write-Host "  Total: $Total | Passed: $Passed | Failed: $Failed | Skipped: $Skipped"
+Write-Host "═══════════════════════════════════════════════════════"
+
+if ($Failed -gt 0) { exit 1 }

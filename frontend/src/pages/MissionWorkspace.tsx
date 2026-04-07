@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { Mission, Target, Client, ScanDetail } from '@/types';
 import * as api from '@/services/api';
+import ResolvePanel from '@/components/resolve/ResolvePanel';
 import { STATUS_STYLES, STATUS_LABELS, inputClass } from '@/components/mission/badgeHelpers';
 import { useNumericParam } from '@/hooks/useNumericParam';
 import { extractApiError } from '@/utils/apiError';
@@ -51,6 +52,7 @@ export default function MissionWorkspace() {
 
   /* ── Tab state ───────────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState<MissionTab>('overview');
+  const [resolveTarget, setResolveTarget] = useState<Target | null>(null);
 
   /* ── Findings filter state (persisted across tab switches) ─ */
   const [findingsFilter, setFindingsFilter] = useState<FindingsFilterState>(DEFAULT_FILTER_STATE);
@@ -475,6 +477,7 @@ export default function MissionWorkspace() {
             setActiveTab('findings');
           }}
           isLocked={!!mission.is_locked}
+          onResolve={setResolveTarget}
           clientAdConfigured={client?.ad_configured ?? false}
           clientAdDomain={client?.ad_domain}
         />
@@ -507,6 +510,16 @@ export default function MissionWorkspace() {
 
       {activeTab === 'reports' && (
         <MissionReports missionId={missionId} missionName={mission?.name} />
+      )}
+
+      {/* Forge Resolve Panel */}
+      {resolveTarget && mission && (
+        <ResolvePanel
+          target={resolveTarget}
+          missionId={missionId}
+          scans={scans}
+          onClose={() => setResolveTarget(null)}
+        />
       )}
     </div>
   );

@@ -29,6 +29,7 @@ from backend.api.auth import router as auth_router
 from backend.api.trail import router as trail_router
 from backend.api.schedules import router as schedules_router
 from backend.api.notifications import router as notifications_router
+from backend.api.resolve import router as resolve_router
 from backend.api.ws_agent import router as ws_agent_router
 from backend.config import settings
 from backend.core.exceptions import (
@@ -240,6 +241,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -271,6 +273,7 @@ app.include_router(ad_discovery_router, prefix="/api", dependencies=_auth)
 app.include_router(copilot_router, prefix="/api", dependencies=_auth)
 app.include_router(schedules_router, prefix="/api", dependencies=_auth)
 app.include_router(notifications_router, prefix="/api", dependencies=_auth)
+app.include_router(resolve_router, prefix="/api", dependencies=_auth)
 
 
 @app.exception_handler(AuditForgeError)

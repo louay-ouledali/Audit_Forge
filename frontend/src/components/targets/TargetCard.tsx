@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   Upload,
   BookOpen,
+  Wrench,
 } from 'lucide-react';
 import type { Target, ConnectionTestResult } from '@/types';
 import * as api from '@/services/api';
@@ -44,7 +45,7 @@ const PLATFORM: Record<string, {
     badge: 'bg-sky-500/10 text-sky-400',
     label: 'Windows',
     usbSupported: true,
-    usbTooltip: 'Download PowerShell audit script ZIP',
+    usbTooltip: 'Download PowerShell review script ZIP',
   },
   linux: {
     icon: Terminal,
@@ -53,7 +54,7 @@ const PLATFORM: Record<string, {
     badge: 'bg-emerald-500/10 text-emerald-400',
     label: 'Linux',
     usbSupported: true,
-    usbTooltip: 'Download Bash audit script ZIP',
+    usbTooltip: 'Download Bash review script ZIP',
   },
   network: {
     icon: Network,
@@ -112,6 +113,7 @@ interface Props {
   onImportResults?: (target: Target) => void;
   onSetupHelp?: (target: Target) => void;
   onViewFindings?: (target: Target) => void;
+  onResolve?: (target: Target) => void;
   isScanning?: boolean;
   scanProgress?: number;
   isLocked?: boolean;
@@ -126,6 +128,7 @@ export default function TargetCard({
   onImportResults,
   onSetupHelp,
   onViewFindings,
+  onResolve,
   isScanning = false,
   scanProgress,
   isLocked = false,
@@ -379,6 +382,17 @@ export default function TargetCard({
           title={!hasBenchmark ? 'Set a benchmark first' : 'Import scan results (JSON/ZIP)'}
         >
           <Upload className="h-3.5 w-3.5" /> Import
+        </button>
+        )}
+
+        {/* Resolve */}
+        {onResolve && target.scan_count > 0 && (
+        <button
+          onClick={() => onResolve(target)}
+          className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 hover:border-emerald-500/50"
+          title="Open Forge Resolve — remediate failed rules"
+        >
+          <Wrench className="h-3.5 w-3.5" /> Resolve
         </button>
         )}
       </div>

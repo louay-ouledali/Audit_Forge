@@ -18,6 +18,8 @@ from backend.models.mission import Mission
 from backend.models.mission_analysis import MissionAnalysis
 from backend.models.mission_target import MissionTarget
 from backend.models.notification import Notification
+from backend.models.remediation_item import RemediationItem
+from backend.models.remediation_session import RemediationSession
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
 from backend.models.rule_tag import RuleTag
@@ -50,6 +52,8 @@ __all__ = [
     "MissionAnalysis",
     "MissionTarget",
     "Notification",
+    "RemediationItem",
+    "RemediationSession",
     "Rule",
     "RuleCommand",
     "RuleTag",

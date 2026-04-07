@@ -36,12 +36,13 @@ interface Props {
   /** Navigate to the findings tab with an optional pre-selected scan */
   onSwitchToFindings?: (scanId?: number) => void;
   isLocked?: boolean;
+  onResolve?: (target: Target) => void;
   /** AD credential info from client */
   clientAdConfigured?: boolean;
   clientAdDomain?: string | null;
 }
 
-export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab, onSwitchToFindings, isLocked = false, clientAdConfigured = false, clientAdDomain }: Props) {
+export default function TargetsTab({ missionId, clientId, missionTargets, clientTargets, onRefresh, onSwitchTab, onSwitchToFindings, isLocked = false, onResolve, clientAdConfigured = false, clientAdDomain }: Props) {
   const toast = useToast();
   const [assignTargetId, setAssignTargetId] = useState<number | ''>('');
   const [error, setError] = useState('');
@@ -499,6 +500,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         onImportResults={isLocked ? undefined : handleImportResults}
         onSetupHelp={handleSetupHelp}
         onViewFindings={handleViewFindings}
+        onResolve={onResolve}
         scanningTargetIds={scan.scanningTargetIds}
         scanProgressMap={scan.scanProgressMap}
         isLocked={isLocked}

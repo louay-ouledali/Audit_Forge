@@ -1,0 +1,78 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════════════════════════
+# AuditForge Remediation Script
+# ═══════════════════════════════════════════════════════════════════════
+# Target:    {{ target.hostname }} ({{ target.ip }})
+# Platform:  {{ target.platform }}
+# Session:   #{{ session_id }}
+# Generated: {{ generation_date }}
+# Commands:  {{ total }} selected remediation commands
+# ═══════════════════════════════════════════════════════════════════════
+#
+# ⚠️  REVIEW EACH COMMAND BEFORE EXECUTION
+# ⚠️  Run as root or with appropriate sudo privileges
+# ⚠️  Test on a non-production system first
+#
+# Usage:
+#   chmod +x remediate.sh
+#   sudo ./remediate.sh          # Execute all
+#   sudo ./remediate.sh --dry-run  # Preview only
+#
+# ═══════════════════════════════════════════════════════════════════════
+
+set -euo pipefail
+
+DRY_RUN=false
+if [[ "${1:-}" == "--dry-run" ]]; then
+    DRY_RUN=true
+    echo "[DRY RUN MODE] Commands will be printed but NOT executed."
+    echo ""
+fi
+
+TOTAL={{ total }}
+PASSED=0
+FAILED=0
+SKIPPED=0
+
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
+
+echo "═══════════════════════════════════════════════════════"
+echo "  AuditForge Remediation — {{ target.hostname }}"
+echo "  {{ total }} commands queued"
+echo "═══════════════════════════════════════════════════════"
+echo ""
+
+{% for item in items %}
+# ── [{{ item.index }}/{{ total }}] Rule {{ item.section_number }} ─────────────
+# Title:    {{ item.rule_title }}
+# Severity: {{ item.severity | upper }}
+{% if item.requires_privilege %}# ⚠️  Requires elevated privileges
+{% endif %}
+log "[{{ item.index }}/{{ total }}] {{ item.severity | upper }} — {{ item.section_number }}: {{ item.rule_title }}"
+if [ "$DRY_RUN" = true ]; then
+    echo "  [DRY RUN] Would execute: {{ item.remediation_command | replace('"', '\\"') }}"
+    ((SKIPPED++)) || true
+else
+    if {{ item.remediation_command }}; then
+        log "  ✓ Success"
+        ((PASSED++)) || true
+    else
+        log "  ✗ Failed (exit code: $?)"
+        ((FAILED++)) || true
+    fi
+fi
+echo ""
+
+{% endfor %}
+# ═══════════════════════════════════════════════════════════════════════
+# Summary
+# ═══════════════════════════════════════════════════════════════════════
+echo ""
+echo "═══════════════════════════════════════════════════════"
+echo "  Remediation Complete"
+echo "  Total: $TOTAL | Passed: $PASSED | Failed: $FAILED | Skipped: $SKIPPED"
+echo "═══════════════════════════════════════════════════════"
+
+if [ "$FAILED" -gt 0 ]; then
+    exit 1
+fi

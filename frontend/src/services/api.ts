@@ -1235,3 +1235,83 @@ export async function markAllNotificationsRead(): Promise<void> {
 export async function dismissNotification(notificationId: number): Promise<void> {
   await api.delete(`/notifications/${notificationId}`);
 }
+
+// ── Forge Resolve ────────────────────────────────────────────────────
+
+export async function createResolveSession(missionId: number, targetId: number, scanIds: number[]) {
+  const { data } = await api.post('/resolve/sessions', {
+    mission_id: missionId, target_id: targetId, scan_ids: scanIds,
+  });
+  return data;
+}
+
+export async function getResolveSession(sessionId: number) {
+  const { data } = await api.get(`/resolve/sessions/${sessionId}`);
+  return data;
+}
+
+export async function getTargetResolveSessions(targetId: number, missionId: number) {
+  const { data } = await api.get(`/resolve/targets/${targetId}/sessions`, {
+    params: { mission_id: missionId },
+  });
+  return data;
+}
+
+export async function updateResolveItem(itemId: number, payload: {
+  selected?: boolean; remediation_command?: string; order_index?: number;
+}) {
+  const { data } = await api.put(`/resolve/items/${itemId}`, payload);
+  return data;
+}
+
+export async function bulkSelectResolveItems(sessionId: number, itemIds: number[], selected: boolean) {
+  const { data } = await api.put(`/resolve/sessions/${sessionId}/bulk-select`, {
+    item_ids: itemIds, selected,
+  });
+  return data;
+}
+
+export async function exportResolveScript(sessionId: number): Promise<Blob> {
+  const { data } = await api.post(`/resolve/sessions/${sessionId}/export`, {}, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function executeResolveNetwork(sessionId: number, confirmPrivilege: boolean = false) {
+  const { data } = await api.post(`/resolve/sessions/${sessionId}/execute`, {
+    confirm_privilege: confirmPrivilege,
+  });
+  return data;
+}
+
+export async function executeResolveAgent(sessionId: number, agentId: number, confirmPrivilege: boolean = false) {
+  const { data } = await api.post(`/resolve/sessions/${sessionId}/execute-agent`, {
+    agent_id: agentId, confirm_privilege: confirmPrivilege,
+  });
+  return data;
+}
+
+export async function getResolveResults(sessionId: number) {
+  const { data } = await api.get(`/resolve/sessions/${sessionId}/results`);
+  return data;
+}
+
+export async function exportResolveResultsCsv(sessionId: number): Promise<Blob> {
+  const { data } = await api.get(`/resolve/sessions/${sessionId}/results/csv`, {
+    responseType: 'blob',
+  });
+  return data;
+}
+
+export async function getScanIntelligence(targetId: number, scanIds: number[]) {
+  const { data } = await api.post('/resolve/scan-intelligence', {
+    target_id: targetId, scan_ids: scanIds,
+  });
+  return data;
+}
+
+export async function deleteResolveSession(sessionId: number) {
+  const { data } = await api.delete(`/resolve/sessions/${sessionId}`);
+  return data;
+}

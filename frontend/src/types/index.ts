@@ -1062,3 +1062,95 @@ export interface AppNotification {
   is_read: boolean;
   created_at: string;
 }
+
+// ── Forge Resolve ────────────────────────────────────────────────────
+
+export interface RemediationSession {
+  id: number;
+  mission_id: number;
+  target_id: number;
+  created_by: string;
+  status: 'draft' | 'executing' | 'completed' | 'failed' | 'exported';
+  execution_mode: 'network' | 'airgap' | 'agent' | null;
+  created_at: string | null;
+  executed_at: string | null;
+  completed_at: string | null;
+  total_items: number;
+  succeeded_items: number;
+  failed_items: number;
+  skipped_items: number;
+  notes: string | null;
+  scan_ids_json: string | null;
+  items: RemediationItem[];
+}
+
+export interface RemediationSessionSummary {
+  id: number;
+  status: string;
+  execution_mode: string | null;
+  created_at: string | null;
+  total_items: number;
+  succeeded_items: number;
+  failed_items: number;
+}
+
+export interface RemediationItem {
+  id: number;
+  session_id: number;
+  finding_id: number | null;
+  rule_id: number | null;
+  section_number: string;
+  rule_title: string;
+  severity: string | null;
+  remediation_command: string | null;
+  command_source: 'benchmark' | 'cis_text' | 'auditor_edit';
+  command_transport: string | null;
+  selected: boolean;
+  status: 'pending' | 'executing' | 'success' | 'failed' | 'skipped';
+  execution_output: string | null;
+  execution_error: string | null;
+  executed_at: string | null;
+  order_index: number;
+  requires_privilege: boolean;
+}
+
+export interface ScanIntelligence {
+  scans: ScanIntelSummary[];
+  time_intervals: string[];
+  compliance_trend: { scan_id: number; date: string; compliance: number }[];
+  rules_improved: number;
+  rules_regressed: number;
+  rules_unchanged: number;
+  rules_new: number;
+  rules_removed: number;
+  changed_rules: DeltaRule[];
+  consistent_rules: DeltaRule[];
+  ai_insights: AiInsights | null;
+}
+
+export interface ScanIntelSummary {
+  scan_id: number;
+  date: string;
+  compliance: number;
+  passed: number;
+  failed: number;
+  errors: number;
+}
+
+export interface DeltaRule {
+  rule_id: number;
+  section_number: string;
+  title: string;
+  severity: string | null;
+  history: { scan_id: number; status: string; date: string }[];
+  change_type: 'improved' | 'regressed' | 'new' | 'removed' | 'unchanged';
+  remediation_command: string | null;
+  has_executable_command: boolean;
+}
+
+export interface AiInsights {
+  summary: string;
+  risk_trajectory: 'improving' | 'stable' | 'declining';
+  patterns: string[];
+  priority_remediations: string[];
+}

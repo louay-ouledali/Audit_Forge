@@ -11,6 +11,7 @@ interface Props {
   onImportResults?: (target: Target) => void;
   onSetupHelp?: (target: Target) => void;
   onViewFindings?: (target: Target) => void;
+  onResolve?: (target: Target) => void;
   scanningTargetIds?: Set<number>;
   scanProgressMap?: Map<number, number>;
   emptyMessage?: string;
@@ -27,6 +28,7 @@ export default function TargetCardGrid({
   onImportResults,
   onSetupHelp,
   onViewFindings,
+  onResolve,
   scanningTargetIds = new Set(),
   scanProgressMap = new Map(),
   emptyMessage,
@@ -61,6 +63,7 @@ export default function TargetCardGrid({
           onImportResults={onImportResults}
           onSetupHelp={onSetupHelp}
           onViewFindings={onViewFindings}
+          onResolve={onResolve}
           isScanning={scanningTargetIds.has(target.id)}
           scanProgress={scanProgressMap.get(target.id)}
           isLocked={isLocked}

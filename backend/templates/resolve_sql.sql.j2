@@ -1,0 +1,29 @@
+-- ═══════════════════════════════════════════════════════════════════════
+-- AuditForge Remediation Script (SQL)
+-- ═══════════════════════════════════════════════════════════════════════
+-- Target:    {{ target.hostname }} ({{ target.ip }})
+-- Platform:  {{ target.platform }}
+-- Session:   #{{ session_id }}
+-- Generated: {{ generation_date }}
+-- Commands:  {{ total }} selected remediation commands
+-- ═══════════════════════════════════════════════════════════════════════
+--
+-- ⚠️  REVIEW EACH COMMAND BEFORE EXECUTION
+-- ⚠️  Execute with appropriate DBA privileges
+-- ⚠️  Test on a non-production database first
+-- ⚠️  Consider wrapping in a transaction where supported
+--
+-- ═══════════════════════════════════════════════════════════════════════
+
+{% for item in items %}
+-- ── [{{ item.index }}/{{ total }}] Rule {{ item.section_number }} ─────────────
+-- Title:    {{ item.rule_title }}
+-- Severity: {{ item.severity | upper }}
+{% if item.requires_privilege %}-- ⚠️  Requires elevated database privileges
+{% endif %}
+{{ item.remediation_command }};
+
+{% endfor %}
+-- ═══════════════════════════════════════════════════════════════════════
+-- End of remediation script — {{ total }} commands
+-- ═══════════════════════════════════════════════════════════════════════
