@@ -29,7 +29,14 @@ def _generate_secret_key() -> str:
 class Settings(BaseSettings):
     SECRET_KEY: str = _generate_secret_key()
     DATABASE_URL: str = "sqlite:///data/auditforge.db"
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:8000"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
     LLM_OLLAMA_URL: str = "http://host.docker.internal:11434"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

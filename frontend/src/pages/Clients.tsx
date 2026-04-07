@@ -149,7 +149,7 @@ export default function Clients() {
             </div>
             <div>
               <h1 className="text-3xl font-bold text-white tracking-tight">Mission Control</h1>
-              <p className="mt-1 text-sm text-dark-secondary max-w-md">Manage clients, orchestrate active missions, and coordinate audit targets</p>
+              <p className="mt-1 text-sm text-dark-secondary max-w-md">Manage clients, orchestrate active missions, and coordinate review targets</p>
             </div>
           </div>
           <button

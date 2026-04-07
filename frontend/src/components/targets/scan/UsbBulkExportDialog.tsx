@@ -136,7 +136,7 @@ export default function UsbBulkExportDialog({ targets, open, onClose, missionId:
             </div>
             <div>
               <h3 className="text-base font-bold text-white">Bulk USB Export</h3>
-              <p className="text-xs text-dark-secondary">Generate offline audit scripts for USB distribution</p>
+              <p className="text-xs text-dark-secondary">Generate offline review scripts for USB distribution</p>
             </div>
           </div>
           <button

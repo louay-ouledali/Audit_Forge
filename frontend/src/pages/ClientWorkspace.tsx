@@ -626,7 +626,7 @@ export default function ClientWorkspace() {
               <form onSubmit={handleMissionSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
                   <label className="mb-1 block text-sm font-medium text-dark-secondary">Name *</label>
-                  <input name="name" value={missionForm.name} onChange={e => setMissionForm({ ...missionForm, name: e.target.value })} required className={inputClass} placeholder="Q1 2025 Audit" />
+                  <input name="name" value={missionForm.name} onChange={e => setMissionForm({ ...missionForm, name: e.target.value })} required className={inputClass} placeholder="Q1 2025 Review" />
                 </div>
                 <div className="sm:col-span-2">
                   <label className="mb-1 block text-sm font-medium text-dark-secondary">Description</label>
@@ -667,7 +667,7 @@ export default function ClientWorkspace() {
             <div className="rounded-xl border-2 border-dashed border-dark-border bg-dark-card/50 p-16 text-center">
               <Crosshair className="mx-auto h-12 w-12 text-dark-muted" />
               <p className="mt-4 font-medium text-white">No missions found</p>
-              <p className="mt-1 text-sm text-dark-secondary">Create a mission to start auditing targets.</p>
+              <p className="mt-1 text-sm text-dark-secondary">Create a mission to start reviewing targets.</p>
             </div>
           ) : (
             <div className="grid gap-4">

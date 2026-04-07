@@ -145,7 +145,7 @@ export default function Dashboard() {
             Welcome to <span className="text-white">AuditForge</span>
           </h2>
           <p className="mt-2 text-dark-secondary">
-            Automated Security Audit Platform
+            Automated Configuration Review Platform
           </p>
         </div>
       </div>

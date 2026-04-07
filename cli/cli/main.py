@@ -43,7 +43,7 @@ def run(
     report: str = typer.Option("pdf", "--report", "-r", help="Report format: pdf, html, excel"),
     output: str = typer.Option(".", "--output", "-o", help="Output directory for report"),
 ) -> None:
-    """Run the full audit pipeline: client → mission → targets → scan → report."""
+    """Run the full review pipeline: client → mission → targets → scan → report."""
     from cli.commands.run import run as _run
     _run(client=client, mission=mission, targets=targets, benchmark=benchmark, report=report, output=output)
 

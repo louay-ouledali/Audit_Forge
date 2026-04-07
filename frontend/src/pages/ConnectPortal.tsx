@@ -253,7 +253,7 @@ export default function ConnectPortal() {
           <img src={logoImg} alt="AuditForge" className="h-8 w-8" />
           <div>
             <h1 className="text-lg font-bold text-[#ffe600]">AuditForge Connect</h1>
-            <p className="text-xs text-gray-400">Secure Configuration Audit Portal</p>
+            <p className="text-xs text-gray-400">Secure Configuration Review Portal</p>
           </div>
           {clientName && (
             <div className="ml-auto rounded-full bg-white/5 px-3 py-1 text-xs font-medium text-gray-300 ring-1 ring-white/10">
@@ -298,7 +298,7 @@ export default function ConnectPortal() {
                 <Shield className="mx-auto h-10 w-10 text-[#ffe600] mb-3" />
                 <h2 className="text-xl font-bold">Connect This Device</h2>
                 <p className="mt-2 text-sm text-gray-400">
-                  Download and run the AuditForge agent to connect this device for a security audit.
+                  Download and run the AuditForge agent to connect this device for a configuration review.
                   The agent only makes an outbound connection — no ports are opened on this device.
                 </p>
                 {expiresAt && (
@@ -449,7 +449,7 @@ export default function ConnectPortal() {
                 </div>
                 <h2 className="text-lg font-bold text-emerald-400">Connected</h2>
                 <p className="text-sm text-gray-400 text-center">
-                  Your device is connected and ready for audit. The auditor will start the scan shortly.
+                  Your device is connected and ready for review. The auditor will start the scan shortly.
                 </p>
                 <div className="flex items-center gap-2 mt-2">
                   <span className="relative flex h-2 w-2">
@@ -510,7 +510,7 @@ export default function ConnectPortal() {
                 <div className="rounded-full bg-emerald-500/10 p-3">
                   <CheckCircle2 className="h-10 w-10 text-emerald-400" />
                 </div>
-                <h2 className="text-xl font-bold">Audit Complete</h2>
+                <h2 className="text-xl font-bold">Review Complete</h2>
 
                 {scanResult ? (
                   <>
@@ -554,7 +554,7 @@ export default function ConnectPortal() {
                   </>
                 ) : (
                   <p className="text-sm text-gray-400 text-center">
-                    The security audit of your device has been completed.
+                    The configuration review of your device has been completed.
                   </p>
                 )}
 
@@ -583,7 +583,7 @@ export default function ConnectPortal() {
               {showTools && (
                 <div className="px-6 pb-5 space-y-3 border-t border-white/5 pt-4">
                   <p className="text-xs text-gray-500 mb-2">
-                    Download scripts to help with future auditing of this device.
+                    Download scripts to help with future reviews of this device.
                   </p>
 
                   {/* WinRM/SSH enablement script */}
@@ -615,9 +615,9 @@ export default function ConnectPortal() {
                     >
                       <Usb className="h-5 w-5 text-amber-400 shrink-0" />
                       <div>
-                        <p className="text-sm font-medium text-gray-200">USB Audit Package</p>
+                        <p className="text-sm font-medium text-gray-200">USB Review Package</p>
                         <p className="text-[10px] text-gray-500">
-                          Offline audit script for air-gapped environments
+                          Offline review script for air-gapped environments
                         </p>
                       </div>
                       <Download className="h-4 w-4 text-gray-500 ml-auto" />

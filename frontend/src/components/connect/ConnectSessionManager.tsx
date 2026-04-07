@@ -153,7 +153,7 @@ export default function ConnectSessionManager({ clientId, missionId }: Props) {
               <label className="mb-1 block text-sm font-medium text-dark-secondary">Notes (optional)</label>
               <input
                 value={notes} onChange={e => setNotes(e.target.value)}
-                className={inputClass} placeholder="e.g. IT department workstations audit"
+                className={inputClass} placeholder="e.g. IT department workstations review"
               />
             </div>
             <div className="flex gap-3 justify-end pt-3 border-t border-dark-border">
@@ -215,7 +215,7 @@ export default function ConnectSessionManager({ clientId, missionId }: Props) {
           <h4 className="text-lg font-semibold text-white">No Connect Sessions</h4>
           <p className="mt-2 text-sm text-dark-secondary max-w-sm">
             Create a session to generate an enrollment code. Share the portal URL with targets
-            so they can connect their devices for auditing.
+            so they can connect their devices for review.
           </p>
         </div>
       )}

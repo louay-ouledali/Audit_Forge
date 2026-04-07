@@ -501,7 +501,7 @@ export default function ReportBuilder({ missionId: propMissionId, missionName: p
                 <p className="mt-1 text-sm text-dark-secondary max-w-md">
                   {scopedMissionName
                     ? <>Reporting for mission <span className="text-ey-yellow font-medium">{scopedMissionName}</span></>
-                    : 'Build, customize, and export professional audit reports'
+                    : 'Build, customize, and export professional configuration review reports'
                   }
                 </p>
               </div>
