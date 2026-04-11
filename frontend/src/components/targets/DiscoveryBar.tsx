@@ -98,7 +98,7 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
   useEffect(() => () => stopPolling(), []);
 
   const handleDiscover = async () => {
-    if (!subnet.trim()) return;
+    if (!subnet.trim()) { setError('Enter a subnet or IP address first.'); return; }
     setDiscovering(true);
     setError('');
     setDiscoveredHosts([]);
@@ -106,7 +106,9 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
 
     try {
       // Start async discovery
+      console.log('[Discovery] Starting async scan:', subnet.trim(), scanProfile);
       const { discovery_id, engine: usedEngine } = await api.startDiscoveryAsync(subnet.trim(), scanProfile);
+      console.log('[Discovery] Got discovery_id:', discovery_id, 'engine:', usedEngine);
       discoveryIdRef.current = discovery_id;
       if (usedEngine) setEngine(usedEngine);
 
@@ -163,6 +165,7 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
       }, 1500);
     } catch (err: any) {
       // Fallback: if async endpoint fails, use synchronous discover
+      console.error('[Discovery] Async failed, trying sync fallback:', err?.response?.status, err?.message);
       try {
         const result = await api.discoverNetworkEnhanced(subnet.trim(), missionId, scanProfile);
         setDiscoveredHosts(result.hosts || []);
@@ -170,7 +173,8 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
           setError(`No devices found on ${subnet}. Check that the subnet is reachable.`);
         }
       } catch (err2: any) {
-        setError(err2?.response?.data?.detail || 'Discovery failed. Check subnet format and network connectivity.');
+        console.error('[Discovery] Sync fallback also failed:', err2?.response?.status, err2?.message);
+        setError(err2?.response?.data?.detail || `Discovery failed: ${err?.message || 'Check browser console (F12) for details.'}`);
       }
       setDiscovering(false);
       setProgress(null);

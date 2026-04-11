@@ -1,4 +1,4 @@
-"""Microsoft SQL Server connector using pyodbc."""
+"""Microsoft SQL Server connector using pyodbc (with pymssql fallback)."""
 
 from __future__ import annotations
 
@@ -11,25 +11,37 @@ from backend.connectors.base import BaseConnector, CommandResult
 
 logger = logging.getLogger("auditforge.connectors.mssql")
 
+_ODBC_DRIVERS = [
+    "ODBC Driver 18 for SQL Server",
+    "ODBC Driver 17 for SQL Server",
+    "SQL Server",
+]
+
+
+def _available_odbc_driver() -> str | None:
+    """Return the first available SQL Server ODBC driver name, or None."""
+    try:
+        import pyodbc  # type: ignore[import-untyped]
+        installed = pyodbc.drivers()
+        for drv in _ODBC_DRIVERS:
+            if drv in installed:
+                return drv
+    except Exception:
+        pass
+    return None
+
 
 class MSSQLConnector(BaseConnector):
-    """Connect to Microsoft SQL Server using *pyodbc*."""
+    """Connect to Microsoft SQL Server using pyodbc or pymssql."""
 
     def __init__(self) -> None:
         self._conn: Any | None = None
         self._host: str = ""
         self._database: str = ""
+        self._backend: str = ""  # "pyodbc" or "pymssql"
 
     # ------------------------------------------------------------------
     async def connect(self, target: Any) -> bool:
-        try:
-            import pyodbc  # type: ignore[import-untyped]
-        except ImportError as exc:
-            raise ImportError(
-                "pyodbc is required for MSSQL connections. "
-                "Install it with: pip install pyodbc"
-            ) from exc
-
         host = getattr(target, "ip_address", None) or getattr(target, "hostname", "localhost")
         port = getattr(target, "port", None) or 1433
         username = getattr(target, "ssh_username", None) or "sa"
@@ -39,27 +51,50 @@ class MSSQLConnector(BaseConnector):
         self._host = host
         self._database = database
 
-        conn_str = (
-            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
-            f"SERVER={host},{port};"
-            f"DATABASE={database};"
-            f"UID={username};"
-            f"PWD={password or ''};"
-            f"Connection Timeout=15;"
-        )
-
-        def _do_connect():
-            return pyodbc.connect(conn_str, timeout=15)
-
+        odbc_driver = _available_odbc_driver()
         loop = asyncio.get_event_loop()
-        try:
-            self._conn = await loop.run_in_executor(None, _do_connect)
-        except Exception as exc:
-            logger.error("MSSQL connection to %s:%s failed: %s", host, port, exc)
-            raise ConnectionError(f"MSSQL connection failed: {exc}") from exc
 
-        logger.info("MSSQL connected to %s:%s/%s", host, port, database)
-        return True
+        if odbc_driver:
+            try:
+                import pyodbc  # type: ignore[import-untyped]
+                conn_str = (
+                    f"DRIVER={{{odbc_driver}}};"
+                    f"SERVER={host},{port};"
+                    f"DATABASE={database};"
+                    f"UID={username};"
+                    f"PWD={password or ''};"
+                    f"Connection Timeout=15;"
+                    f"TrustServerCertificate=yes;"
+                )
+                def _do_pyodbc():
+                    return pyodbc.connect(conn_str, timeout=15)
+                self._conn = await loop.run_in_executor(None, _do_pyodbc)
+                self._backend = "pyodbc"
+                logger.info("MSSQL connected via pyodbc (%s) to %s:%s/%s", odbc_driver, host, port, database)
+                return True
+            except Exception as exc:
+                logger.warning("pyodbc connect failed (%s), trying pymssql: %s", odbc_driver, exc)
+
+        # Fallback: pymssql
+        try:
+            import pymssql  # type: ignore[import-untyped]
+            def _do_pymssql():
+                return pymssql.connect(
+                    server=host, port=str(port), user=username,
+                    password=password or "", database=database, timeout=15,
+                )
+            self._conn = await loop.run_in_executor(None, _do_pymssql)
+            self._backend = "pymssql"
+            logger.info("MSSQL connected via pymssql to %s:%s/%s", host, port, database)
+            return True
+        except ImportError:
+            raise ConnectionError(
+                "MSSQL connection failed: no suitable driver found. "
+                "Install 'ODBC Driver 17 for SQL Server' or run: pip install pymssql"
+            )
+        except Exception as exc:
+            logger.error("MSSQL pymssql connect to %s:%s failed: %s", host, port, exc)
+            raise ConnectionError(f"MSSQL connection failed: {exc}") from exc
 
     # ------------------------------------------------------------------
     async def execute(self, command: str, timeout: int = 30) -> CommandResult:
