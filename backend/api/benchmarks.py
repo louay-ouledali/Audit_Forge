@@ -501,9 +501,6 @@ async def create_rule_with_ai(
     benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
-    if not benchmark.is_editable:
-        raise HTTPException(status_code=400, detail="Only editable benchmarks can have rules added manually")
-
     # Check for duplicate section_number
     existing = (
         db.query(Rule)
@@ -593,9 +590,6 @@ def update_rule_full(
     benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
-    if not benchmark.is_editable:
-        raise HTTPException(status_code=400, detail="Only rules in editable benchmarks can be fully edited")
-
     rule = db.query(Rule).filter(Rule.id == rule_id, Rule.benchmark_id == benchmark_id).first()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found in this benchmark")
@@ -618,9 +612,6 @@ def delete_rule_from_benchmark(
     benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
-    if not benchmark.is_editable:
-        raise HTTPException(status_code=400, detail="Only rules in editable benchmarks can be deleted")
-
     rule = db.query(Rule).filter(Rule.id == rule_id, Rule.benchmark_id == benchmark_id).first()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found in this benchmark")
@@ -773,9 +764,6 @@ async def import_benchmark_file(
     benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
-    if not benchmark.is_editable:
-        raise HTTPException(status_code=400, detail="Only editable benchmarks can import rules")
-
     content = await file.read()
     try:
         data = json.loads(content)
@@ -887,8 +875,9 @@ async def test_rule_command(
     # Decrypt password if needed
     if target.ssh_password_encrypted:
         try:
-            from backend.utils.crypto import decrypt_value
-            target._decrypted_password = decrypt_value(target.ssh_password_encrypted)
+            from backend.utils.encryption import decrypt_value
+            from backend.config import settings
+            target._decrypted_password = decrypt_value(target.ssh_password_encrypted, settings.effective_encryption_key)
         except Exception as exc:
             logger.warning("Failed to decrypt password for target %d: %s", target.id, exc)
             target._decrypted_password = None
@@ -1415,6 +1404,17 @@ def delete_benchmark(benchmark_id: int, db: Session = Depends(get_db)):
     if benchmark.pdf_filename:
         pdf_path = BENCHMARKS_DIR / benchmark.pdf_filename
         pdf_path.unlink(missing_ok=True)
+    # Null out FK references in scans/targets so they don't become stale
+    # (belt-and-suspenders — SQLite ON DELETE SET NULL also handles this
+    # when PRAGMA foreign_keys = ON, but we do it explicitly to be safe).
+    from backend.models.scan import Scan
+    from backend.models.target import Target
+    db.query(Scan).filter(Scan.benchmark_id == benchmark_id).update(
+        {"benchmark_id": None}, synchronize_session="fetch"
+    )
+    db.query(Target).filter(Target.default_benchmark_id == benchmark_id).update(
+        {"default_benchmark_id": None}, synchronize_session="fetch"
+    )
     db.delete(benchmark)
     db.commit()
     return {"data": None, "message": "Benchmark deleted"}
@@ -2430,6 +2430,179 @@ def bulk_dismiss_corrections(benchmark_id: int, db: Session = Depends(get_db)):
 
     db.commit()
     return {"message": f"Dismissed corrections for {count} commands", "count": count}
+
+
+@router.post("/{benchmark_id}/validate/regenerate/{rule_command_id}")
+async def regenerate_flagged_validation(
+    benchmark_id: int,
+    rule_command_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Regenerate a single Phase-3 validation-flagged command via AI."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    cmd = (
+        db.query(RuleCommand)
+        .join(Rule)
+        .filter(
+            RuleCommand.id == rule_command_id,
+            Rule.benchmark_id == benchmark_id,
+            RuleCommand.validation_status == "flagged",
+        )
+        .first()
+    )
+    if not cmd:
+        raise HTTPException(status_code=404, detail="Flagged command not found")
+
+    rule_id = cmd.rule_id
+
+    async def _regen_one(rid: int, rcid: int) -> None:
+        from backend.database import SessionLocal
+        from backend.ai.benchmark_ai import regenerate_command as ai_regenerate
+
+        db_inner = SessionLocal()
+        try:
+            cmd_inner = db_inner.query(RuleCommand).filter(RuleCommand.id == rcid).first()
+            rule = db_inner.query(Rule).filter(Rule.id == rid).first()
+            if not cmd_inner or not rule:
+                return
+            bm = rule.benchmark
+            if not bm:
+                return
+
+            try:
+                result = await ai_regenerate(
+                    section_number=rule.section_number,
+                    title=rule.title,
+                    platform=bm.platform,
+                    platform_family=bm.platform_family,
+                    assessment_type=rule.assessment_type,
+                    audit_description_raw=rule.audit_description_raw,
+                    remediation_description_raw=rule.remediation_description_raw,
+                    current_audit_command=cmd_inner.audit_command,
+                    current_expected_output_regex=cmd_inner.expected_output_regex,
+                    flag_reason=cmd_inner.validation_notes or "Flagged during Phase 3 validation",
+                    flag_error_output=None,
+                    previous_commands=[],
+                )
+            except Exception:
+                logger.warning("Failed to regenerate validation-flagged command %d", rcid)
+                return
+
+            now = datetime.now(timezone.utc)
+            cmd_inner.audit_command = result.get("audit_command", cmd_inner.audit_command)
+            cmd_inner.expected_output_regex = result.get("expected_output_regex", cmd_inner.expected_output_regex)
+            cmd_inner.expected_output_description = result.get("expected_output_description", cmd_inner.expected_output_description)
+            cmd_inner.remediation_command = result.get("remediation_command", cmd_inner.remediation_command)
+            cmd_inner.source = "llm_regenerated"
+            cmd_inner.validation_status = None
+            cmd_inner.validation_corrections = None
+            cmd_inner.validation_notes = None
+            cmd_inner.regeneration_count = (cmd_inner.regeneration_count or 0) + 1
+            cmd_inner.last_regenerated_at = now
+            cmd_inner.updated_at = now
+            db_inner.commit()
+        except Exception:
+            logger.exception("Single validation regeneration failed for %d", rcid)
+            db_inner.rollback()
+        finally:
+            db_inner.close()
+
+    background_tasks.add_task(_regen_one, rule_id, rule_command_id)
+    return {"message": "Regeneration started", "rule_command_id": rule_command_id}
+
+
+@router.post("/{benchmark_id}/validate/bulk-regenerate")
+async def bulk_regenerate_flagged_validation(
+    benchmark_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Regenerate all Phase-3 validation-flagged commands via AI."""
+    benchmark = db.query(Benchmark).filter(Benchmark.id == benchmark_id).first()
+    if not benchmark:
+        raise HTTPException(status_code=404, detail="Benchmark not found")
+
+    flagged_commands = (
+        db.query(RuleCommand)
+        .join(Rule)
+        .filter(
+            Rule.benchmark_id == benchmark_id,
+            RuleCommand.validation_status == "flagged",
+        )
+        .all()
+    )
+
+    if not flagged_commands:
+        raise HTTPException(status_code=400, detail="No validation-flagged commands to regenerate")
+
+    pairs = [(cmd.rule_id, cmd.id) for cmd in flagged_commands]
+
+    async def _bulk_regen_validation(items: list[tuple[int, int]]) -> None:
+        from backend.database import SessionLocal
+        from backend.ai.benchmark_ai import regenerate_command as ai_regenerate
+
+        db_inner = SessionLocal()
+        try:
+            for rid, rcid in items:
+                rule = db_inner.query(Rule).filter(Rule.id == rid).first()
+                cmd_inner = db_inner.query(RuleCommand).filter(RuleCommand.id == rcid).first()
+                if not rule or not cmd_inner:
+                    continue
+                if cmd_inner.validation_status != "flagged":
+                    continue
+
+                bm = rule.benchmark
+                if not bm:
+                    continue
+
+                try:
+                    result = await ai_regenerate(
+                        section_number=rule.section_number,
+                        title=rule.title,
+                        platform=bm.platform,
+                        platform_family=bm.platform_family,
+                        assessment_type=rule.assessment_type,
+                        audit_description_raw=rule.audit_description_raw,
+                        remediation_description_raw=rule.remediation_description_raw,
+                        current_audit_command=cmd_inner.audit_command,
+                        current_expected_output_regex=cmd_inner.expected_output_regex,
+                        flag_reason=cmd_inner.validation_notes or "Flagged during Phase 3 validation",
+                        flag_error_output=None,
+                        previous_commands=[],
+                    )
+                except Exception:
+                    logger.warning("Failed to regenerate validation-flagged rule %d cmd %d", rid, rcid)
+                    continue
+
+                now = datetime.now(timezone.utc)
+                cmd_inner.audit_command = result.get("audit_command", cmd_inner.audit_command)
+                cmd_inner.expected_output_regex = result.get("expected_output_regex", cmd_inner.expected_output_regex)
+                cmd_inner.expected_output_description = result.get("expected_output_description", cmd_inner.expected_output_description)
+                cmd_inner.remediation_command = result.get("remediation_command", cmd_inner.remediation_command)
+                cmd_inner.source = "llm_regenerated"
+                cmd_inner.validation_status = None
+                cmd_inner.validation_corrections = None
+                cmd_inner.validation_notes = None
+                cmd_inner.regeneration_count = (cmd_inner.regeneration_count or 0) + 1
+                cmd_inner.last_regenerated_at = now
+                cmd_inner.updated_at = now
+                db_inner.commit()
+        except Exception:
+            logger.exception("Bulk validation regeneration failed")
+            db_inner.rollback()
+        finally:
+            db_inner.close()
+
+    background_tasks.add_task(_bulk_regen_validation, pairs)
+    return {
+        "message": f"Bulk regeneration started for {len(pairs)} validation-flagged commands",
+        "benchmark_id": benchmark_id,
+        "count": len(pairs),
+    }
 
 
 # ── Framework Coverage Dashboard ──

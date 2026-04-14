@@ -13,14 +13,30 @@ from typing import Any
 import httpx
 
 from backend.core.exceptions import LLMResponseError, LLMTimeoutError, LLMUnavailableError
+from backend.config import settings as app_config
 from backend.database import SessionLocal
 from backend.models.app_settings import AppSettings
+from backend.utils.encryption import decrypt_value
 
 logger = logging.getLogger("auditforge.llm")
 
+# Shared httpx client — reuses connection pool across all LLM calls
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_client() -> httpx.AsyncClient:
+    """Return the module-level shared httpx.AsyncClient, creating it if needed."""
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            timeout=httpx.Timeout(120.0, connect=10.0),
+        )
+    return _shared_client
+
 # LLM generation parameters — low temperature for deterministic structured output
 LLM_TEMPERATURE = 0.1
-LLM_MAX_TOKENS = 4096  # Batch of 10 rules × ~300 tokens each
+LLM_MAX_TOKENS = 4096  # Default; overridden by llm_max_tokens setting
 
 # Retry configuration
 MAX_RETRIES = 3
@@ -47,7 +63,16 @@ class LLMManager:
 
         If *task* is provided (e.g. ``"phase2_commands"``), per-task model
         overrides are applied on top of the global config.
+
+        Config is cached for 60 seconds to avoid repeated DB queries.
         """
+        import time as _time
+        cache_key = task or "__global__"
+        now = _time.monotonic()
+        if (hasattr(self, "_config_cache") and cache_key in self._config_cache
+                and now - self._config_cache[cache_key][1] < 60):
+            return self._config_cache[cache_key][0]
+
         db = SessionLocal()
         try:
             rows = db.query(AppSettings).all()
@@ -66,6 +91,15 @@ class LLMManager:
             "category_detection": cfg.get("llm_category_detection", "true"),
         }
 
+        # Decrypt the API key if it's encrypted
+        if config["online_api_key"]:
+            try:
+                config["online_api_key"] = decrypt_value(
+                    config["online_api_key"], app_config.effective_encryption_key
+                )
+            except Exception:
+                pass  # Use raw value as fallback (pre-encryption data)
+
         # Apply per-task model override if configured
         if task and task in self.TASK_NAMES:
             task_model = cfg.get(f"llm_task_{task}_model", "").strip()
@@ -74,6 +108,11 @@ class LLMManager:
                     config["offline_model"] = task_model
                 else:
                     config["online_model"] = task_model
+
+        # Store in cache
+        if not hasattr(self, "_config_cache"):
+            self._config_cache: dict[str, tuple[dict, float]] = {}
+        self._config_cache[cache_key] = (config, now)
 
         return config
 
@@ -92,6 +131,14 @@ class LLMManager:
         response immediately (zero latency, zero API cost).
         """
         config = self.get_current_config(task=task)
+
+        # ── Token budget enforcement ──
+        remaining = self._check_token_budget()
+        if remaining is not None and remaining <= 0:
+            raise LLMResponseError(
+                "Monthly token budget exceeded. Adjust the limit in Settings.",
+                detail=f"Budget remaining: {remaining}",
+            )
 
         # ── Cache lookup (skip for interactive tasks like copilot) ──
         _no_cache_tasks = {"copilot"}
@@ -269,13 +316,32 @@ class LLMManager:
                         "error": "Missing API key or model name",
                     }
 
-                # Actually test the connection with a lightweight models list call
-                headers = {
-                    "Authorization": f"Bearer {config['online_api_key']}",
-                }
+                # Actually test the connection with a lightweight call
                 try:
                     async with httpx.AsyncClient(timeout=10.0) as client:
-                        resp = await client.get(f"{base_url}/models", headers=headers)
+                        if provider == "anthropic":
+                            # Anthropic: send a minimal Messages API call
+                            test_headers = {
+                                "x-api-key": config["online_api_key"],
+                                "anthropic-version": "2023-06-01",
+                                "Content-Type": "application/json",
+                            }
+                            test_payload = {
+                                "model": config["online_model"],
+                                "max_tokens": 1,
+                                "messages": [{"role": "user", "content": "Hi"}],
+                            }
+                            resp = await client.post(
+                                f"{base_url}/messages",
+                                json=test_payload,
+                                headers=test_headers,
+                            )
+                        else:
+                            # OpenAI-compatible: GET /models
+                            headers = {
+                                "Authorization": f"Bearer {config['online_api_key']}",
+                            }
+                            resp = await client.get(f"{base_url}/models", headers=headers)
                         resp.raise_for_status()
                     return {
                         "available": True,
@@ -417,6 +483,67 @@ class LLMManager:
         finally:
             db.close()
 
+    # ── Token helpers ──
+
+    def _get_max_tokens(self) -> int:
+        """Read llm_max_tokens from DB settings, fall back to LLM_MAX_TOKENS."""
+        db = SessionLocal()
+        try:
+            row = db.query(AppSettings).filter(AppSettings.key == "llm_max_tokens").first()
+            return int(row.value) if row and row.value else LLM_MAX_TOKENS
+        except Exception:
+            return LLM_MAX_TOKENS
+        finally:
+            db.close()
+
+    @staticmethod
+    def _record_usage(provider: str, model: str, task: str | None, usage: dict | None) -> None:
+        """Persist token usage from an LLM response."""
+        if not usage:
+            return
+        from backend.models.token_usage import TokenUsage
+
+        # Normalize field names across providers
+        input_t = usage.get("input_tokens") or usage.get("prompt_tokens") or usage.get("prompt_eval_count") or 0
+        output_t = usage.get("output_tokens") or usage.get("completion_tokens") or usage.get("eval_count") or 0
+        total_t = usage.get("total_tokens") or (input_t + output_t)
+
+        db = SessionLocal()
+        try:
+            db.add(TokenUsage(
+                provider=provider, model=model, task=task,
+                input_tokens=input_t, output_tokens=output_t, total_tokens=total_t,
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+        finally:
+            db.close()
+
+    @staticmethod
+    def _check_token_budget() -> int | None:
+        """Return remaining tokens this month, or None if no budget set."""
+        from backend.models.token_usage import TokenUsage
+        from sqlalchemy import func
+
+        db = SessionLocal()
+        try:
+            row = db.query(AppSettings).filter(AppSettings.key == "llm_token_budget").first()
+            if not row or not row.value or int(row.value) <= 0:
+                return None
+            budget = int(row.value)
+            # Sum this month's usage
+            now = datetime.now(timezone.utc)
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            used = db.query(func.coalesce(func.sum(TokenUsage.total_tokens), 0)).filter(
+                TokenUsage.timestamp >= month_start,
+            ).scalar()
+            return budget - used
+        except Exception:
+            return None
+        finally:
+            db.close()
+
     # ── Private methods ──
 
     async def _invoke_ollama(
@@ -439,18 +566,21 @@ class LLMManager:
             "model": config["offline_model"],
             "messages": messages,
             "stream": False,
-            "options": {"temperature": LLM_TEMPERATURE, "num_predict": LLM_MAX_TOKENS},
+            "options": {"temperature": LLM_TEMPERATURE, "num_predict": self._get_max_tokens()},
         }
         if json_mode:
             payload["format"] = "json"
-        # Use separate timeouts: 30s to connect, full timeout for reading response
         timeouts = httpx.Timeout(timeout, connect=30.0)
-        async with httpx.AsyncClient(timeout=timeouts) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
-            return data.get("message", {}).get("content", "")
+        client = _get_shared_client()
+        resp = await client.post(url, json=payload, timeout=timeouts)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Ollama uses prompt_eval_count / eval_count
+        self._record_usage("ollama", config["offline_model"], None, data)
+
+        # /api/chat returns {"message": {"role": "assistant", "content": "..."}}
+        return data.get("message", {}).get("content", "")
 
     async def _invoke_online(
         self,
@@ -463,6 +593,10 @@ class LLMManager:
     ) -> str:
         """Call OpenAI-compatible API (OpenAI, Mistral, Groq, OpenRouter, or custom)."""
         provider = config.get("online_provider", "openai")
+
+        # Anthropic uses a different protocol — dispatch separately
+        if provider == "anthropic":
+            return await self._invoke_anthropic(prompt, system_prompt, config, timeout, json_mode=json_mode)
 
         # Use custom base URL if configured, otherwise look up by provider name
         base_url = config.get("online_base_url", "").strip()
@@ -481,17 +615,21 @@ class LLMManager:
             "model": config["online_model"],
             "messages": messages,
             "temperature": LLM_TEMPERATURE,
-            "max_tokens": LLM_MAX_TOKENS,
+            "max_tokens": self._get_max_tokens(),
         }
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
         timeouts = httpx.Timeout(timeout, connect=30.0)
-        async with httpx.AsyncClient(timeout=timeouts) as client:
-            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        client = _get_shared_client()
+        resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers, timeout=timeouts)
+        resp.raise_for_status()
+        data = resp.json()
+
+        provider = config.get("online_provider", "openai")
+        self._record_usage(provider, config["online_model"], None, data.get("usage"))
+
+        return data["choices"][0]["message"]["content"]
 
     async def _invoke_ollama_messages(
         self,
@@ -506,14 +644,17 @@ class LLMManager:
             "messages": messages,
             "stream": False,
             "format": "json",
-            "options": {"temperature": LLM_TEMPERATURE, "num_predict": LLM_MAX_TOKENS},
+            "options": {"temperature": LLM_TEMPERATURE, "num_predict": self._get_max_tokens()},
         }
         timeouts = httpx.Timeout(timeout, connect=30.0)
-        async with httpx.AsyncClient(timeout=timeouts) as client:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("message", {}).get("content", "")
+        client = _get_shared_client()
+        resp = await client.post(url, json=payload, timeout=timeouts)
+        resp.raise_for_status()
+        data = resp.json()
+
+        self._record_usage("ollama", config["offline_model"], None, data)
+
+        return data.get("message", {}).get("content", "")
 
     async def _invoke_online_messages(
         self,
@@ -523,6 +664,11 @@ class LLMManager:
     ) -> str:
         """Call OpenAI-compatible API with a full multi-turn message list."""
         provider = config.get("online_provider", "openai")
+
+        # Anthropic uses a different protocol — dispatch separately
+        if provider == "anthropic":
+            return await self._invoke_anthropic_messages(messages, config, timeout)
+
         base_url = config.get("online_base_url", "").strip()
         if not base_url:
             base_url = self.PROVIDER_BASE_URLS.get(provider, "https://api.openai.com/v1")
@@ -535,15 +681,108 @@ class LLMManager:
             "model": config["online_model"],
             "messages": messages,
             "temperature": LLM_TEMPERATURE,
-            "max_tokens": LLM_MAX_TOKENS,
+            "max_tokens": self._get_max_tokens(),
             "response_format": {"type": "json_object"},
         }
         timeouts = httpx.Timeout(timeout, connect=30.0)
-        async with httpx.AsyncClient(timeout=timeouts) as client:
-            resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+        client = _get_shared_client()
+        resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers, timeout=timeouts)
+        resp.raise_for_status()
+        data = resp.json()
+
+        provider = config.get("online_provider", "openai")
+        self._record_usage(provider, config["online_model"], None, data.get("usage"))
+
+        return data["choices"][0]["message"]["content"]
+
+    async def _invoke_anthropic(
+        self,
+        prompt: str,
+        system_prompt: str | None,
+        config: dict,
+        timeout: float,
+        *,
+        json_mode: bool = False,
+        task: str | None = None,
+    ) -> str:
+        """Call Anthropic Messages API."""
+        base_url = config.get("online_base_url", "").strip()
+        if not base_url:
+            base_url = self.PROVIDER_BASE_URLS.get("anthropic", "https://api.anthropic.com/v1")
+
+        headers = {
+            "x-api-key": config["online_api_key"],
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "model": config["online_model"],
+            "max_tokens": self._get_max_tokens(),
+            "temperature": LLM_TEMPERATURE,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        timeouts = httpx.Timeout(timeout, connect=30.0)
+        client = _get_shared_client()
+        resp = await client.post(f"{base_url}/messages", json=payload, headers=headers, timeout=timeouts)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Record token usage
+        self._record_usage(
+            "anthropic", config["online_model"], task, data.get("usage"),
+        )
+
+        return data["content"][0]["text"]
+
+    async def _invoke_anthropic_messages(
+        self,
+        messages: list[dict[str, str]],
+        config: dict,
+        timeout: float,
+        task: str | None = None,
+    ) -> str:
+        """Call Anthropic Messages API with a full multi-turn message list."""
+        base_url = config.get("online_base_url", "").strip()
+        if not base_url:
+            base_url = self.PROVIDER_BASE_URLS.get("anthropic", "https://api.anthropic.com/v1")
+
+        # Extract system messages → top-level system param
+        system_parts = []
+        chat_messages = []
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_parts.append(msg["content"])
+            else:
+                chat_messages.append(msg)
+
+        headers = {
+            "x-api-key": config["online_api_key"],
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "model": config["online_model"],
+            "max_tokens": self._get_max_tokens(),
+            "temperature": LLM_TEMPERATURE,
+            "messages": chat_messages,
+        }
+        if system_parts:
+            payload["system"] = "\n\n".join(system_parts)
+
+        timeouts = httpx.Timeout(timeout, connect=30.0)
+        client = _get_shared_client()
+        resp = await client.post(f"{base_url}/messages", json=payload, headers=headers, timeout=timeouts)
+        resp.raise_for_status()
+        data = resp.json()
+
+        self._record_usage(
+            "anthropic", config["online_model"], task, data.get("usage"),
+        )
+
+        return data["content"][0]["text"]
 
     @staticmethod
     def _parse_json(text: str) -> Any:
@@ -570,22 +809,10 @@ class LLMManager:
                 try:
                     return json.loads(candidate)
                 except json.JSONDecodeError:
-                    # Try fixing common LLM issues: trailing commas, single quotes
+                    # Try fixing common LLM issues: trailing commas
                     cleaned = re.sub(r",\s*([}\]])", r"\1", candidate)
                     try:
                         return json.loads(cleaned)
-                    except json.JSONDecodeError:
-                        pass
-                    # Try fixing unescaped quotes inside string values
-                    # Replace internal double quotes in values with single quotes
-                    fixed = re.sub(
-                        r'(?<=: ")(.*?)(?="[,\s}\]])',
-                        lambda m: m.group(0).replace('"', "'"),
-                        candidate,
-                        flags=re.DOTALL,
-                    )
-                    try:
-                        return json.loads(fixed)
                     except json.JSONDecodeError:
                         continue
         # Last resort: try parsing the whole thing

@@ -117,6 +117,13 @@ def update_rule_command(rule_id: int, payload: RuleCommandUpdate, db: Session = 
     cmd.source = "auditor_manual"
     cmd.updated_at = datetime.now(timezone.utc)
     cmd.status = "pending_review"
+    # Sync edits to the command cache so future benchmarks benefit
+    if cmd.audit_command and rule.benchmark_id:
+        try:
+            from backend.core.command_cache_manager import update_cache_entry
+            update_cache_entry(db, cmd, rule)
+        except Exception:
+            pass  # Cache update is best-effort
     db.commit()
     db.refresh(cmd)
     return {"data": RuleCommandResponse.model_validate(cmd), "message": "Command updated"}

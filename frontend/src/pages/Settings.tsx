@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import {
   Save, CheckCircle2, XCircle, Download, Upload, Database,
-  AlertTriangle, Zap, Loader2, Trash2, Mail, Building2, KeyRound, Image as ImageIcon
+  AlertTriangle, Zap, Loader2, Trash2, Mail, Building2, KeyRound, Image as ImageIcon, RefreshCw
 } from 'lucide-react';
 import type { Settings as SettingsType, LLMTestResult } from '@/types';
 import * as api from '@/services/api';
@@ -36,6 +36,8 @@ const defaultSettings: SettingsType = {
   company_name: '',
   company_logo_base64: '',
   auditor_name: '',
+  llm_max_tokens: '4096',
+  llm_token_budget: '0',
 };
 
 const applyTheme = (theme: string) => {
@@ -69,6 +71,18 @@ export default function Settings() {
   /* Cache stats */
   const [cacheStats, setCacheStats] = useState<{ total_entries: number; total_hits: number } | null>(null);
 
+  /* Model picker */
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsFetchError, setModelsFetchError] = useState('');
+
+  /* Reset preloaded benchmarks */
+  const [resettingPreloaded, setResettingPreloaded] = useState(false);
+  const [showResetPreloadedConfirm, setShowResetPreloadedConfirm] = useState(false);
+
+  /* Token usage */
+  const [tokenUsage, setTokenUsage] = useState<api.TokenUsageStats | null>(null);
+
   /* Password change */
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -82,6 +96,9 @@ export default function Settings() {
     (async () => {
       try {
         const [data, cache] = await Promise.all([api.getSettings(), api.getCacheStats().catch(() => null)]);
+
+        // Also fetch token usage stats
+        api.getTokenUsage('month').then(u => setTokenUsage(u)).catch(() => {});
         
         // Load ui_theme straight from localStorage since backend might not store it yet
         const localTheme = localStorage.getItem('auditforge_theme') || 'dark';
@@ -110,6 +127,11 @@ export default function Settings() {
     setSettings((prev) => ({ ...prev, [key]: value }));
     if (key === 'ui_theme') {
       applyTheme(value);
+    }
+    // Clear fetched models when switching mode or provider
+    if (key === 'llm_mode' || key === 'llm_online_provider') {
+      setAvailableModels([]);
+      setModelsFetchError('');
     }
   };
 
@@ -202,6 +224,56 @@ export default function Settings() {
     }
   };
 
+  const handleFetchModels = async () => {
+    setModelsLoading(true);
+    setModelsFetchError('');
+    try {
+      const result = await api.fetchAvailableModels();
+      if (result.error) {
+        setModelsFetchError(result.error);
+        setAvailableModels([]);
+      } else {
+        setAvailableModels(result.models);
+      }
+    } catch {
+      setModelsFetchError('Could not fetch models');
+      setAvailableModels([]);
+    } finally {
+      setModelsLoading(false);
+    }
+  };
+
+  const fetchTokenUsage = async () => {
+    try {
+      const usage = await api.getTokenUsage('month');
+      setTokenUsage(usage);
+    } catch { /* silent */ }
+  };
+
+  const handleResetTokenUsage = async () => {
+    try {
+      await api.resetTokenUsage();
+      setTokenUsage(null);
+      setToast({ type: 'success', message: 'Token usage stats cleared' });
+      fetchTokenUsage();
+    } catch {
+      setToast({ type: 'error', message: 'Failed to reset token usage' });
+    }
+  };
+
+  const handleResetPreloaded = async () => {
+    setResettingPreloaded(true);
+    try {
+      const result = await api.resetPreloadedBenchmarks();
+      setToast({ type: 'success', message: result.message });
+      setShowResetPreloadedConfirm(false);
+    } catch {
+      setToast({ type: 'error', message: 'Failed to reset preloaded benchmarks' });
+    } finally {
+      setResettingPreloaded(false);
+    }
+  };
+
   const handleChangePassword = async () => {
     if (!oldPassword || !newPassword) return;
     setChangingPw(true);
@@ -281,7 +353,7 @@ export default function Settings() {
           <p className={helpClass}>
             {settings.llm_mode === 'offline'
               ? 'Uses a local Ollama instance. You can run cloud models through Ollama too - see the setup guide.'
-              : 'Connects directly to a cloud API (OpenAI, Mistral, Groq, OpenRouter, or any OpenAI-compatible endpoint).'}
+              : 'Connects directly to a cloud API (OpenAI, Anthropic, Mistral, Groq, OpenRouter, or any OpenAI-compatible endpoint).'}
           </p>
         </fieldset>
 
@@ -290,14 +362,38 @@ export default function Settings() {
           <>
             <div>
               <label className={labelClass}>Ollama Model</label>
-              <input
-                value={settings.llm_offline_model}
-                onChange={(e) => handleChange('llm_offline_model', e.target.value)}
-                className={inputClass}
-                placeholder="e.g. qwen2.5:7b, mistral, llama3.1:8b"
-              />
+              <div className="mt-1 flex gap-2">
+                {availableModels.length > 0 ? (
+                  <select
+                    value={settings.llm_offline_model}
+                    onChange={(e) => handleChange('llm_offline_model', e.target.value)}
+                    className={selectClass + ' flex-1'}
+                  >
+                    <option value="">Select a model\u2026</option>
+                    {availableModels.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={settings.llm_offline_model}
+                    onChange={(e) => handleChange('llm_offline_model', e.target.value)}
+                    className={inputClass + ' flex-1'}
+                    placeholder="e.g. qwen2.5:7b, mistral, llama3.1:8b"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={handleFetchModels}
+                  disabled={modelsLoading}
+                  className="flex-shrink-0 inline-flex items-center justify-center rounded-lg border border-dark-border bg-dark-elevated p-2 text-dark-muted hover:text-ey-yellow hover:border-ey-yellow/30 transition-colors disabled:opacity-50"
+                  title="Fetch available models"
+                >
+                  {modelsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                </button>
+              </div>
               <p className={helpClass}>
-                The model tag as shown by <code className={codeClass}>ollama list</code>.
+                Click refresh to fetch models from Ollama, or type a model tag manually.
                 Default: <code className={codeClass}>qwen2.5:7b</code>
               </p>
             </div>
@@ -331,6 +427,7 @@ export default function Settings() {
               >
                 <option value="">Select a provider\u2026</option>
                 <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic (Claude)</option>
                 <option value="mistral">Mistral AI</option>
                 <option value="groq">Groq</option>
                 <option value="openrouter">OpenRouter</option>
@@ -354,22 +451,54 @@ export default function Settings() {
 
             <div>
               <label className={labelClass}>Model</label>
-              <input
-                value={settings.llm_online_model}
-                onChange={(e) => handleChange('llm_online_model', e.target.value)}
-                className={inputClass}
-                placeholder={
-                  settings.llm_online_provider === 'openai'
-                    ? 'e.g. gpt-4o, gpt-4o-mini'
-                    : settings.llm_online_provider === 'mistral'
-                      ? 'e.g. mistral-large-latest'
-                      : settings.llm_online_provider === 'groq'
-                        ? 'e.g. llama-3.1-70b-versatile'
-                        : settings.llm_online_provider === 'openrouter'
-                          ? 'e.g. meta-llama/llama-3.1-70b-instruct'
-                          : 'e.g. gpt-4o'
-                }
-              />
+              <div className="mt-1 flex gap-2">
+                {availableModels.length > 0 ? (
+                  <select
+                    value={settings.llm_online_model}
+                    onChange={(e) => handleChange('llm_online_model', e.target.value)}
+                    className={selectClass + ' flex-1'}
+                  >
+                    <option value="">Select a model\u2026</option>
+                    {availableModels.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={settings.llm_online_model}
+                    onChange={(e) => handleChange('llm_online_model', e.target.value)}
+                    className={inputClass + ' flex-1'}
+                    placeholder={
+                      settings.llm_online_provider === 'openai'
+                        ? 'e.g. gpt-4o, gpt-4o-mini'
+                        : settings.llm_online_provider === 'anthropic'
+                          ? 'e.g. claude-sonnet-4-20250514'
+                          : settings.llm_online_provider === 'mistral'
+                            ? 'e.g. mistral-large-latest'
+                            : settings.llm_online_provider === 'groq'
+                              ? 'e.g. llama-3.1-70b-versatile'
+                              : settings.llm_online_provider === 'openrouter'
+                                ? 'e.g. meta-llama/llama-3.1-70b-instruct'
+                                : 'e.g. gpt-4o'
+                    }
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={handleFetchModels}
+                  disabled={modelsLoading}
+                  className="flex-shrink-0 inline-flex items-center justify-center rounded-lg border border-dark-border bg-dark-elevated p-2 text-dark-muted hover:text-ey-yellow hover:border-ey-yellow/30 transition-colors disabled:opacity-50"
+                  title="Fetch available models"
+                >
+                  {modelsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                </button>
+              </div>
+              {modelsFetchError && (
+                <p className="mt-1 text-xs text-amber-400">{modelsFetchError}</p>
+              )}
+              <p className={helpClass}>
+                Click the refresh button to fetch available models from your provider, or type a model name manually.
+              </p>
             </div>
 
             {settings.llm_online_provider === 'custom' && (
@@ -557,6 +686,102 @@ export default function Settings() {
           </div>
         </section>
       )}
+
+      {/* Token Usage & Limits */}
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-white">Token Usage & Limits</h3>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className={labelClass}>Max Tokens Per Request</label>
+            <input
+              type="number"
+              min={256}
+              max={128000}
+              step={256}
+              value={settings.llm_max_tokens || '4096'}
+              onChange={(e) => handleChange('llm_max_tokens', e.target.value)}
+              className={inputClass}
+            />
+            <p className={helpClass}>
+              Limits LLM output length per call. Default: 4096. Increase for longer responses (e.g. reports).
+            </p>
+          </div>
+
+          <div>
+            <label className={labelClass}>Monthly Token Budget</label>
+            <input
+              type="number"
+              min={0}
+              step={10000}
+              value={settings.llm_token_budget || '0'}
+              onChange={(e) => handleChange('llm_token_budget', e.target.value)}
+              className={inputClass}
+            />
+            <p className={helpClass}>
+              Total token ceiling per month. Set to 0 for unlimited. LLM calls will be blocked once the budget is exhausted.
+            </p>
+          </div>
+        </div>
+
+        {/* Usage stats */}
+        {tokenUsage && (
+          <div className="border-t border-dark-border pt-4 space-y-3">
+            <div className="flex items-center gap-6">
+              <div>
+                <p className="text-2xl font-bold text-white">{tokenUsage.total_tokens.toLocaleString()}</p>
+                <p className="text-xs text-dark-muted">total tokens this month</p>
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-dark-secondary">{tokenUsage.total_input.toLocaleString()}</p>
+                <p className="text-xs text-dark-muted">input</p>
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-dark-secondary">{tokenUsage.total_output.toLocaleString()}</p>
+                <p className="text-xs text-dark-muted">output</p>
+              </div>
+              <button
+                onClick={handleResetTokenUsage}
+                className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-dark-secondary hover:bg-dark-overlay hover:text-white"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Reset Stats
+              </button>
+            </div>
+
+            {/* Budget progress bar */}
+            {tokenUsage.budget > 0 && (
+              <div>
+                <div className="flex items-center justify-between text-xs text-dark-muted mb-1">
+                  <span>{tokenUsage.total_tokens.toLocaleString()} / {tokenUsage.budget.toLocaleString()} tokens</span>
+                  <span>{tokenUsage.budget_remaining != null ? `${tokenUsage.budget_remaining.toLocaleString()} remaining` : ''}</span>
+                </div>
+                <div className="h-2 rounded-full bg-dark-elevated overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      (tokenUsage.total_tokens / tokenUsage.budget) > 0.9 ? 'bg-red-500' :
+                      (tokenUsage.total_tokens / tokenUsage.budget) > 0.7 ? 'bg-amber-500' : 'bg-emerald-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (tokenUsage.total_tokens / tokenUsage.budget) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* By provider */}
+            {tokenUsage.by_provider.length > 0 && (
+              <div className="flex flex-wrap gap-4 text-xs">
+                {tokenUsage.by_provider.map(p => (
+                  <div key={p.provider} className="flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full bg-ey-yellow/60" />
+                    <span className="text-dark-secondary capitalize">{p.provider}:</span>
+                    <span className="text-white font-medium">{p.total_tokens.toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Email (SMTP) — Forge Sentinel Alerts */}
       <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
@@ -757,6 +982,26 @@ export default function Settings() {
         </button>
       </section>
 
+      {/* Benchmark Management */}
+      <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="h-5 w-5 text-ey-yellow" />
+          <h3 className="text-lg font-semibold text-white">Benchmark Management</h3>
+        </div>
+        <p className="text-sm text-dark-secondary">
+          Reset preloaded benchmarks to their original state. This deletes all preloaded benchmarks
+          and re-imports them from the built-in pack files. Custom benchmarks are not affected.
+        </p>
+        <button
+          onClick={() => setShowResetPreloadedConfirm(true)}
+          disabled={resettingPreloaded}
+          className="inline-flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${resettingPreloaded ? 'animate-spin' : ''}`} />
+          {resettingPreloaded ? 'Resetting\u2026' : 'Reset Preloaded Benchmarks'}
+        </button>
+      </section>
+
       {/* Database Backup & Restore */}
       <section className="rounded-xl border border-dark-border bg-dark-card p-6 space-y-4">
         <div className="flex items-center gap-2">
@@ -834,6 +1079,43 @@ export default function Settings() {
                 Restore
               </button>
             </div>
+            </div>
+          </div>
+        </>,
+        document.body,
+      )}
+
+      {/* Reset Preloaded Confirmation Dialog */}
+      {showResetPreloadedConfirm && createPortal(
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm" onClick={() => setShowResetPreloadedConfirm(false)} />
+          <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ pointerEvents: 'none' }}>
+            <div className="pointer-events-auto mx-4 w-full max-w-md rounded-xl border border-dark-border bg-dark-card p-6 shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <AlertTriangle className="h-6 w-6 text-amber-400" />
+                <h4 className="text-lg font-semibold text-white">Reset Preloaded Benchmarks</h4>
+              </div>
+              <p className="text-sm text-gray-300 mb-2">
+                This will delete all preloaded benchmarks and re-import them from the built-in pack files.
+              </p>
+              <p className="text-sm text-gray-400 mb-4">
+                Custom, user-imported, and Nessus-reconstructed benchmarks will <strong className="text-white">not</strong> be affected.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowResetPreloadedConfirm(false)}
+                  className="rounded-lg border border-dark-border px-4 py-2 text-sm font-medium text-gray-300 hover:bg-dark-elevated"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleResetPreloaded}
+                  disabled={resettingPreloaded}
+                  className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {resettingPreloaded ? 'Resetting\u2026' : 'Reset'}
+                </button>
+              </div>
             </div>
           </div>
         </>,

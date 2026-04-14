@@ -13,7 +13,7 @@ import DiscoveryBar from './DiscoveryBar';
 import TargetActionBar from './TargetActionBar';
 import TargetCardGrid from './TargetCardGrid';
 import TargetConfigDrawer from './TargetConfigDrawer';
-import { useScanManager } from './scan/useScanManager';
+import { useScanContext } from '@/contexts/ScanContext';
 import ScanAllDialog from './scan/ScanAllDialog';
 import ActiveScansPanel from './scan/ActiveScansPanel';
 import UsbBulkExportDialog from './scan/UsbBulkExportDialog';
@@ -63,8 +63,8 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
     setHistoryRefreshKey(k => k + 1);
   };
 
-  // Scan manager (Phase 7)
-  const scan = useScanManager(missionId, missionTargets, handleRefreshAll);
+  // Scan manager — state persists via ScanContext across tab switches
+  const scan = useScanContext();
 
   // Config drawer state
   const [drawerTarget, setDrawerTarget] = useState<Target | null>(null);
@@ -348,7 +348,7 @@ export default function TargetsTab({ missionId, clientId, missionTargets, client
         await api.assignTargetToMission(missionId, newTarget.id);
         successCount++;
       } catch (err) {
-        console.error('Failed to import line:', line, err);
+        void err;
         failCount++;
       }
     }

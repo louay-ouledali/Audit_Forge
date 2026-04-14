@@ -54,6 +54,13 @@ class SSHConnector(BaseConnector):
                 "look_for_keys": False,
             }
             if key_path:
+                # Validate key_path — reject directory traversal
+                import os
+                normalized = os.path.normpath(key_path)
+                if ".." in normalized.split(os.sep):
+                    raise ConnectionError(
+                        f"Invalid SSH key path (directory traversal not allowed): {key_path}"
+                    )
                 kwargs["key_filename"] = key_path
             elif password:
                 kwargs["password"] = password
@@ -64,7 +71,7 @@ class SSHConnector(BaseConnector):
             client.connect(**kwargs)
             return client
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             self._client = await loop.run_in_executor(None, _do_connect)
         except Exception as exc:
@@ -79,20 +86,34 @@ class SSHConnector(BaseConnector):
         if self._client is None:
             raise RuntimeError("Not connected — call connect() first")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = time.monotonic()
 
         def _run():
             _stdin, _stdout, _stderr = self._client.exec_command(
                 command, timeout=timeout
             )
-            out = _stdout.read().decode("utf-8", errors="replace")
-            err = _stderr.read().decode("utf-8", errors="replace")
-            code = _stdout.channel.recv_exit_status()
+            out = _stdout.read(10_485_760).decode("utf-8", errors="replace")
+            err = _stderr.read(10_485_760).decode("utf-8", errors="replace")
+            # Wait for exit status with timeout to avoid hanging on broken channels
+            chan = _stdout.channel
+            if not chan.exit_status_ready():
+                chan.status_event.wait(timeout=timeout)
+            code = chan.recv_exit_status() if chan.exit_status_ready() else -1
             return out, err, code
 
         try:
-            stdout, stderr, exit_code = await loop.run_in_executor(None, _run)
+            stdout, stderr, exit_code = await asyncio.wait_for(
+                loop.run_in_executor(None, _run), timeout=timeout + 5
+            )
+        except asyncio.TimeoutError:
+            elapsed = int((time.monotonic() - start) * 1000)
+            return CommandResult(
+                stdout="",
+                stderr="Command timed out",
+                exit_code=-1,
+                execution_time_ms=elapsed,
+            )
         except Exception as exc:
             elapsed = int((time.monotonic() - start) * 1000)
             logger.warning("SSH command failed on %s: %s", self._host, exc)
@@ -127,7 +148,7 @@ class SSHConnector(BaseConnector):
     async def disconnect(self) -> None:
         if self._client is not None:
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._client.close)
             except Exception:
                 pass

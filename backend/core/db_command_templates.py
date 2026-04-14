@@ -1255,9 +1255,224 @@ def _try_paloalto_command(rule: dict[str, Any]) -> dict[str, str] | None:
     return None
 
 
+def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
+    """Match Juniper JunOS CLI rules."""
+    text = _text(rule).lower()
+    title = _title_lower(rule)
+
+    # ── Authentication / Login ──
+    if any(k in title for k in ("password", "login", "authentication", "root")):
+        if "class" in title or "user" in title or "account" in title or "root" in title:
+            return _result(
+                audit_command="show configuration system login | display set",
+                expected_output_regex="not_empty",
+                expected_output_description="Login classes and user accounts configuration",
+                command_transport="cli",
+            )
+        if "password" in title and ("complex" in title or "length" in title or "policy" in title or "require" in title):
+            return _result(
+                audit_command="show configuration system login password | display set",
+                expected_output_regex="not_empty",
+                expected_output_description="Password requirements and complexity settings",
+                command_transport="cli",
+            )
+        if "authentication" in title and ("order" in title or "method" in title or "radius" in title or "tacacs" in title):
+            return _result(
+                audit_command="show configuration system authentication-order | display set",
+                expected_output_regex="not_empty",
+                expected_output_description="Authentication order (RADIUS/TACACS+)",
+                command_transport="cli",
+            )
+
+    # ── NTP ──
+    if "ntp" in title:
+        return _result(
+            audit_command="show configuration system ntp | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="NTP servers and authentication",
+            command_transport="cli",
+        )
+
+    # ── Syslog / Logging ──
+    if any(k in title for k in ("syslog", "logging", "log host", "log server")):
+        return _result(
+            audit_command="show configuration system syslog | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="Syslog host and facility configuration",
+            command_transport="cli",
+        )
+
+    # ── SSH ──
+    if "ssh" in title:
+        if any(k in title for k in ("version", "protocol")):
+            return _result(
+                audit_command="show configuration system services ssh | display set",
+                expected_output_regex="contains:v2",
+                expected_output_description="SSH should use protocol version 2",
+                command_transport="cli",
+            )
+        return _result(
+            audit_command="show configuration system services ssh | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="SSH service configuration",
+            command_transport="cli",
+        )
+
+    # ── SNMP ──
+    if "snmp" in title:
+        if "community" in title:
+            return _result(
+                audit_command="show configuration snmp | display set | match community",
+                expected_output_regex="not_empty",
+                expected_output_description="SNMP community string configuration",
+                command_transport="cli",
+            )
+        return _result(
+            audit_command="show configuration snmp | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="SNMP configuration",
+            command_transport="cli",
+        )
+
+    # ── IKE / IPsec / VPN ──
+    if any(k in title for k in ("ike", "ipsec", "vpn")):
+        if "proposal" in title or "policy" in title:
+            return _result(
+                audit_command="show configuration security ike | display set",
+                expected_output_regex="not_empty",
+                expected_output_description="IKE proposals and policies",
+                command_transport="cli",
+            )
+        if "ipsec" in title:
+            return _result(
+                audit_command="show configuration security ipsec | display set",
+                expected_output_regex="not_empty",
+                expected_output_description="IPsec SA and proposal configuration",
+                command_transport="cli",
+            )
+        return _result(
+            audit_command="show configuration security ike | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="IKE/VPN configuration",
+            command_transport="cli",
+        )
+
+    # ── Firewall Filters ──
+    if any(k in title for k in ("firewall", "filter", "acl", "access control", "access list")):
+        return _result(
+            audit_command="show configuration firewall | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="Firewall filter rules",
+            command_transport="cli",
+        )
+
+    # ── Routing Protocol Authentication (OSPF, BGP, IS-IS) ──
+    if "ospf" in title:
+        if "auth" in title or "md5" in title:
+            return _result(
+                audit_command="show configuration protocols ospf | display set | match authentication",
+                expected_output_regex="not_empty",
+                expected_output_description="OSPF authentication configuration",
+                command_transport="cli",
+            )
+        return _result(
+            audit_command="show configuration protocols ospf | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="OSPF protocol configuration",
+            command_transport="cli",
+        )
+
+    if "bgp" in title:
+        if "auth" in title or "md5" in title:
+            return _result(
+                audit_command="show configuration protocols bgp | display set | match authentication",
+                expected_output_regex="not_empty",
+                expected_output_description="BGP authentication configuration",
+                command_transport="cli",
+            )
+        return _result(
+            audit_command="show configuration protocols bgp | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="BGP protocol configuration",
+            command_transport="cli",
+        )
+
+    # ── Services ──
+    if any(k in title for k in ("telnet", "ftp", "finger", "http")):
+        if "disable" in title or "ensure" in title:
+            return _result(
+                audit_command="show configuration system services | display set",
+                expected_output_regex="not_empty",
+                expected_output_description="System services configuration (check disabled services)",
+                command_transport="cli",
+            )
+
+    # ── Console / Session Timeout ──
+    if any(k in title for k in ("idle timeout", "session timeout", "console timeout", "cli timeout")):
+        return _result(
+            audit_command="show configuration system login | display set | match idle-timeout",
+            expected_output_regex="not_empty",
+            expected_output_description="Idle timeout for login sessions",
+            command_transport="cli",
+        )
+
+    # ── Banner / MOTD ──
+    if "banner" in title or "motd" in title:
+        return _result(
+            audit_command="show configuration system login message | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="Login banner/message of the day",
+            command_transport="cli",
+        )
+
+    # ── DNS ──
+    if "dns" in title and ("server" in title or "name" in title):
+        return _result(
+            audit_command="show configuration system name-server | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="DNS name-server configuration",
+            command_transport="cli",
+        )
+
+    # ── Version / Software ──
+    if "version" in title or "firmware" in title or "software" in title:
+        if "latest" in title or "update" in title or "patch" in title:
+            return _result(
+                audit_command="show version",
+                expected_output_regex="not_empty",
+                expected_output_description="JunOS software version",
+                command_transport="cli",
+            )
+
+    # ── Zones / Security Policies ──
+    if "zone" in title or "security polic" in title:
+        return _result(
+            audit_command="show configuration security policies | display set",
+            expected_output_regex="not_empty",
+            expected_output_description="Security zone policies",
+            command_transport="cli",
+        )
+
+    # ── Broad text-body matching for common Juniper audit patterns ──
+    if "show configuration" in text and "display set" in text:
+        # Rule text already describes the exact Juniper command; extract it
+        import re
+        m = re.search(r"(show configuration[\w\s/\-]+\|\s*display set(?:\s*\|\s*match\s+\S+)?)", text)
+        if m:
+            return _result(
+                audit_command=m.group(1).strip(),
+                expected_output_regex="not_empty",
+                expected_output_description="Juniper configuration check from rule text",
+                command_transport="cli",
+            )
+
+    return None
+
+
 _NETWORK_EXT_TEMPLATES = [
     _try_fortigate_command,
     _try_paloalto_command,
+    _try_juniper_command,
 ]
 
 
@@ -1292,6 +1507,10 @@ _DB_TEMPLATES_BY_PLATFORM: dict[str, list] = {
     "palo_alto_firewall_10": _NETWORK_EXT_TEMPLATES,
     "palo_alto_firewall_11": _NETWORK_EXT_TEMPLATES,
     "paloalto": _NETWORK_EXT_TEMPLATES,
+    # Juniper
+    "juniper": _NETWORK_EXT_TEMPLATES,
+    "juniper_junos": _NETWORK_EXT_TEMPLATES,
+    "junos": _NETWORK_EXT_TEMPLATES,
 }
 
 

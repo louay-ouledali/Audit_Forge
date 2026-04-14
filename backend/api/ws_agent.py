@@ -269,6 +269,24 @@ _session_monitors: dict[int, list[WebSocket]] = {}
 @router.websocket("/ws/session/{session_id}/monitor")
 async def session_monitor(websocket: WebSocket, session_id: int):
     """Read-only WebSocket for auditor to watch live agent activity."""
+    # Validate JWT from query param
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=4003, reason="Authentication required")
+        return
+    try:
+        from jose import jwt as _jwt
+        from backend.config import settings
+        _jwt.decode(token, settings.effective_jwt_key, algorithms=["HS256"])
+    except Exception:
+        # Try legacy key
+        try:
+            from backend.config import settings
+            _jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        except Exception:
+            await websocket.close(code=4003, reason="Invalid token")
+            return
+
     await websocket.accept()
 
     if session_id not in _session_monitors:

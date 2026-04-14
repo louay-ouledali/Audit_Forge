@@ -225,7 +225,19 @@ def calibrate_scan_results(
             })
 
             if auto_apply and db:
-                _apply_calibration(finding, calibrated, db)
+                # Only auto-apply if the new expression is tighter (more restrictive).
+                # A "tighter" expression is one that contains more conditions or
+                # adds conditions where none existed. Loosening is suggested but not auto-applied.
+                is_tighter = (
+                    len(calibrated) > len(expr)  # More specific
+                    or ("not_" in calibrated and "not_" not in expr)  # Adds negation
+                    or (calibrated.count("&&") > expr.count("&&"))  # More conditions
+                )
+                if is_tighter:
+                    _apply_calibration(finding, calibrated, db)
+                else:
+                    suggestions[-1]["auto_applied"] = False
+                    suggestions[-1]["reason"] = "Loosening — manual review required"
 
     logger.info("Calibration: %d suggestions from %d findings",
                 len(suggestions), len(findings))

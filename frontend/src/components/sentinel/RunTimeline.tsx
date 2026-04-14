@@ -101,7 +101,7 @@ export default function RunTimeline({ scheduleId, scheduleName }: RunTimelinePro
         <XCircle className="mx-auto h-6 w-6 text-red-400" />
         <p className="mt-2 text-sm text-red-400">{error}</p>
         <button
-          onClick={fetchRuns}
+          onClick={() => fetchRuns()}
           className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-dark-secondary hover:text-white transition-colors"
         >
           <RefreshCw className="h-3 w-3" /> Retry

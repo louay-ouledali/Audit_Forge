@@ -235,6 +235,50 @@ _FIELD_MARKERS = re.compile(
 )
 
 
+def _is_ip_address_like(section: str) -> bool:
+    """Return True if section looks like an IP address or subnet rather than a rule number.
+
+    Examples of IP-like patterns to reject:
+    - 10.80.2.219  (IP address)
+    - 20.20.20.20  (IP address)
+    - 2.2.2.0      (network address)
+    - 192.168.1.1  (IP address)
+    - 1.1.1.1      (loopback-adjacent or example IP)
+
+    CIS section numbers rarely have:
+    - Parts > 50 (section 10.80 is unlikely)
+    - Exactly 4 parts where all are identical (like 20.20.20.20)
+    - First octet in common private IP ranges
+    """
+    parts = section.split(".")
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return False
+
+    # Reject if any part is > 50 (unlikely for CIS section numbers)
+    if any(n > 50 for n in nums):
+        return True
+
+    # Reject 4-part patterns that look like IPs
+    if len(nums) == 4:
+        # All parts identical (20.20.20.20, 1.1.1.1)
+        if len(set(nums)) == 1:
+            return True
+        # Ends in .0 with small first octet (network addresses like 2.2.2.0)
+        if nums[-1] == 0 and nums[0] <= 10:
+            return True
+        # Common private IP prefixes
+        first = nums[0]
+        if first in (10, 172, 192, 169, 127):
+            return True
+        # First octet > 20 is likely an IP, not a real CIS section
+        if first > 20:
+            return True
+
+    return False
+
+
 # Heuristic score for how "real" a rule body looks.
 # TOC entries, chapter intros, and noise score low; actual rules score high.
 _FIELD_MARKER_BODY = re.compile(
@@ -402,6 +446,9 @@ def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
 
     for idx, match in enumerate(headings):
         section = match.group(1)
+        # Skip patterns that look like IP addresses rather than section numbers
+        if _is_ip_address_like(section):
+            continue
         title = match.group(2).strip()
         # Strip trailing (Automated)/(Manual) from title if captured
         title = re.sub(r"\s*\((?:Automated|Manual)\)\s*$", "", title)

@@ -10,10 +10,13 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from jinja2 import Environment, FileSystemLoader
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.core.auth import get_current_user
+from backend.config import settings
 from backend.models.connect_agent import ConnectAgent
 from backend.models.connect_session import ConnectSession
 from backend.models.client import Client
@@ -30,13 +33,14 @@ from backend.core import agent_registry
 logger = logging.getLogger("auditforge.connect")
 
 router = APIRouter(prefix="/connect", tags=["connect"])
+_limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Helpers ───────────────────────────────────────────────────────
 
 def _generate_enrollment_code() -> str:
-    """Generate a 6-character uppercase alphanumeric code."""
-    return secrets.token_urlsafe(4)[:6].upper()
+    """Generate a 12-character uppercase alphanumeric code."""
+    return secrets.token_urlsafe(9)[:12].upper()
 
 
 def _session_to_response(session: ConnectSession) -> dict:
@@ -107,7 +111,8 @@ def _get_valid_session(
 # ── Session CRUD ──────────────────────────────────────────────────
 
 @router.post("/sessions", response_model=dict)
-async def create_session(payload: ConnectSessionCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
+@_limiter.limit("2/minute")
+async def create_session(request: Request, payload: ConnectSessionCreate, db: Session = Depends(get_db), _=Depends(get_current_user)):
     """Create a new AuditForge Connect enrollment session."""
     client = db.query(Client).filter(Client.id == payload.client_id).first()
     if not client:
@@ -267,7 +272,7 @@ async def get_agent_script(
     script = template.render(
         token=token,
         server_host=server_host,
-        server_port="8000",
+        server_port=settings.SERVER_PORT,
         max_lifetime_seconds=session.max_agent_lifetime_seconds,
     )
 

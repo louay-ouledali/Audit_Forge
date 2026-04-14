@@ -15,6 +15,7 @@ import {
   Shield,
   ScrollText,
   Download,
+  Network,
 } from 'lucide-react';
 import type { Mission, Target, Client, ScanDetail } from '@/types';
 import * as api from '@/services/api';
@@ -33,9 +34,11 @@ import MissionReports from '@/components/mission/MissionReports';
 import TargetsTab from '@/components/targets/TargetsTab';
 import ConnectSessionManager from '@/components/connect/ConnectSessionManager';
 import SentinelTab from '@/components/sentinel/SentinelTab';
+import TopologyTab from '@/components/topology/TopologyTab';
+import { ScanProvider } from '@/contexts/ScanContext';
 
 /* ── Tab types ───────────────────────────────────────────────── */
-type MissionTab = 'overview' | 'targets' | 'connect' | 'findings' | 'sentinel' | 'reports';
+type MissionTab = 'overview' | 'targets' | 'topology' | 'connect' | 'findings' | 'sentinel' | 'reports';
 
 export default function MissionWorkspace() {
   const missionId = useNumericParam('id');
@@ -425,6 +428,7 @@ export default function MissionWorkspace() {
         {([
           { key: 'overview' as const, label: 'Overview', icon: Activity },
           { key: 'targets' as const, label: 'Targets', icon: Server, count: missionTargets.length },
+          { key: 'topology' as const, label: 'Topology', icon: Network },
           { key: 'connect' as const, label: 'Forge Connect', icon: Wifi },
           { key: 'findings' as const, label: 'Findings', icon: AlertTriangle, count: findingsCount || undefined },
           { key: 'sentinel' as const, label: 'Forge Sentinel', icon: Shield },
@@ -452,6 +456,7 @@ export default function MissionWorkspace() {
       </div>
 
       {/* ── Tab Content ──────────────────────────────────────── */}
+      <ScanProvider missionId={missionId} targets={missionTargets} onRefresh={fetchData}>
       {activeTab === 'overview' && (
         <MissionOverview
           mission={mission}
@@ -483,6 +488,10 @@ export default function MissionWorkspace() {
         />
       )}
 
+      {activeTab === 'topology' && (
+        <TopologyTab missionId={missionId} />
+      )}
+
       {activeTab === 'connect' && mission && (
         <ConnectSessionManager
           clientId={mission.client_id}
@@ -511,6 +520,7 @@ export default function MissionWorkspace() {
       {activeTab === 'reports' && (
         <MissionReports missionId={missionId} missionName={mission?.name} />
       )}
+      </ScanProvider>
 
       {/* Forge Resolve Panel */}
       {resolveTarget && mission && (

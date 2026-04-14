@@ -8,15 +8,18 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import inspect, text  # UNUSED: 'inspect' — safe to remove
 from sqlalchemy.orm import Session
 
 from backend.config import settings as app_config
+from backend.core.auth import get_current_user, verify_password
 from backend.core.exceptions import BackupError
+from backend.utils.encryption import encrypt_value, decrypt_value
 from backend.database import Base, get_db, engine
 from backend.models.app_settings import AppSettings
+from backend.models.user import User
 from backend.schemas.settings import (
     BackupResponse,  # UNUSED — safe to remove
     RestoreResponse,
@@ -28,6 +31,9 @@ from backend.schemas.settings import (
 logger = logging.getLogger("auditforge.settings")
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+# Keys whose values are encrypted at rest with Fernet
+_ENCRYPTED_KEYS = {"smtp_password", "llm_online_api_key_encrypted"}
 
 VALID_SETTING_KEYS = {
     "llm_mode",
@@ -60,6 +66,9 @@ VALID_SETTING_KEYS = {
     "smtp_password",
     "smtp_from",
     "smtp_use_tls",
+    # Token controls
+    "llm_max_tokens",
+    "llm_token_budget",
     # Application
     "base_url",
 }
@@ -68,7 +77,13 @@ VALID_SETTING_KEYS = {
 @router.get("", response_model=SettingsResponse)
 def get_all_settings(db: Session = Depends(get_db)) -> dict:
     rows = db.query(AppSettings).all()
-    data = {row.key: row.value for row in rows}
+    data = {}
+    for row in rows:
+        # Mask encrypted secrets — never expose ciphertext to the frontend
+        if row.key in _ENCRYPTED_KEYS and row.value:
+            data[row.key] = "••••••••"
+        else:
+            data[row.key] = row.value
     return {"data": data, "message": "success"}
 
 
@@ -82,13 +97,21 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> d
         )
 
     now = datetime.now(timezone.utc)
+    enc_key = app_config.effective_encryption_key
     for key, value in payload.settings.items():
+        store_value = value
+        # Encrypt sensitive settings at rest
+        if key in _ENCRYPTED_KEYS and value:
+            # Skip if the frontend is echoing back the masked placeholder
+            if value == "••••••••":
+                continue
+            store_value = encrypt_value(value, enc_key)
         existing = db.query(AppSettings).filter(AppSettings.key == key).first()
         if existing:
-            existing.value = value
+            existing.value = store_value
             existing.updated_at = now
         else:
-            db.add(AppSettings(key=key, value=value, updated_at=now))
+            db.add(AppSettings(key=key, value=store_value, updated_at=now))
     db.commit()
 
     rows = db.query(AppSettings).all()
@@ -108,8 +131,14 @@ def _get_db_path() -> Path:
 
 
 @router.post("/backup")
-def create_backup(db: Session = Depends(get_db)):
+def create_backup(
+    current_password: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Create a database backup and return it as a downloadable file."""
+    if not verify_password(current_password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail="Invalid password")
     db_path = _get_db_path()
     if not db_path.exists():
         raise HTTPException(status_code=404, detail="Database file not found")
@@ -140,7 +169,9 @@ def create_backup(db: Session = Depends(get_db)):
 @router.post("/restore", response_model=RestoreResponse)
 async def restore_backup(
     file: UploadFile = File(...),
+    current_password: str = Form(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Restore the database from an uploaded backup file.
 
@@ -148,6 +179,8 @@ async def restore_backup(
     After writing, the engine pool is disposed and Alembic migrations
     are re-run so the restored schema is brought up to date.
     """
+    if not verify_password(current_password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail="Invalid password")
     db_path = _get_db_path()
 
     # Read uploaded content
@@ -350,6 +383,38 @@ def restore_auto_backup(filename: str, db: Session = Depends(get_db)):
     return {
         "message": f"Restored from {filename}.{migration_note}",
         "size_mb": round(len(content) / 1024 / 1024, 2),
+    }
+
+
+# ── Reset Preloaded Benchmarks ─────────────────────────────────
+
+
+@router.post("/reset-preloaded")
+def reset_preloaded_benchmarks(db: Session = Depends(get_db)):
+    """Delete all preloaded benchmarks and re-import them from disk packs.
+
+    Custom, user-imported, and Nessus-reconstructed benchmarks are preserved.
+    """
+    from backend.models.benchmark import Benchmark
+    from backend.core.preloaded_loader import sync_preloaded
+
+    preloaded = db.query(Benchmark).filter(Benchmark.source == "preloaded").all()
+    deleted_count = len(preloaded)
+
+    for bm in preloaded:
+        db.delete(bm)
+    db.commit()
+
+    logger.info("Deleted %d preloaded benchmarks for reset", deleted_count)
+
+    # Re-import all packs from disk
+    result = sync_preloaded(db)
+    loaded = result.get("loaded", 0)
+
+    return {
+        "message": f"Reset complete: {deleted_count} preloaded benchmarks removed, {loaded} reloaded from disk.",
+        "deleted": deleted_count,
+        "loaded": loaded,
     }
 
 

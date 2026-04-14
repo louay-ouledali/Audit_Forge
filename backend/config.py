@@ -28,7 +28,11 @@ def _generate_secret_key() -> str:
 
 class Settings(BaseSettings):
     SECRET_KEY: str = _generate_secret_key()
+    JWT_SECRET_KEY: str = ""  # If empty, derived from SECRET_KEY
+    ENCRYPTION_KEY: str = ""  # If empty, derived from SECRET_KEY
+    APP_ENV: str = "development"
     DATABASE_URL: str = "sqlite:///data/auditforge.db"
+    SERVER_PORT: str = "8000"
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -51,6 +55,16 @@ class Settings(BaseSettings):
             abs_path.parent.mkdir(parents=True, exist_ok=True)
             return f"sqlite:///{abs_path}"
         return url
+
+    @property
+    def effective_jwt_key(self) -> str:
+        """Return the key used for JWT signing."""
+        return self.JWT_SECRET_KEY if self.JWT_SECRET_KEY else self.SECRET_KEY
+
+    @property
+    def effective_encryption_key(self) -> str:
+        """Return the key used for Fernet encryption."""
+        return self.ENCRYPTION_KEY if self.ENCRYPTION_KEY else self.SECRET_KEY
 
 
 settings = Settings()

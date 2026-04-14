@@ -66,6 +66,7 @@ class RuleCommandResponse(BaseModel):
     last_regenerated_at: datetime | None = None
     confidence_score: float | None = None
     confidence_source: str | None = None
+    original_command: str | None = None
 
 
 class RuleCommandUpdate(BaseModel):

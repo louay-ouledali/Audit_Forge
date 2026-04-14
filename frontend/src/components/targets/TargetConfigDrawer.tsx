@@ -72,7 +72,17 @@ export default function TargetConfigDrawer({ target, open, onClose, onSaved }: P
 
   if (!open || !target) return null;
 
-  const platformKey = (target.target_type || '').toLowerCase();
+  /** Map every backend target_type value to a canonical form key */
+  function normalizePlatformKey(raw: string): string {
+    const t = raw.toLowerCase();
+    if (['windows', 'sharepoint'].includes(t)) return 'windows';
+    if (['linux', 'ubuntu', 'rhel', 'centos', 'debian', 'fedora', 'suse', 'alpine'].includes(t)) return 'linux';
+    if (['network', 'cisco_ios', 'cisco_asa', 'cisco_nxos', 'fortinet', 'juniper', 'palo_alto', 'arista', 'f5', 'checkpoint'].includes(t)) return 'network';
+    if (['database', 'postgresql', 'mssql', 'oracle', 'mysql', 'mongodb', 'cassandra', 'redis', 'mariadb'].includes(t)) return 'database';
+    return t;
+  }
+
+  const platformKey = normalizePlatformKey(target.target_type || '');
   const p = PLATFORM_CFG[platformKey] ?? DEFAULT_CFG;
   const Icon = p.icon;
 

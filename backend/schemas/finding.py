@@ -51,6 +51,14 @@ class FindingUpdateRequest(BaseModel):
     override_reason: str | None = None
 
 
+class BulkFindingUpdateRequest(BaseModel):
+    finding_ids: list[int]
+    auditor_override: str | None = None
+    auditor_status_override: str | None = None
+    auditor_severity_override: str | None = None
+    override_reason: str | None = None
+
+
 class FindingAIAdviceResponse(BaseModel):
     advice: str
     generated_at: datetime

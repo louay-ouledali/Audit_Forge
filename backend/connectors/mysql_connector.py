@@ -52,7 +52,7 @@ class MySQLConnector(BaseConnector):
                 autocommit=True,
             )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             self._conn = await loop.run_in_executor(None, _do_connect)
         except Exception as exc:
@@ -67,10 +67,12 @@ class MySQLConnector(BaseConnector):
         if self._conn is None:
             raise RuntimeError("Not connected — call connect() first")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = time.monotonic()
 
         def _run():
+            from backend.connectors.sql_guard import assert_readonly
+            assert_readonly(command)
             cur = self._conn.cursor()
             try:
                 cur.execute(command)
@@ -122,7 +124,7 @@ class MySQLConnector(BaseConnector):
     async def disconnect(self) -> None:
         if self._conn is not None:
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._conn.close)
             except Exception:
                 pass

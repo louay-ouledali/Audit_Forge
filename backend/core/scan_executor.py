@@ -27,8 +27,13 @@ from backend.connectors.base import BaseConnector, CommandResult
 from backend.connectors.ssh_connector import SSHConnector
 from backend.connectors.winrm_connector import WinRMConnector
 from backend.core.comparison_engine import evaluate as evaluate_expression
+from backend.core.config_audit.detect import detect_config_format
+from backend.core.config_audit.evaluator import ConfigEvaluator
+from backend.core.config_audit.parsers import get_parser
+from backend.core.config_audit.puller import pull_config
 from backend.core.error_patterns import classify_output, is_execution_error
 from backend.core.exceptions import ConnectionFailedError, ScanCancelledError  # UNUSED: 'ConnectionFailedError', 'ScanCancelledError' — safe to remove
+from backend.models.config_snapshot import ConfigSnapshot
 from backend.models.discovery_cache import DiscoveryCache
 from backend.models.benchmark import Benchmark
 from backend.models.finding import Finding
@@ -48,6 +53,12 @@ _SUDO_SKIP_PREFIXES = ("sudo ", "cat ", "echo ", "printf ", "id ", "whoami ", "u
 
 # Target types that use a SQL-based primary connector
 _DATABASE_TARGET_TYPES = {"postgresql", "oracle", "mssql", "mysql", "mongodb"}
+
+# Target types that support config-based offline scanning
+_CONFIG_CAPABLE_TYPES = {
+    "cisco_ios", "cisco_asa", "cisco_nxos", "arista", "hp_procurve",
+    "fortinet", "palo_alto", "juniper", "checkpoint", "pfsense",
+}
 
 
 def _infer_transport(cmd: str, target_type: str) -> str:
@@ -268,7 +279,7 @@ def _decrypt_target_password(target: Target) -> str | None:
     """Decrypt the target's password if present."""
     if target.ssh_password_encrypted:
         try:
-            return decrypt_value(target.ssh_password_encrypted, settings.SECRET_KEY)
+            return decrypt_value(target.ssh_password_encrypted, settings.effective_encryption_key)
         except Exception:
             logger.warning("Failed to decrypt password for target %s", target.id)
     return None
@@ -512,6 +523,78 @@ async def execute_network_scan(
         except Exception as exc:
             logger.warning("Environment discovery failed: %s", exc)
 
+        # 6c. Config-based offline evaluation (if applicable)
+        config_evaluator: ConfigEvaluator | None = None
+        if target_type_lower in _CONFIG_CAPABLE_TYPES:
+            try:
+                # Try auto-pull first, then check for existing upload
+                raw_config: str | None = None
+                config_source = "auto_pull"
+
+                if target.config_pull_method != "disabled":
+                    try:
+                        raw_config, _pull_cmd = await pull_config(
+                            connector, target_type_lower
+                        )
+                    except Exception as pull_exc:
+                        logger.info(
+                            "Config auto-pull failed for %s, will check for uploads: %s",
+                            target.ip_address, pull_exc,
+                        )
+
+                # Fall back to latest uploaded snapshot
+                if not raw_config:
+                    latest_snap = (
+                        db.query(ConfigSnapshot)
+                        .filter(ConfigSnapshot.target_id == target_id)
+                        .order_by(ConfigSnapshot.snapshot_at.desc())
+                        .first()
+                    )
+                    if latest_snap:
+                        raw_config = latest_snap.raw_config
+                        config_source = "upload"
+
+                if raw_config:
+                    import hashlib
+                    fmt = detect_config_format(raw_config)
+                    parser = get_parser(fmt)
+                    parsed = parser.parse(raw_config)
+
+                    config_evaluator = ConfigEvaluator(parser, parsed)
+                    logger.info(
+                        "Config evaluator ready: format=%s, hostname=%s, lines=%d",
+                        parsed.format_id, parsed.hostname, len(parsed.raw_lines),
+                    )
+
+                    # Save snapshot if auto-pulled
+                    if config_source == "auto_pull":
+                        snap = ConfigSnapshot(
+                            target_id=target_id,
+                            scan_id=scan_id,
+                            source="auto_pull",
+                            config_format=fmt,
+                            raw_config=raw_config,
+                            config_hash=hashlib.sha256(
+                                raw_config.encode()
+                            ).hexdigest(),
+                            device_hostname=parsed.hostname,
+                            platform_detected=fmt,
+                            line_count=len(parsed.raw_lines),
+                            snapshot_at=datetime.now(timezone.utc),
+                        )
+                        db.add(snap)
+                        db.flush()
+                        target.latest_config_id = snap.id
+                        scan.config_snapshot_id = snap.id
+                        db.commit()
+
+            except Exception as cfg_exc:
+                logger.warning(
+                    "Config evaluator init failed for %s, proceeding with live-only: %s",
+                    target.ip_address, cfg_exc,
+                )
+                config_evaluator = None
+
         # 7. Build the list of rules to scan
         rules_query = (
             db.query(Rule)
@@ -588,23 +671,39 @@ async def execute_network_scan(
                     exec_cmd, target_type_lower
                 )
 
-                # Pick the right connector for this transport
-                if transport == "shell" and secondary_connector:
-                    chosen = secondary_connector
-                elif transport == "powershell" and secondary_connector:
-                    chosen = secondary_connector
-                elif transport in ("sql",) and connector:
-                    chosen = connector
-                else:
-                    chosen = connector
+                finding_source: str | None = None
+                chosen = connector  # default; overridden below for live execution
 
-                # Auto-prefix sudo only for shell transport on Linux targets
-                if transport == "shell" and target_type_lower in ("linux", "cassandra"):
-                    exec_cmd = _prepare_linux_command(exec_cmd)
+                # Try config-based evaluation before live execution
+                if config_evaluator is not None:
+                    simulated = config_evaluator.try_evaluate(exec_cmd, transport)
+                    if simulated is not None:
+                        result = CommandResult(
+                            stdout=simulated, stderr="", exit_code=0,
+                            execution_time_ms=0,
+                        )
+                        finding_source = "config_file"
 
-                result = await chosen.execute(exec_cmd, timeout=30)
-                if result.exit_code == 0 or result.stdout.strip():
-                    consecutive_errors = 0  # Reset on success
+                if finding_source != "config_file":
+                    finding_source = "live"
+
+                    # Pick the right connector for this transport
+                    if transport == "shell" and secondary_connector:
+                        chosen = secondary_connector
+                    elif transport == "powershell" and secondary_connector:
+                        chosen = secondary_connector
+                    elif transport in ("sql",) and connector:
+                        chosen = connector
+                    else:
+                        chosen = connector
+
+                    # Auto-prefix sudo only for shell transport on Linux targets
+                    if transport == "shell" and target_type_lower in ("linux", "cassandra"):
+                        exec_cmd = _prepare_linux_command(exec_cmd)
+
+                    result = await chosen.execute(exec_cmd, timeout=30)
+                    if result.exit_code == 0 or result.stdout.strip():
+                        consecutive_errors = 0  # Reset on success
             except Exception as exc:
                 result = CommandResult(
                     stdout="", stderr=str(exc), exit_code=-1, execution_time_ms=0
@@ -650,13 +749,16 @@ async def execute_network_scan(
                 scan_id=scan_id,
                 rule_id=rule.id,
                 status=status,
-                actual_output=result.stdout[:4000] if result.stdout else result.stderr[:4000],
+                actual_output=(result.stdout or "")[:4000] or (result.stderr or "")[:4000],
                 expected_output=cmd.expected_output_regex,
                 severity=rule.severity,
                 evaluation_explanation=explanation,
+                evaluation_source=finding_source,
             )
             db.add(finding)
-            db.commit()
+            # Batch commit every 25 findings
+            if (passed + failed + errors) % 25 == 0:
+                db.commit()
 
             # Update running progress
             checked = passed + failed + errors
@@ -684,7 +786,8 @@ async def execute_network_scan(
                 )
                 break
 
-        # 10. Finalize scan
+        # 10. Finalize scan — refresh from DB first to catch any DB-only cancellations
+        db.refresh(scan)
         if scan.status not in ("cancelled", "failed"):
             scan.status = "completed"
         scan.completed_at = datetime.now(timezone.utc)
@@ -708,8 +811,23 @@ async def execute_network_scan(
         )
 
         # 11. Refresh device discovery cache (ports / OS / connection methods)
+        #     Skip if cache entry is less than 1 hour old (P10)
         try:
-            await _refresh_target_discovery(target, db)
+            _skip_discovery = False
+            ip = target.ip_address
+            if ip:
+                recent = (
+                    db.query(DiscoveryCache)
+                    .filter(DiscoveryCache.ip_address == ip)
+                    .order_by(DiscoveryCache.last_seen.desc())
+                    .first()
+                )
+                if recent and recent.last_seen:
+                    age = (datetime.now(timezone.utc) - recent.last_seen).total_seconds()
+                    if age < 3600:
+                        _skip_discovery = True
+            if not _skip_discovery:
+                await _refresh_target_discovery(target, db)
         except Exception:
             logger.warning("Discovery refresh step failed for scan %s", scan_id, exc_info=True)
 

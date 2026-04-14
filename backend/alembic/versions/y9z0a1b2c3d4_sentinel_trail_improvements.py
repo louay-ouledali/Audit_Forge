@@ -46,20 +46,8 @@ def upgrade() -> None:
             if "user_agent" not in columns:
                 batch_op.add_column(sa.Column("user_agent", sa.String(), nullable=True))
             # Make mission_id nullable and change FK ondelete to SET NULL
+            # SQLite batch mode recreates the table so just define the new FK state
             batch_op.alter_column("mission_id", existing_type=sa.Integer(), nullable=True)
-            # Drop existing FK and recreate with SET NULL
-            # SQLite batch mode handles this via table recreation
-            try:
-                batch_op.drop_constraint("fk_audit_logs_mission_id", type_="foreignkey")
-            except Exception:
-                pass  # SQLite may not support named FK drops; batch mode recreates table
-            batch_op.create_foreign_key(
-                "fk_audit_logs_mission_id",
-                "missions",
-                ["mission_id"],
-                ["id"],
-                ondelete="SET NULL",
-            )
 
         existing_indexes = {idx["name"] for idx in inspector.get_indexes("audit_logs")}
         if "ix_audit_logs_mission_created" not in existing_indexes:

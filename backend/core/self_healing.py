@@ -149,7 +149,7 @@ async def attempt_self_heal(
         return correction
 
     # --- 2. LLM regeneration (if connector available) ---
-    if max_retries > 0 and rule_command.regeneration_count < 3:
+    if max_retries > 0 and (rule_command.regeneration_count or 0) < 3:
         try:
             from backend.ai.benchmark_ai import regenerate_command
 
@@ -219,6 +219,9 @@ def _persist_correction(
         rule_command.audit_command = correction["corrected_command"]
         if correction.get("corrected_expression"):
             rule_command.expected_output_regex = correction["corrected_expression"]
+        # Preserve original command on first heal only
+        if not rule_command.original_command:
+            rule_command.original_command = original_cmd
         rule_command.confidence_score = 0.55  # Slightly above LLM default
         rule_command.confidence_source = "self_healed"
         rule_command.regeneration_count = (rule_command.regeneration_count or 0) + 1

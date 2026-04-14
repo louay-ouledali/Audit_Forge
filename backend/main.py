@@ -26,10 +26,12 @@ from backend.api.ad_discovery import router as ad_discovery_router
 from backend.api.connect import router as connect_router
 from backend.api.copilot import router as copilot_router
 from backend.api.auth import router as auth_router
+from backend.api.configs import router as configs_router
 from backend.api.trail import router as trail_router
 from backend.api.schedules import router as schedules_router
 from backend.api.notifications import router as notifications_router
 from backend.api.resolve import router as resolve_router
+from backend.api.topology import router as topology_router
 from backend.api.ws_agent import router as ws_agent_router
 from backend.config import settings
 from backend.core.exceptions import (
@@ -81,6 +83,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     init_db()
 
+    # ── C6: Refuse default dev secret in production ─────────────────────
+    if (settings.SECRET_KEY == "dev-secret-key-change-in-production"
+            and settings.APP_ENV != "development"):
+        logger.critical(
+            "FATAL: SECRET_KEY is still the default dev value and APP_ENV=%s. "
+            "Set a strong SECRET_KEY before deploying to production.",
+            settings.APP_ENV,
+        )
+        raise SystemExit(1)
+
     # ── Auto-run Alembic migrations so new columns are always present ────
     try:
         from alembic.config import Config as AlembicConfig
@@ -112,7 +124,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             for s in orphaned:
                 logger.info("Resetting orphaned running scan %d to failed", s.id)
                 s.status = "failed"
-                s.error_message = "Interrupted by backend restart"
+                s.notes = "Interrupted by backend restart — scan was still running when the server shut down"
 
             # Reset orphaned Sentinel runs stuck in "running"
             from backend.models.sentinel_run import SentinelRun
@@ -241,11 +253,20 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?",
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Rate Limiting (login + connect sessions ONLY) ──────────────────
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Include routers
 # ── Public routes (no JWT required) ──────────────────────────────────
@@ -274,6 +295,8 @@ app.include_router(copilot_router, prefix="/api", dependencies=_auth)
 app.include_router(schedules_router, prefix="/api", dependencies=_auth)
 app.include_router(notifications_router, prefix="/api", dependencies=_auth)
 app.include_router(resolve_router, prefix="/api", dependencies=_auth)
+app.include_router(configs_router, prefix="/api", dependencies=_auth)
+app.include_router(topology_router, prefix="/api", dependencies=_auth)
 
 
 @app.exception_handler(AuditForgeError)
@@ -306,5 +329,5 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     logger.error("Unhandled exception: %s\n%s", exc, traceback.format_exc())
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "error_type": type(exc).__name__},
+        content={"detail": "Internal server error"},
     )

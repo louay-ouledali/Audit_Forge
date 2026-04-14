@@ -245,6 +245,7 @@ def load_pack(pack_path: Path, db: Session, *, pack_hash: str | None = None) -> 
         is_ready=True,
         status="active",
         source="preloaded",
+        is_editable=True,
         preloaded_version=meta.version,
         pack_hash=pack_hash,
         connection_hints=_json_dumps(meta.connection_hints),
@@ -379,10 +380,20 @@ def _cleanup_preloaded_duplicates(db: Session) -> int:
     if not dupes:
         return 0
 
+    from backend.models.scan import Scan
+    from backend.models.target import Target
+
     for b in dupes:
         logger.info(
             "Removing duplicate preloaded benchmark id=%d '%s' (user-imported copy exists)",
             b.id, b.name,
+        )
+        # Null out FK references so they don't become stale after deletion
+        db.query(Scan).filter(Scan.benchmark_id == b.id).update(
+            {"benchmark_id": None}, synchronize_session="fetch"
+        )
+        db.query(Target).filter(Target.default_benchmark_id == b.id).update(
+            {"default_benchmark_id": None}, synchronize_session="fetch"
         )
         db.delete(b)  # cascades to rules → commands → tags
 

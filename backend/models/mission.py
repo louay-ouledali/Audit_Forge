@@ -43,3 +43,9 @@ class Mission(Base):
         cascade="all, delete-orphan",
         foreign_keys="MissionAnalysis.mission_id",
     )
+    topology = relationship(
+        "MissionTopology",
+        back_populates="mission",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )

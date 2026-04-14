@@ -19,6 +19,9 @@ export interface TargetFormState {
   db_name: string;
   db_instance: string;
   notes: string;
+  config_pull_method: string;
+  config_upload_text: string;
+  verify_tls: boolean;
 }
 
 /* Default port map */
@@ -28,6 +31,8 @@ const PORT_MAP: Record<string, number> = {
   postgresql: 5432,
   mssql: 1433,
   oracle: 1521,
+  mysql: 3306,
+  mongodb: 27017,
 };
 
 export function defaultPortFor(method: string): number {
@@ -52,6 +57,9 @@ function initForm(t: Target): TargetFormState {
     db_name: t.db_name ?? '',
     db_instance: t.db_instance ?? '',
     notes: t.notes ?? '',
+    config_pull_method: t.config_pull_method ?? 'auto',
+    config_upload_text: '',
+    verify_tls: t.verify_tls !== false,  // default true
   };
 }
 
@@ -130,15 +138,28 @@ export function useTargetForm(target: Target | null, onSaved: () => Promise<void
     if (form.db_instance !== (target.db_instance ?? ''))
       payload.db_instance = form.db_instance || null;
     if (form.notes !== (target.notes ?? '')) payload.notes = form.notes || null;
+    if (form.config_pull_method !== (target.config_pull_method ?? 'auto'))
+      payload.config_pull_method = form.config_pull_method;
+    const targetVerifyTls = target.verify_tls !== false;
+    if (form.verify_tls !== targetVerifyTls) payload.verify_tls = form.verify_tls;
 
-    if (Object.keys(payload).length === 0) {
+    if (Object.keys(payload).length === 0 && !form.config_upload_text) {
       setSaving(false);
       setSuccess('No changes to save.');
       return;
     }
 
     try {
-      await api.updateTarget(target.id, payload as Partial<Target>);
+      if (Object.keys(payload).length > 0) {
+        await api.updateTarget(target.id, payload as Partial<Target>);
+      }
+
+      // Upload config if provided
+      if (form.config_upload_text.trim()) {
+        await api.uploadConfig(target.id, form.config_upload_text.trim());
+        setField('config_upload_text', '');
+      }
+
       setSuccess('Target saved successfully.');
       await onSaved();
     } catch {

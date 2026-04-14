@@ -165,13 +165,13 @@ export default function ScheduleCard({
       {channels.length > 0 && (
         <div className="mt-2.5 flex items-center gap-2">
           {channels.includes('in_app') && (
-            <Bell className="h-3.5 w-3.5 text-dark-muted" title="In-app notifications" />
+            <span title="In-app notifications"><Bell className="h-3.5 w-3.5 text-dark-muted" /></span>
           )}
           {channels.includes('email') && (
-            <Mail className="h-3.5 w-3.5 text-dark-muted" title="Email alerts" />
+            <span title="Email alerts"><Mail className="h-3.5 w-3.5 text-dark-muted" /></span>
           )}
           {channels.includes('slack') && (
-            <MessageSquare className="h-3.5 w-3.5 text-dark-muted" title="Slack alerts" />
+            <span title="Slack alerts"><MessageSquare className="h-3.5 w-3.5 text-dark-muted" /></span>
           )}
         </div>
       )}

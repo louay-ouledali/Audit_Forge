@@ -307,6 +307,24 @@ export default function BenchmarkDetail() {
     } catch (err: unknown) { setError(extractApiError(err, 'Failed to bulk dismiss')); }
     finally { setActionLoading(false); }
   };
+  const handleRegenerateFlagged = async (ruleCommandId: number) => {
+    try {
+      setActionLoading(true);
+      await api.regenerateFlaggedValidation(benchmarkId, ruleCommandId);
+      setSuccessMsg('Regeneration started');
+      setTimeout(fetchValidationResults, 2000);
+    } catch (err: unknown) { setError(extractApiError(err, 'Failed to regenerate')); }
+    finally { setActionLoading(false); }
+  };
+  const handleBulkRegenerateFlagged = async () => {
+    try {
+      setActionLoading(true);
+      const result = await api.bulkRegenerateFlaggedValidation(benchmarkId);
+      setSuccessMsg(result.message);
+      setTimeout(fetchValidationResults, 3000);
+    } catch (err: unknown) { setError(extractApiError(err, 'Failed to bulk regenerate')); }
+    finally { setActionLoading(false); }
+  };
 
   // ── Export/Import ──
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -662,33 +680,31 @@ export default function BenchmarkDetail() {
           <div className="sticky top-16 z-10 rounded-xl border border-dark-border bg-dark-card/95 backdrop-blur-sm p-3">
             <div className="flex flex-wrap items-center gap-2">
               {/* Editable actions */}
-              {benchmark.is_editable && (
-                <>
-                  <button onClick={() => setShowAddRule(true)} disabled={showAddRule}
-                    className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50">
-                    <Plus className="h-3 w-3" /> Add Rule
+              <button onClick={() => setShowAddRule(true)} disabled={showAddRule}
+                className="inline-flex items-center gap-1 rounded-md bg-ey-yellow px-3 py-1.5 text-xs font-medium text-black hover:bg-ey-yellow-hover disabled:opacity-50">
+                <Plus className="h-3 w-3" /> Add Rule
+              </button>
+              <button onClick={handleBulkGenerateAll} disabled={actionLoading || benchmark.phase2_status === 'processing'}
+                className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50">
+                <Zap className="h-3 w-3" /> Generate All Commands
+              </button>
+              {/* Export dropdown */}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
+                    <Download className="h-3 w-3" /> Export <ChevronDown className="h-3 w-3" />
                   </button>
-                  <button onClick={handleBulkGenerateAll} disabled={actionLoading || benchmark.phase2_status === 'processing'}
-                    className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50">
-                    <Zap className="h-3 w-3" /> Generate All Commands
-                  </button>
-                  {/* Export dropdown */}
-                  <DropdownMenu.Root>
-                    <DropdownMenu.Trigger asChild>
-                      <button className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                        <Download className="h-3 w-3" /> Export <ChevronDown className="h-3 w-3" />
-                      </button>
-                    </DropdownMenu.Trigger>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.Content className="z-50 min-w-[180px] rounded-xl border border-dark-border bg-dark-card p-1 shadow-xl" sideOffset={4}>
-                        <DropdownMenu.Item onClick={handleExportBenchmarkFull} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 outline-none cursor-pointer hover:bg-dark-elevated hover:text-white">
-                          Export .auditforge.json
-                        </DropdownMenu.Item>
-                        {benchmark.phase1_status === 'completed' && benchmark.total_rules > 0 && (
-                          <DropdownMenu.Item onClick={handleExportRules} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 outline-none cursor-pointer hover:bg-dark-elevated hover:text-white">
-                            Export Rules JSON
-                          </DropdownMenu.Item>
-                        )}
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content className="z-50 min-w-[180px] rounded-xl border border-dark-border bg-dark-card p-1 shadow-xl" sideOffset={4}>
+                    <DropdownMenu.Item onClick={handleExportBenchmarkFull} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 outline-none cursor-pointer hover:bg-dark-elevated hover:text-white">
+                      Export .auditforge.json
+                    </DropdownMenu.Item>
+                    {benchmark.phase1_status === 'completed' && benchmark.total_rules > 0 && (
+                      <DropdownMenu.Item onClick={handleExportRules} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 outline-none cursor-pointer hover:bg-dark-elevated hover:text-white">
+                        Export Rules JSON
+                      </DropdownMenu.Item>
+                    )}
                         {benchmark.phase2_status === 'completed' && (
                           <DropdownMenu.Item onClick={handleExportCommands} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-300 outline-none cursor-pointer hover:bg-dark-elevated hover:text-white">
                             Export Commands JSON
@@ -729,23 +745,6 @@ export default function BenchmarkDetail() {
                       </DropdownMenu.Content>
                     </DropdownMenu.Portal>
                   </DropdownMenu.Root>
-                </>
-              )}
-              {/* Non-editable export (for preloaded benchmarks) */}
-              {!benchmark.is_editable && (
-                <div className="flex flex-wrap items-center gap-2">
-                  {benchmark.phase1_status === 'completed' && benchmark.total_rules > 0 && (
-                    <button onClick={handleExportRules} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                      <Download className="h-3 w-3" /> Export Rules
-                    </button>
-                  )}
-                  {benchmark.phase2_status === 'completed' && (
-                    <button onClick={handleExportCommands} className="inline-flex items-center gap-1 rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-overlay hover:text-white">
-                      <Download className="h-3 w-3" /> Export Commands
-                    </button>
-                  )}
-                </div>
-              )}
               {/* Search + Filter (always) */}
               <div className="ml-auto flex items-center gap-2">
                 <div className="relative">
@@ -806,38 +805,34 @@ export default function BenchmarkDetail() {
                         {rule.source === 'manual' && <span className="rounded bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-400">manual</span>}
                         {rule.source === 'imported' && <span className="rounded bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">imported</span>}
                       </div>
-                      {benchmark.is_editable && (
-                        <button onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.id, rule.section_number); }} disabled={actionLoading}
-                          className="rounded p-1 text-dark-muted hover:bg-red-500/10 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50" title="Delete rule">
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteRule(rule.id, rule.section_number); }} disabled={actionLoading}
+                        className="rounded p-1 text-dark-muted hover:bg-red-500/10 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50" title="Delete rule">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                       {expandedRule === rule.id ? <ChevronUp className="h-4 w-4 text-dark-muted" /> : <ChevronDown className="h-4 w-4 text-dark-muted" />}
                     </button>
 
                     {/* Expanded Rule Detail */}
                     {expandedRule === rule.id && (
                       <div className="border-t border-dark-border bg-dark-elevated px-4 py-3 space-y-3">
-                        <InlineEditField label="Title" value={rule.title} onSave={v => handleSaveRuleField(rule.id, 'title', v)} editable={benchmark?.is_editable ?? false} />
-                        <InlineEditField label="Description" value={rule.description || ''} onSave={v => handleSaveRuleField(rule.id, 'description', v)} editable={benchmark?.is_editable ?? false} multiline placeholder="No description — click to add\u2026" />
+                        <InlineEditField label="Title" value={rule.title} onSave={v => handleSaveRuleField(rule.id, 'title', v)} editable={true} />
+                        <InlineEditField label="Description" value={rule.description || ''} onSave={v => handleSaveRuleField(rule.id, 'description', v)} editable={true} multiline placeholder="No description — click to add\u2026" />
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                          <InlineEditField label="Severity" value={rule.severity} onSave={v => handleSaveRuleField(rule.id, 'severity', v)} editable={benchmark?.is_editable ?? false}
+                          <InlineEditField label="Severity" value={rule.severity} onSave={v => handleSaveRuleField(rule.id, 'severity', v)} editable={true}
                             options={[{ value: 'critical', label: 'Critical' }, { value: 'high', label: 'High' }, { value: 'medium', label: 'Medium' }, { value: 'low', label: 'Low' }]} />
-                          <InlineEditField label="Profile Applicability" value={rule.profile_applicability || ''} onSave={v => handleSaveRuleField(rule.id, 'profile_applicability', v)} editable={benchmark?.is_editable ?? false} placeholder="e.g. Level 1" />
-                          <InlineEditField label="Assessment Type" value={rule.assessment_type || ''} onSave={v => handleSaveRuleField(rule.id, 'assessment_type', v)} editable={benchmark?.is_editable ?? false} placeholder="e.g. Automated" />
+                          <InlineEditField label="Profile Applicability" value={rule.profile_applicability || ''} onSave={v => handleSaveRuleField(rule.id, 'profile_applicability', v)} editable={true} placeholder="e.g. Level 1" />
+                          <InlineEditField label="Assessment Type" value={rule.assessment_type || ''} onSave={v => handleSaveRuleField(rule.id, 'assessment_type', v)} editable={true} placeholder="e.g. Automated" />
                         </div>
-                        <InlineEditField label="Rationale" value={rule.rationale || ''} onSave={v => handleSaveRuleField(rule.id, 'rationale', v)} editable={benchmark?.is_editable ?? false} multiline placeholder="No rationale — click to add\u2026" />
-                        <InlineEditField label="Remediation" value={rule.remediation_description_raw || ''} onSave={v => handleSaveRuleField(rule.id, 'remediation_description_raw', v)} editable={benchmark?.is_editable ?? false} multiline placeholder="No remediation text — click to add\u2026" />
-                        {benchmark?.is_editable && (
-                          editingRule?.id === rule.id ? (
-                            <RuleEditor benchmarkId={benchmarkId} editRule={rule} onRuleCreated={() => { }}
-                              onRuleUpdated={(updated) => { setRules(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r)); setEditingRule(null); setSuccessMsg('Rule updated successfully'); }}
-                              onCancel={() => setEditingRule(null)} />
-                          ) : (
-                            <button onClick={() => setEditingRule(rule)} className="inline-flex items-center gap-1.5 rounded-md border border-ey-yellow/30 bg-ey-yellow/10 px-3 py-1.5 text-xs font-medium text-ey-yellow hover:bg-ey-yellow/20 transition-colors">
-                              <Pencil className="h-3 w-3" /> Edit Full Rule
-                            </button>
-                          )
+                        <InlineEditField label="Rationale" value={rule.rationale || ''} onSave={v => handleSaveRuleField(rule.id, 'rationale', v)} editable={true} multiline placeholder="No rationale — click to add\u2026" />
+                        <InlineEditField label="Remediation" value={rule.remediation_description_raw || ''} onSave={v => handleSaveRuleField(rule.id, 'remediation_description_raw', v)} editable={true} multiline placeholder="No remediation text — click to add\u2026" />
+                        {editingRule?.id === rule.id ? (
+                          <RuleEditor benchmarkId={benchmarkId} editRule={rule} onRuleCreated={() => { }}
+                            onRuleUpdated={(updated) => { setRules(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r)); setEditingRule(null); setSuccessMsg('Rule updated successfully'); }}
+                            onCancel={() => setEditingRule(null)} />
+                        ) : (
+                          <button onClick={() => setEditingRule(rule)} className="inline-flex items-center gap-1.5 rounded-md border border-ey-yellow/30 bg-ey-yellow/10 px-3 py-1.5 text-xs font-medium text-ey-yellow hover:bg-ey-yellow/20 transition-colors">
+                            <Pencil className="h-3 w-3" /> Edit Full Rule
+                          </button>
                         )}
                         {ruleCommand && (
                           <div className="space-y-2">
@@ -1257,13 +1252,17 @@ export default function BenchmarkDetail() {
                 <div className="flex items-center gap-2">
                   <select value={validationFilter} onChange={(e) => setValidationFilter(e.target.value)}
                     className="rounded-lg border border-dark-border bg-dark-elevated px-3 py-1.5 text-sm text-white focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30">
-                    <option value="">All statuses</option>
-                    <option value="corrected">Corrected</option>
-                    <option value="flagged">Flagged</option>
-                    <option value="validated">Validated</option>
+                    <option value="">All statuses ({validationResults.length})</option>
+                    <option value="corrected">Corrected ({validationResults.filter(r => r.validation_status === 'corrected').length})</option>
+                    <option value="flagged">Flagged ({validationResults.filter(r => r.validation_status === 'flagged').length})</option>
+                    <option value="validated">Validated ({validationResults.filter(r => r.validation_status === 'validated').length})</option>
                   </select>
                   <button onClick={fetchValidationResults} className="rounded-md border border-dark-border bg-dark-elevated px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-overlay hover:text-white">
                     <RefreshCw className="h-3 w-3" />
+                  </button>
+                  <button onClick={handleBulkRegenerateFlagged} disabled={actionLoading || validationResults.filter(r => r.validation_status === 'flagged').length === 0}
+                    className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+                    <RefreshCw className="h-3 w-3" /> Regenerate Flagged
                   </button>
                   <button onClick={handleBulkDismissCorrections} disabled={actionLoading}
                     className="inline-flex items-center gap-1 rounded-md bg-dark-overlay px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-dark-border disabled:opacity-50">
@@ -1314,6 +1313,10 @@ export default function BenchmarkDetail() {
                   )}
                   {item.validation_status === 'flagged' && (
                     <div className="flex gap-2 pt-1">
+                      <button onClick={() => handleRegenerateFlagged(item.rule_command_id)} disabled={actionLoading}
+                        className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50">
+                        <RefreshCw className="h-3 w-3" /> Regenerate
+                      </button>
                       <button onClick={() => handleDismissCorrection(item.rule_command_id)} disabled={actionLoading}
                         className="inline-flex items-center gap-1 rounded-md bg-dark-overlay px-3 py-1 text-xs font-medium text-gray-300 hover:bg-dark-border disabled:opacity-50">
                         <X className="h-3 w-3" /> Dismiss

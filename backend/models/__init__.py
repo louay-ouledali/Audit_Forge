@@ -7,6 +7,7 @@ from backend.models.benchmark_group import BenchmarkGroup
 from backend.models.client import Client
 from backend.models.command_cache import CommandCache
 from backend.models.command_correction import CommandCorrection
+from backend.models.config_snapshot import ConfigSnapshot
 from backend.models.connect_agent import ConnectAgent
 from backend.models.copilot_conversation import CopilotConversation
 from backend.models.connect_session import ConnectSession
@@ -17,6 +18,7 @@ from backend.models.llm_cache import LLMCache
 from backend.models.mission import Mission
 from backend.models.mission_analysis import MissionAnalysis
 from backend.models.mission_target import MissionTarget
+from backend.models.mission_topology import MissionTopology
 from backend.models.notification import Notification
 from backend.models.remediation_item import RemediationItem
 from backend.models.remediation_session import RemediationSession
@@ -30,6 +32,8 @@ from backend.models.scan_preset import ScanPreset
 from backend.models.schedule import Schedule
 from backend.models.sentinel_run import SentinelRun
 from backend.models.target import Target
+from backend.models.token_blacklist import TokenBlacklist
+from backend.models.token_usage import TokenUsage
 from backend.models.user import User
 from backend.models.verification_report import VerificationReport
 
@@ -41,6 +45,7 @@ __all__ = [
     "Client",
     "CommandCache",
     "CommandCorrection",
+    "ConfigSnapshot",
     "ConnectAgent",
     "ConnectSession",
     "CopilotConversation",
@@ -51,6 +56,7 @@ __all__ = [
     "Mission",
     "MissionAnalysis",
     "MissionTarget",
+    "MissionTopology",
     "Notification",
     "RemediationItem",
     "RemediationSession",
@@ -65,6 +71,8 @@ __all__ = [
     "Schedule",
     "SentinelRun",
     "Target",
+    "TokenBlacklist",
+    "TokenUsage",
     "User",
     "VerificationReport",
 ]

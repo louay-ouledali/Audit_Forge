@@ -3,6 +3,7 @@ import { Monitor, Terminal, Wifi, WifiOff, Play, Loader2, CheckCircle2, AlertTri
 import type { ConnectAgent, Benchmark } from '@/types';
 import * as api from '@/services/api';
 import { AgentWSClient } from '@/services/wsAgent';
+import { getWsToken } from '@/services/auth';
 import type { AgentEvent } from '@/services/wsAgent';
 import { useToast } from '@/components/common/Toast';
 
@@ -89,6 +90,14 @@ export default function ConnectedAgentsPanel({ sessionId, isActive }: Props) {
 
     const ws = new AgentWSClient(sessionId);
     wsRef.current = ws;
+
+    // Get a short-lived WS token then connect
+    getWsToken().then(token => {
+      ws.setToken(token);
+      ws.connect();
+    }).catch(() => {
+      ws.connect(); // Fall back to unauthenticated (will be rejected by server)
+    });
 
     // One-shot refresh after WS connects to catch any gap
     ws.onStatus((status) => {
@@ -177,7 +186,6 @@ export default function ConnectedAgentsPanel({ sessionId, isActive }: Props) {
       }
     });
 
-    ws.connect();
     return () => ws.disconnect();
   }, [sessionId, isActive]);
 

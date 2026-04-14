@@ -404,6 +404,7 @@ def apply_cached_commands(
             existing.expected_output_description = match.get("expected_output_description")
             existing.remediation_command = match.get("remediation_command")
             existing.remediation_description = match.get("remediation_description")
+            existing.command_transport = match.get("command_transport") or existing.command_transport
             existing.status = status
             existing.source = source
             existing.updated_at = datetime.now(timezone.utc)
@@ -470,3 +471,44 @@ def get_cache_stats(db: Session, platform: str | None = None) -> dict[str, Any]:
         "total_hits": total_hits,
         "framework_distribution": framework_dist,
     }
+
+
+def update_cache_entry(db: Session, cmd: Any, rule: Any) -> None:
+    """Update or create a cache entry when an auditor edits a command.
+
+    This keeps the cache in sync with manual edits so future benchmarks
+    get the corrected version.
+    """
+    benchmark = db.query(Benchmark).filter(Benchmark.id == rule.benchmark_id).first()
+    if not benchmark:
+        return
+    platform = benchmark.platform or ""
+    title = rule.title or ""
+    key = make_cache_key(title, rule.section_number or "")
+
+    existing = (
+        db.query(CommandCache)
+        .filter(CommandCache.cache_key == key, CommandCache.platform == platform)
+        .first()
+    )
+    if existing:
+        existing.audit_command = cmd.audit_command
+        existing.expected_output_regex = cmd.expected_output_regex or existing.expected_output_regex
+        existing.command_transport = cmd.command_transport or existing.command_transport
+        existing.updated_at = datetime.now(timezone.utc)
+        logger.info("Updated cache entry %s for platform=%s", key, platform)
+    else:
+        entry = CommandCache(
+            cache_key=key,
+            platform=platform,
+            section_number=rule.section_number or "",
+            title=title,
+            normalized_title=normalize_title(title),
+            audit_command=cmd.audit_command,
+            expected_output_regex=cmd.expected_output_regex or "",
+            command_transport=cmd.command_transport,
+            source_benchmark_id=benchmark.id,
+            source_framework="manual",
+        )
+        db.add(entry)
+        logger.info("Created cache entry %s for platform=%s", key, platform)

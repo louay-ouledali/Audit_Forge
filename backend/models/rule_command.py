@@ -38,6 +38,7 @@ class RuleCommand(Base):
     regeneration_count = Column(Integer, default=0)
     last_regenerated_at = Column(DateTime)
     previous_commands = Column(Text)
+    original_command = Column(Text, nullable=True)  # Original command before self-heal/edit
 
     # Quality tracking
     confidence_score = Column(Float, nullable=True, default=0.5)

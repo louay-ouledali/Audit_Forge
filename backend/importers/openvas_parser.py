@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
-from xml.etree import ElementTree as ET
+import defusedxml.ElementTree as ET
 
 from backend.importers.base import ParsedFinding, PlatformInfo
 from backend.importers.platform_detector import detect_platform_from_text

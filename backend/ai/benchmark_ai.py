@@ -159,7 +159,7 @@ async def _call_llm_for_batch(
         for k, v in item.items():
             if isinstance(v, list):
                 # LLM sometimes returns ["cmd1", "cmd2"] — join them
-                clean[k] = " ".join(str(x) for x in v)
+                clean[k] = " && ".join(str(x) for x in v)
             elif v is None:
                 clean[k] = ""
             else:
@@ -245,11 +245,26 @@ async def generate_commands_for_batch(
                         if sec in by_sec:
                             result = _post_process_llm_result(by_sec[sec])
                             matched.append((orig_idx, result))
-                        elif pos < len(raw) and isinstance(raw[pos], dict):
-                            result = _post_process_llm_result(raw[pos])
-                            matched.append((orig_idx, result))
                         else:
-                            matched.append((orig_idx, {}))
+                            # Jaccard title-similarity fallback instead of positional
+                            best_item, best_score = {}, 0.0
+                            rule_title = rule.get("title", "").lower().split()
+                            for item in raw:
+                                if not isinstance(item, dict):
+                                    continue
+                                item_title = item.get("title", "").lower().split()
+                                if rule_title and item_title:
+                                    intersection = len(set(rule_title) & set(item_title))
+                                    union = len(set(rule_title) | set(item_title))
+                                    score = intersection / union if union else 0.0
+                                    if score > best_score:
+                                        best_score = score
+                                        best_item = item
+                            if best_score >= 0.5:
+                                result = _post_process_llm_result(best_item)
+                                matched.append((orig_idx, result))
+                            else:
+                                matched.append((orig_idx, {}))
                     return matched
                 except Exception as exc:
                     sections = [r.get("section_number", "?") for _, r in sb]

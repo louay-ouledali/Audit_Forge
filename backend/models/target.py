@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from backend.database import Base
@@ -55,6 +55,17 @@ class Target(Base):
     enable_password_encrypted = Column(Text, nullable=True)  # enable/privilege password
     device_type = Column(String, nullable=True)              # netmiko device_type string
 
+    # TLS verification (default True — verify server certificates)
+    verify_tls = Column(Boolean, nullable=False, server_default="1")
+
+    # Config audit
+    config_pull_method = Column(String, nullable=True)  # "auto" | "upload_only" | "disabled"
+    latest_config_id = Column(
+        Integer,
+        ForeignKey("config_snapshots.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Relationships
     client = relationship("Client", back_populates="targets")
     default_benchmark = relationship("Benchmark", foreign_keys=[default_benchmark_id])
@@ -64,4 +75,12 @@ class Target(Base):
         "Mission",
         secondary="mission_targets",
         back_populates="targets",
+    )
+    config_snapshots = relationship(
+        "ConfigSnapshot", back_populates="target",
+        foreign_keys="ConfigSnapshot.target_id",
+        cascade="all, delete-orphan",
+    )
+    latest_config = relationship(
+        "ConfigSnapshot", foreign_keys=[latest_config_id], post_update=True,
     )

@@ -60,13 +60,18 @@ class NetmikoConnector(BaseConnector):
                 "Install it with: pip install netmiko"
             ) from exc
 
-        host = getattr(target, "ip_address", None) or getattr(target, "hostname", "")
+        host = getattr(target, "hostname", None) or getattr(target, "ip_address", "")
         port = getattr(target, "port", None) or 22
         username = getattr(target, "ssh_username", None) or "admin"
         password = getattr(target, "_decrypted_password", None)
         ssh_key_path = getattr(target, "ssh_key_path", None) or None
         raw_type = getattr(target, "target_type", "cisco_ios")
-        device_type = _DEVICE_TYPE_MAP.get(raw_type.lower(), raw_type.lower())
+        # Use the explicit device_type column if set (e.g. when target_type="network")
+        explicit_device = getattr(target, "device_type", None)
+        if explicit_device:
+            device_type = _DEVICE_TYPE_MAP.get(explicit_device.lower(), explicit_device.lower())
+        else:
+            device_type = _DEVICE_TYPE_MAP.get(raw_type.lower(), raw_type.lower())
 
         if not password and not ssh_key_path:
             raise ConnectionError(
@@ -85,7 +90,7 @@ class NetmikoConnector(BaseConnector):
                 from backend.utils.encryption import decrypt_value
                 from backend.config import settings
                 enable_password = decrypt_value(
-                    enable_password_enc, settings.SECRET_KEY
+                    enable_password_enc, settings.effective_encryption_key
                 )
             except Exception:
                 logger.debug("Could not decrypt enable password for %s", host)
@@ -111,7 +116,7 @@ class NetmikoConnector(BaseConnector):
         if enable_password:
             device_params["secret"] = enable_password
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             self._connection = await loop.run_in_executor(
                 None, lambda: ConnectHandler(**device_params)
@@ -138,7 +143,7 @@ class NetmikoConnector(BaseConnector):
         if self._connection is None:
             raise RuntimeError("Not connected — call connect() first")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = time.monotonic()
 
         def _run():
@@ -196,7 +201,7 @@ class NetmikoConnector(BaseConnector):
     async def disconnect(self) -> None:
         if self._connection is not None:
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._connection.disconnect)
             except Exception:
                 pass

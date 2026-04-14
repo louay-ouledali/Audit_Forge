@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from backend.core.platform_family import normalize_platform_family
+
 
 # ---------------------------------------------------------------------------
 # Helper: build a regex that matches an integer >= threshold
@@ -1651,10 +1653,7 @@ def match_template(
             return db_result
 
     # --- Family-based templates (Windows / Linux / Network) ---
-    # Normalize platform_family: "Unix"→"linux", "Windows"→"windows", etc.
-    pf = platform_family.lower() if platform_family else "linux"
-    if pf in ("unix", "macos"):
-        pf = "linux"
+    pf = normalize_platform_family(platform_family)
     templates = _TEMPLATES_BY_FAMILY.get(pf, [])
     for fn in templates:
         result = fn(rule)

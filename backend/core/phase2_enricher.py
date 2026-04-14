@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session  # UNUSED — safe to remove
 
 from backend.ai.benchmark_ai import generate_commands_for_batch
 from backend.core.exceptions import LLMTimeoutError, LLMUnavailableError
+from backend.core.platform_family import normalize_platform_family
 from backend.database import SessionLocal
 from backend.models.benchmark import Benchmark
 from backend.models.rule import Rule
@@ -59,8 +60,7 @@ async def run_phase2(benchmark_id: int) -> None:
         platform_family = benchmark.platform_family
 
         # Normalize platform_family (UI may send "Unix", backend uses "linux")
-        _PF_NORM = {"unix": "linux", "macos": "linux"}
-        platform_family = _PF_NORM.get(platform_family.lower(), platform_family.lower()) if platform_family else "linux"
+        platform_family = normalize_platform_family(platform_family)
 
         # Delete previously failed RuleCommand rows so they can be retried
         failed_cmds = (

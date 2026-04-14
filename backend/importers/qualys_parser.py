@@ -22,7 +22,7 @@ import io
 import logging
 import re
 from typing import Any
-from xml.etree import ElementTree as ET
+import defusedxml.ElementTree as ET
 
 from backend.importers.base import ExtractedRule, ParsedFinding, PlatformInfo
 from backend.importers.platform_detector import detect_platform_from_text

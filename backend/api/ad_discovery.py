@@ -125,7 +125,7 @@ def _get_client_ad_creds(
     password = override_password
     if not password and client.ad_password_encrypted:
         try:
-            password = decrypt_value(client.ad_password_encrypted, settings.SECRET_KEY)
+            password = decrypt_value(client.ad_password_encrypted, settings.effective_encryption_key)
         except Exception:
             raise HTTPException(status_code=400, detail="Failed to decrypt stored AD password")
 

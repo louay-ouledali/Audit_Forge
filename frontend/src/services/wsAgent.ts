@@ -122,15 +122,22 @@ abstract class BaseWSClient {
 /** Auditor-side: connects to /ws/session/{id}/monitor */
 export class AgentWSClient extends BaseWSClient {
   private sessionId: number;
+  private wsToken: string | null = null;
 
   constructor(sessionId: number) {
     super();
     this.sessionId = sessionId;
   }
 
+  /** Set the short-lived WS token before connecting. */
+  setToken(token: string): void {
+    this.wsToken = token;
+  }
+
   protected buildUrl(): string {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.host}/ws/session/${this.sessionId}/monitor`;
+    const base = `${protocol}//${window.location.host}/ws/session/${this.sessionId}/monitor`;
+    return this.wsToken ? `${base}?token=${this.wsToken}` : base;
   }
 }
 

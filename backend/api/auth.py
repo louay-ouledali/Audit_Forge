@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.orm import Session
 
 from backend.core.auth import (
+    ACCESS_TOKEN_EXPIRE_HOURS,
     create_access_token,
     get_current_user,
     hash_password,
@@ -17,6 +21,8 @@ from backend.database import get_db
 from backend.models.user import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+limiter = Limiter(key_func=get_remote_address)
+logger = logging.getLogger("auditforge.api.auth")
 
 
 # ── Schemas ──────────────────────────────────────────────────────────
@@ -38,7 +44,8 @@ class ChangePasswordRequest(BaseModel):
 
 # ── Endpoints ────────────────────────────────────────────────────────
 @router.post("/login", response_model=LoginResponse)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, body: LoginRequest, response: Response, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == body.username).first()
     if not user or not verify_password(body.password, user.password_hash):
         log_action(db, action="login_failed", details={"username": body.username})
@@ -52,10 +59,47 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     db.commit()
 
     token = create_access_token(user.id)
+
+    # Set httpOnly cookie
+    response.set_cookie(
+        key="auditforge_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        path="/",
+        max_age=ACCESS_TOKEN_EXPIRE_HOURS * 3600,
+    )
+
     return LoginResponse(
         access_token=token,
         user={"id": user.id, "username": user.username, "full_name": user.full_name},
     )
+
+
+@router.post("/logout")
+def logout(request: Request, response: Response, db: Session = Depends(get_db)):
+    """Clear the auth cookie and blacklist the token if it has a jti."""
+    token = request.cookies.get("auditforge_token")
+    if token:
+        try:
+            from jose import jwt as _jwt
+            from backend.config import settings
+            payload = _jwt.decode(token, settings.effective_jwt_key, algorithms=["HS256"])
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            if jti and exp:
+                from backend.models.token_blacklist import TokenBlacklist
+                if not db.query(TokenBlacklist).filter(TokenBlacklist.jti == jti).first():
+                    db.add(TokenBlacklist(
+                        jti=jti,
+                        expires_at=datetime.fromtimestamp(exp, tz=timezone.utc),
+                    ))
+                    db.commit()
+        except Exception as _exc:
+            logger.debug("Token blacklisting skipped: %s", _exc)  # Best-effort
+
+    response.delete_cookie("auditforge_token", path="/")
+    return {"message": "Logged out"}
 
 
 @router.get("/me")
@@ -65,6 +109,14 @@ def me(current_user: User = Depends(get_current_user)):
         "username": current_user.username,
         "full_name": current_user.full_name,
     }
+
+
+@router.post("/ws-token")
+def ws_token(current_user: User = Depends(get_current_user)):
+    """Issue a short-lived token for WebSocket authentication."""
+    from datetime import timedelta
+    token = create_access_token(current_user.id, expires_delta=timedelta(seconds=60))
+    return {"token": token}
 
 
 @router.put("/change-password")

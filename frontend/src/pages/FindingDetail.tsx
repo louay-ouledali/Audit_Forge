@@ -262,6 +262,16 @@ export default function FindingDetail() {
               {finding.evaluation_explanation}
             </div>
           )}
+          {finding.evaluation_source && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-dark-muted">Evaluation source:</span>
+              {finding.evaluation_source === 'config_file' ? (
+                <span className="inline-flex items-center rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-400">Config File</span>
+              ) : (
+                <span className="inline-flex items-center rounded-full bg-green-500/15 px-2 py-0.5 text-xs font-medium text-green-400">Live Connection</span>
+              )}
+            </div>
+          )}
         </div>
         <div className="rounded-xl border border-dark-border bg-dark-card p-6">
           <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-300">

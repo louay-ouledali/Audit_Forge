@@ -29,8 +29,29 @@ interface CopilotPanelProps {
 
 import BrandLockup from '@/components/common/BrandLockup';
 
-// ── Module-level cache so chat survives tab switches ──
+// ── Module-level LRU cache so chat survives tab switches (max 50 entries) ──
+const _LRU_MAX = 50;
 const _chatCache = new Map<number, { messages: CopilotMessageData[]; conversationId?: string }>();
+
+function _lruGet(key: number) {
+  const val = _chatCache.get(key);
+  if (val !== undefined) {
+    // Move to end (most recently used)
+    _chatCache.delete(key);
+    _chatCache.set(key, val);
+  }
+  return val;
+}
+
+function _lruSet(key: number, val: { messages: CopilotMessageData[]; conversationId?: string }) {
+  _chatCache.delete(key);
+  _chatCache.set(key, val);
+  if (_chatCache.size > _LRU_MAX) {
+    // Evict oldest (first key)
+    const oldest = _chatCache.keys().next().value;
+    if (oldest !== undefined) _chatCache.delete(oldest);
+  }
+}
 
 export default function CopilotPanel({
   benchmarkId,
@@ -43,7 +64,7 @@ export default function CopilotPanel({
   verifyStatus,
   validateStatus,
 }: CopilotPanelProps) {
-  const cached = _chatCache.get(benchmarkId);
+  const cached = _lruGet(benchmarkId);
   const [messages, setMessages] = useState<CopilotMessageData[]>(cached?.messages ?? []);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -58,7 +79,7 @@ export default function CopilotPanel({
 
   // Persist to cache on every change
   useEffect(() => {
-    _chatCache.set(benchmarkId, { messages, conversationId });
+    _lruSet(benchmarkId, { messages, conversationId });
   }, [messages, conversationId, benchmarkId]);
 
   const scrollToBottom = useCallback(() => {

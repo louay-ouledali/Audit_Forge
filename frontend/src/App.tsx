@@ -1,19 +1,33 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
 import MainLayout from './components/layout/MainLayout';
 import AuthGuard from './components/layout/AuthGuard';
 import Login from './pages/Login';
-import ClientWorkspace from './pages/ClientWorkspace';
-import MissionWorkspace from './pages/MissionWorkspace';
-import BenchmarkDetail from './pages/BenchmarkDetail';
-import FindingDetail from './pages/FindingDetail';
-import MissionAnalysis from './pages/MissionAnalysis';
 import ConnectPortal from './pages/ConnectPortal';
 import { ToastProvider } from './components/common/Toast';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
+
+// Code-split heavy workspace pages
+const ClientWorkspace = lazy(() => import('./pages/ClientWorkspace'));
+const MissionWorkspace = lazy(() => import('./pages/MissionWorkspace'));
+const BenchmarkDetail = lazy(() => import('./pages/BenchmarkDetail'));
+const FindingDetail = lazy(() => import('./pages/FindingDetail'));
+const MissionAnalysis = lazy(() => import('./pages/MissionAnalysis'));
+
+function LazyFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-ey-yellow border-t-transparent" />
+    </div>
+  );
+}
 
 function App() {
   return (
     <ToastProvider>
+    <ErrorBoundary>
     <BrowserRouter>
+      <Suspense fallback={<LazyFallback />}>
       <Routes>
         {/* Standalone pages — outside MainLayout */}
         <Route path="/login" element={<Login />} />
@@ -45,7 +59,9 @@ function App() {
           } />
         </Route>
       </Routes>
+      </Suspense>
     </BrowserRouter>
+    </ErrorBoundary>
     </ToastProvider>
   );
 }

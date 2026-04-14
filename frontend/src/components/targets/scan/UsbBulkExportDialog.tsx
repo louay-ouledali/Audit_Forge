@@ -82,7 +82,7 @@ export default function UsbBulkExportDialog({ targets, open, onClose, missionId:
           triggerDownload(blob, buildFilename(t));
           completed++;
         } catch (err) {
-          console.error(`USB export failed for target ${t.id}:`, err);
+          void err;
           failed++;
         }
         setDlState(prev => prev ? { ...prev, completed, failed } : null);
@@ -105,7 +105,7 @@ export default function UsbBulkExportDialog({ targets, open, onClose, missionId:
           triggerDownload(blob, buildFilename(t));
           completed++;
         } catch (err) {
-          console.error(`USB export failed for target ${t.id}:`, err);
+          void err;
           failed++;
         }
         setDlState(prev => prev ? { ...prev, completed, failed } : null);

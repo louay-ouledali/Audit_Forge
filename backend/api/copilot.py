@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from backend.ai.copilot_prompts import COPILOT_SYSTEM, COPILOT_TOOL_RESULTS, COPILOT_QUALITY_ANALYSIS
 from backend.ai.llm_manager import llm_manager
+from backend.ai.prompt_sanitizer import sanitize_field, sanitize_chat_message
 from backend.core.copilot_engine import run_copilot_pipeline
 from backend.core.copilot_tools import (
     COPILOT_TOOLS,
@@ -147,10 +148,10 @@ def _build_system_prompt(bm: Benchmark, db: Session) -> str:
     """Build the LLM system prompt with benchmark context (no conversation history)."""
     rule_count = db.query(Rule).filter(Rule.benchmark_id == bm.id).count()
     return COPILOT_SYSTEM.format(
-        benchmark_name=bm.name,
+        benchmark_name=sanitize_field(bm.name or "", max_length=200),
         benchmark_id=bm.id,
-        platform=bm.platform,
-        platform_family=bm.platform_family,
+        platform=sanitize_field(bm.platform or "", max_length=100),
+        platform_family=sanitize_field(bm.platform_family or "", max_length=100),
         rule_count=rule_count,
     )
 
@@ -264,7 +265,7 @@ async def copilot_chat(
     else:
         # ── Agentic loop: LLM -> tools -> LLM (max 5 iterations) ──
         max_iterations = 5
-        user_prompt = payload.message
+        user_prompt = sanitize_chat_message(payload.message)
 
         for iteration in range(max_iterations):
             # Build multi-turn messages

@@ -38,20 +38,20 @@ logger = logging.getLogger("auditforge.api.targets")
 def _encrypt_fields(data: dict) -> dict:
     """Encrypt sensitive fields before storing."""
     if data.get("ssh_password"):
-        data["ssh_password_encrypted"] = encrypt_value(data.pop("ssh_password"), settings.SECRET_KEY)
+        data["ssh_password_encrypted"] = encrypt_value(data.pop("ssh_password"), settings.effective_encryption_key)
     else:
         data.pop("ssh_password", None)
 
     if data.get("db_connection_string"):
         data["db_connection_string_encrypted"] = encrypt_value(
-            data.pop("db_connection_string"), settings.SECRET_KEY
+            data.pop("db_connection_string"), settings.effective_encryption_key
         )
     else:
         data.pop("db_connection_string", None)
 
     if data.get("enable_password"):
         data["enable_password_encrypted"] = encrypt_value(
-            data.pop("enable_password"), settings.SECRET_KEY
+            data.pop("enable_password"), settings.effective_encryption_key
         )
     else:
         data.pop("enable_password", None)
@@ -203,8 +203,17 @@ def update_target(target_id: int, payload: TargetUpdate, db: Session = Depends(g
     if not target:
         raise HTTPException(status_code=404, detail="Target not found")
     data = _encrypt_fields(payload.model_dump(exclude_unset=True))
+    _TARGET_UPDATE_FIELDS = {
+        "hostname", "ip_address", "mac_address", "target_type", "os_details",
+        "connection_method", "ssh_username", "ssh_key_path", "port",
+        "db_connection_string_encrypted", "notes", "platform_subtype",
+        "default_benchmark_id", "db_name", "db_instance",
+        "enable_password_encrypted", "device_type", "config_pull_method",
+        "ssh_password_encrypted", "verify_tls",
+    }
     for field, value in data.items():
-        setattr(target, field, value)
+        if field in _TARGET_UPDATE_FIELDS:
+            setattr(target, field, value)
     db.commit()
     db.refresh(target)
     resp = _enrich_target_response(target, db)
@@ -261,7 +270,7 @@ def _decrypt_target_password(target: Target) -> str | None:
     """Decrypt the target's SSH/WinRM password."""
     if target.ssh_password_encrypted:
         try:
-            return decrypt_value(target.ssh_password_encrypted, settings.SECRET_KEY)
+            return decrypt_value(target.ssh_password_encrypted, settings.effective_encryption_key)
         except Exception as exc:
             logger.warning("Failed to decrypt password for target %d: %s", target.id, exc)
             return None

@@ -31,7 +31,18 @@ logger = logging.getLogger("auditforge.api.missions")
 
 
 def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    from passlib.hash import bcrypt as _bcrypt
+    return _bcrypt.hash(password)
+
+
+def _verify_lock_password(password: str, stored_hash: str) -> bool:
+    """Verify password against stored hash. Supports bcrypt and legacy SHA-256."""
+    from passlib.hash import bcrypt as _bcrypt
+    if stored_hash.startswith("$2"):
+        # bcrypt hash
+        return _bcrypt.verify(password, stored_hash)
+    # Legacy SHA-256 — auto-upgrade would happen on next lock
+    return hashlib.sha256(password.encode()).hexdigest() == stored_hash
 
 
 def check_mission_lock(mission_id: int | None, db: Session) -> None:
@@ -151,8 +162,13 @@ def update_mission(mission_id: int, payload: MissionUpdate, db: Session = Depend
         raise HTTPException(status_code=404, detail="Mission not found")
     if mission.is_locked:
         raise HTTPException(status_code=403, detail="Mission is locked. Unlock it first.")
+    _MISSION_UPDATE_FIELDS = {
+        "name", "description", "status", "start_date", "end_date",
+        "client_id", "scope", "methodology",
+    }
     for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(mission, field, value)
+        if field in _MISSION_UPDATE_FIELDS:
+            setattr(mission, field, value)
     log_action(db, mission_id=mission_id, action="mission_updated", entity_type="mission", entity_id=mission_id, entity_label=mission.name)
     db.commit()
     db.refresh(mission)
@@ -213,7 +229,7 @@ def unlock_mission(
     if not mission.is_locked:
         raise HTTPException(status_code=400, detail="Mission is not locked")
 
-    if mission.password_hash != _hash_password(payload.password):
+    if not _verify_lock_password(payload.password, mission.password_hash):
         raise HTTPException(status_code=403, detail="Invalid password")
 
     mission.is_locked = False
@@ -241,7 +257,7 @@ def verify_mission_lock(
         raise HTTPException(status_code=404, detail="Mission not found")
     if not mission.is_locked:
         return {"valid": True, "message": "Mission is not locked"}
-    valid = mission.password_hash == _hash_password(payload.password)
+    valid = _verify_lock_password(payload.password, mission.password_hash)
     if not valid:
         raise HTTPException(status_code=403, detail="Invalid password")
     return {"valid": True, "message": "Password verified"}

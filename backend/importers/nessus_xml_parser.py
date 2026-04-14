@@ -46,7 +46,7 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any
-from xml.etree import ElementTree as ET
+import defusedxml.ElementTree as ET
 
 from backend.importers.base import ExtractedRule, ParsedFinding, PlatformInfo
 from backend.importers.description_parser import parse_references

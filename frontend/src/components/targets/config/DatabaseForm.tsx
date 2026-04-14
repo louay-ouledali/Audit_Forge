@@ -14,6 +14,8 @@ const DB_TYPES = [
   { value: 'postgresql', label: 'PostgreSQL', defaultPort: 5432 },
   { value: 'mssql', label: 'Microsoft SQL Server', defaultPort: 1433 },
   { value: 'oracle', label: 'Oracle Database', defaultPort: 1521 },
+  { value: 'mysql', label: 'MySQL / MariaDB', defaultPort: 3306 },
+  { value: 'mongodb', label: 'MongoDB', defaultPort: 27017 },
 ];
 
 export default function DatabaseForm({ form, setField, setConnectionMethod, benchmarks }: Props) {
@@ -25,7 +27,9 @@ export default function DatabaseForm({ form, setField, setConnectionMethod, benc
          b.platform?.toLowerCase().includes('mssql') ||
          b.platform?.toLowerCase().includes('sql server') ||
          b.platform?.toLowerCase().includes('oracle') ||
-         b.platform?.toLowerCase().includes('mysql'),
+         b.platform?.toLowerCase().includes('mysql') ||
+         b.platform?.toLowerCase().includes('mongodb') ||
+         b.platform?.toLowerCase().includes('mongo'),
   );
 
   const handleDbTypeChange = (value: string) => {
@@ -76,7 +80,7 @@ export default function DatabaseForm({ form, setField, setConnectionMethod, benc
             <input
               value={form.db_name}
               onChange={e => setField('db_name', e.target.value)}
-              placeholder={dbType === 'postgresql' ? 'postgres' : dbType === 'oracle' ? 'ORCL' : 'master'}
+              placeholder={dbType === 'postgresql' ? 'postgres' : dbType === 'oracle' ? 'ORCL' : dbType === 'mysql' ? 'mysql' : dbType === 'mongodb' ? 'admin' : 'master'}
               className={fieldInput}
             />
           </div>
@@ -101,7 +105,7 @@ export default function DatabaseForm({ form, setField, setConnectionMethod, benc
           <input
             value={form.ssh_username}
             onChange={e => setField('ssh_username', e.target.value)}
-            placeholder={dbType === 'postgresql' ? 'postgres' : dbType === 'mssql' ? 'sa' : 'sys'}
+            placeholder={dbType === 'postgresql' ? 'postgres' : dbType === 'mssql' ? 'sa' : dbType === 'mysql' ? 'root' : dbType === 'mongodb' ? 'admin' : 'sys'}
             className={fieldInput}
           />
         </div>
@@ -125,7 +129,29 @@ export default function DatabaseForm({ form, setField, setConnectionMethod, benc
           {dbType === 'oracle' && (
             <>Use <strong>SYSDBA</strong> or <code className="text-ey-yellow/70">DBA</code> role.</>
           )}
+          {dbType === 'mysql' && (
+            <>Use <strong>root</strong> or a user with <code className="text-ey-yellow/70">SUPER</code> and <code className="text-ey-yellow/70">SELECT</code> privileges.</>
+          )}
+          {dbType === 'mongodb' && (
+            <>Use an account with the <code className="text-ey-yellow/70">readAnyDatabase</code> and <code className="text-ey-yellow/70">clusterMonitor</code> roles.</>
+          )}
         </HintBox>
+      </FormSection>
+
+      {/* ── Security ───────────────────────────────────────── */}
+      <FormSection title="Security">
+        <label className="flex items-center gap-3 cursor-pointer select-none">
+          <div
+            onClick={() => setField('verify_tls', !form.verify_tls)}
+            className={`relative h-5 w-9 rounded-full transition-colors ${form.verify_tls ? 'bg-emerald-500' : 'bg-dark-border'}`}
+          >
+            <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.verify_tls ? 'translate-x-4' : 'translate-x-0.5'}`} />
+          </div>
+          <span className="text-xs text-dark-secondary">Verify TLS certificate</span>
+        </label>
+        {!form.verify_tls && (
+          <p className="text-[11px] text-amber-400/80">TLS verification disabled — accepts self-signed certificates. Not recommended for production.</p>
+        )}
       </FormSection>
 
       {/* ── Benchmark ──────────────────────────────────────── */}
@@ -186,6 +212,21 @@ export default function DatabaseForm({ form, setField, setConnectionMethod, benc
           <div>
             <p className="text-[11px] text-dark-muted mb-1.5 font-medium">Verify listener is running:</p>
             <CodeBlock>lsnrctl status</CodeBlock>
+          </div>
+        )}
+
+        {dbType === 'mysql' && (
+          <div>
+            <p className="text-[11px] text-dark-muted mb-1.5 font-medium">Grant remote access in MySQL:</p>
+            <CodeBlock>{`GRANT SELECT, SUPER ON *.* TO 'root'@'%' IDENTIFIED BY 'pass';\nFLUSH PRIVILEGES;`}</CodeBlock>
+          </div>
+        )}
+
+        {dbType === 'mongodb' && (
+          <div>
+            <p className="text-[11px] text-dark-muted mb-1.5 font-medium">Ensure MongoDB allows remote connections:</p>
+            <CodeBlock>{`# /etc/mongod.conf\nnet:\n  bindIp: 0.0.0.0`}</CodeBlock>
+            <p className="mt-1.5 text-[11px] text-dark-muted">Also ensure authentication is enabled: <code className="text-ey-yellow/70">security.authorization: enabled</code></p>
           </div>
         )}
       </FormSection>

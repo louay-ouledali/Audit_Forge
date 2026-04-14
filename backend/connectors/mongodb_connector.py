@@ -58,7 +58,7 @@ class MongoDBConnector(BaseConnector):
             client.admin.command("ping")
             return client
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             self._client = await loop.run_in_executor(None, _do_connect)
             self._db = self._client[database]
@@ -74,7 +74,7 @@ class MongoDBConnector(BaseConnector):
         if self._client is None or self._db is None:
             raise RuntimeError("Not connected — call connect() first")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = time.monotonic()
 
         def _run():
@@ -161,12 +161,20 @@ class MongoDBConnector(BaseConnector):
             coll = self._db[coll_name]
             return str(coll.count_documents(filter_doc))
 
-        # Fallback: try to run as a database command
-        try:
-            result = self._db.command(cmd)
-            return json.dumps(result, default=str, indent=2)
-        except Exception:
-            return f"Unrecognized MongoDB command: {cmd}"
+        # Fallback: try to run as a database command (safe allowlist only)
+        _SAFE_COMMANDS = {
+            "serverStatus", "ping", "usersInfo", "rolesInfo",
+            "connectionStatus", "buildInfo", "getCmdLineOpts",
+            "getParameter", "collStats", "dbStats", "hostInfo",
+            "isMaster", "replSetGetStatus", "getLog",
+        }
+        if cmd in _SAFE_COMMANDS:
+            try:
+                result = self._db.command(cmd)
+                return json.dumps(result, default=str, indent=2)
+            except Exception as exc:
+                return f"MongoDB command '{cmd}' failed: {exc}"
+        return f"Unrecognized or disallowed MongoDB command: {cmd}"
 
     @staticmethod
     def _parse_mongo_doc(s: str) -> dict:
@@ -186,7 +194,7 @@ class MongoDBConnector(BaseConnector):
             # Return as a simple command name if it's a single word
             if re.match(r"^\w+$", s):
                 return {s: 1}
-            return {"eval": s}
+            raise ValueError(f"Cannot parse MongoDB document literal: {s[:100]}")
 
     # ------------------------------------------------------------------
     async def get_system_info(self) -> dict:
@@ -202,7 +210,7 @@ class MongoDBConnector(BaseConnector):
     async def disconnect(self) -> None:
         if self._client is not None:
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._client.close)
             except Exception:
                 pass

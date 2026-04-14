@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from backend.database import SessionLocal
+from backend.core.platform_family import normalize_platform_family
 from backend.models.benchmark import Benchmark
 from backend.models.rule import Rule
 from backend.models.rule_command import RuleCommand
@@ -157,7 +158,8 @@ def _is_readonly_sql_cmd(cmd: str) -> bool:
     a read-only keyword, any DML/DDL keywords appearing further in the string
     are just referenced values — not dangerous.
     """
-    return bool(re.search(r'\b(SELECT|SHOW|EXPLAIN|WITH)\b', cmd, re.IGNORECASE))
+    first_keyword = cmd.strip().split()[0].upper() if cmd.strip() else ""
+    return first_keyword in ("SELECT", "SHOW", "EXPLAIN", "WITH")
 
 # Patterns that indicate a command still contains unresolved placeholders
 # NOTE: \{...\} is excluded because auditpol GUIDs like {0cce923f-69ae-11d9-bed3-505054503030} are real.
@@ -217,10 +219,8 @@ def _check_safety(audit_command: str | None, platform_family: str) -> dict:
 
     stripped = audit_command.strip()
 
-    # Normalize platform_family: "Unix"→"linux", "Windows"→"windows"
-    pf = platform_family.lower() if platform_family else "linux"
-    if pf in ("unix", "macos"):
-        pf = "linux"
+    # Normalize platform_family
+    pf = normalize_platform_family(platform_family)
 
     # ── Context-aware bypass ──────────────────────────────────────────────
     # Network read-only commands (show, display, get, diagnose …) are safe

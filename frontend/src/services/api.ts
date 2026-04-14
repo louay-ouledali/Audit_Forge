@@ -1,5 +1,5 @@
 import api from './api-client';
-import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo, ADConnectionTestResult, ADDiscoverResponse, ADWinRMCheckResult, ADBulkCreateResult, BenchmarkVersionItem, BenchmarkGroupResponse, VersionDiffResponse, CacheAccelerationStats, ConnectSession, ConnectAgent, CopilotChatResponse, CopilotPendingRule, CopilotPipelineResult, CopilotAction } from '@/types';
+import type { Client, Mission, Target, Settings, Benchmark, BenchmarkStatus, EnrichStatus, VerifyStatus, ValidateStatus, ValidationResultItem, Rule, RuleCommand, LLMStatus, LLMTestResult, CommandHistoryEntry, VerificationReport, GenerateScriptRequest, ScriptPreviewResponse, NetworkScanRequest, NetworkScanResponse, ScanStatus, ScanCancelResponse, ScanDetail, Finding, ImportResultsResponse, ReportGenerateRequest, AISummaryRequest, AISummaryResponse, AnalysisRequest, MissionAnalysisResult, ComparableMission, DiscoveredHost, DiscoveredHostEnriched, DiscoveryProgress, BuilderFindingsResponse, BuilderPreviewRequest, AutoGroupResponse, GroupSummaryRequest, GroupSummaryResponse, SavedReport, ConnectionTestResult, ScanReadiness, PrerequisiteGuide, BenchmarkMatchResult, ScanBatchRequest, ScanBatchResponse, ScanBatchStatus, BenchmarkCatalog, CustomBenchmarkCreate, AIRuleCreateRequest, AIRuleCreateResponse, RuleFullUpdate, RuleTestRequest, RuleTestResponse, RuleValidateRequest, MigrationReadiness, ScanComparison, FrameworkCoverage, FrameworkRulesResponse, BackupInfo, ADConnectionTestResult, ADDiscoverResponse, ADWinRMCheckResult, ADBulkCreateResult, BenchmarkVersionItem, BenchmarkGroupResponse, VersionDiffResponse, CacheAccelerationStats, ConnectSession, ConnectAgent, CopilotChatResponse, CopilotPendingRule, CopilotPipelineResult, CopilotAction, ConfigSnapshot, ConfigSnapshotDetail, ConfigCoverage, ConfigDiff, SecurityCheckFinding, TopologyGraph } from '@/types';
 
 export async function getHealth() {
   const { data } = await api.get('/health');
@@ -397,6 +397,16 @@ export async function bulkDismissCorrections(benchmarkId: number): Promise<{ mes
   return data;
 }
 
+export async function regenerateFlaggedValidation(benchmarkId: number, ruleCommandId: number): Promise<{ message: string }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/validate/regenerate/${ruleCommandId}`);
+  return data;
+}
+
+export async function bulkRegenerateFlaggedValidation(benchmarkId: number): Promise<{ message: string; count: number }> {
+  const { data } = await api.post(`/benchmarks/${benchmarkId}/validate/bulk-regenerate`);
+  return data;
+}
+
 // Phase Export / Import
 export async function exportRules(benchmarkId: number): Promise<Blob> {
   const { data } = await api.get(`/benchmarks/${benchmarkId}/rules/export`, {
@@ -506,6 +516,39 @@ export async function clearLLMCache(task?: string): Promise<{ deleted: number }>
   return data;
 }
 
+// LLM Models
+export async function fetchAvailableModels(): Promise<{ models: string[]; error?: string }> {
+  const { data } = await api.get('/llm/models');
+  return data;
+}
+
+// Token Usage
+export interface TokenUsageStats {
+  total_input: number;
+  total_output: number;
+  total_tokens: number;
+  by_provider: { provider: string; total_tokens: number }[];
+  by_task: { task: string; total_tokens: number }[];
+  budget: number;
+  budget_remaining: number | null;
+  period: string;
+}
+
+export async function getTokenUsage(period?: string): Promise<TokenUsageStats> {
+  const { data } = await api.get('/llm/token-usage', { params: { period: period || 'month' } });
+  return data;
+}
+
+export async function resetTokenUsage(): Promise<{ deleted: number }> {
+  const { data } = await api.delete('/llm/token-usage');
+  return data;
+}
+
+export async function resetPreloadedBenchmarks(): Promise<{ message: string; deleted: number; loaded: number }> {
+  const { data } = await api.post('/settings/reset-preloaded');
+  return data;
+}
+
 // Script Export (USB)
 export async function generateScript(payload: GenerateScriptRequest): Promise<Blob> {
   const { data } = await api.post('/scans/generate-script', payload, {
@@ -608,6 +651,17 @@ export async function updateFinding(id: number, payload: {
 
 export async function generateAIAdvice(findingId: number, force = false): Promise<{ advice: string; generated_at: string }> {
   const { data } = await api.post(`/findings/${findingId}/ai-advice`, null, { params: force ? { force: true } : undefined });
+  return data;
+}
+
+export async function bulkUpdateFindings(payload: {
+  finding_ids: number[];
+  auditor_override?: string;
+  auditor_status_override?: string;
+  auditor_severity_override?: string;
+  override_reason?: string;
+}): Promise<{ updated: number; skipped: number }> {
+  const { data } = await api.patch('/findings/bulk', payload);
   return data;
 }
 
@@ -1314,4 +1368,74 @@ export async function getScanIntelligence(targetId: number, scanIds: number[]) {
 export async function deleteResolveSession(sessionId: number) {
   const { data } = await api.delete(`/resolve/sessions/${sessionId}`);
   return data;
+}
+
+// ── Config Audit ──────────────────────────────────────────────────
+
+export async function uploadConfig(targetId: number, rawConfig: string): Promise<ConfigSnapshot> {
+  const { data } = await api.post(`/targets/${targetId}/configs/upload`, { raw_config: rawConfig });
+  return data;
+}
+
+export async function pullConfig(targetId: number): Promise<ConfigSnapshot> {
+  const { data } = await api.post(`/targets/${targetId}/configs/pull`);
+  return data;
+}
+
+export async function listConfigSnapshots(targetId: number): Promise<ConfigSnapshot[]> {
+  const { data } = await api.get(`/targets/${targetId}/configs`);
+  return data;
+}
+
+export async function getLatestConfig(targetId: number): Promise<ConfigSnapshot> {
+  const { data } = await api.get(`/targets/${targetId}/configs/latest`);
+  return data;
+}
+
+export async function getConfigDetail(snapshotId: number): Promise<ConfigSnapshotDetail> {
+  const { data } = await api.get(`/configs/${snapshotId}`);
+  return data;
+}
+
+export async function diffConfigs(snapshotId: number, otherId: number): Promise<ConfigDiff> {
+  const { data } = await api.get(`/configs/${snapshotId}/diff/${otherId}`);
+  return data;
+}
+
+export async function getSecurityChecks(snapshotId: number): Promise<SecurityCheckFinding[]> {
+  const { data } = await api.get(`/configs/${snapshotId}/security-checks`);
+  return data;
+}
+
+export async function getConfigCoverage(snapshotId: number, benchmarkId: number): Promise<ConfigCoverage> {
+  const { data } = await api.get(`/configs/${snapshotId}/coverage/${benchmarkId}`);
+  return data;
+}
+
+export async function deleteConfigSnapshot(snapshotId: number): Promise<void> {
+  await api.delete(`/configs/${snapshotId}`);
+}
+
+// ── Topology ────────────────────────────────────────────────────
+
+export async function getTopology(missionId: number): Promise<{ mission_id: number; graph: TopologyGraph; last_rebuilt_at: string | null; has_user_layout: boolean }> {
+  const { data } = await api.get(`/missions/${missionId}/topology`);
+  return data;
+}
+
+export async function rebuildTopology(missionId: number): Promise<{ mission_id: number; graph: TopologyGraph; last_rebuilt_at: string | null; has_user_layout: boolean }> {
+  const { data } = await api.post(`/missions/${missionId}/topology/rebuild`);
+  return data;
+}
+
+export async function saveTopologyLayout(missionId: number, positions: Record<string, { x: number; y: number }>): Promise<void> {
+  await api.put(`/missions/${missionId}/topology/layout`, { positions });
+}
+
+export async function addTopologyEdge(missionId: number, source: string, target: string, linkType = 'manual'): Promise<void> {
+  await api.post(`/missions/${missionId}/topology/edges`, { source, target, link_type: linkType });
+}
+
+export async function removeTopologyEdge(missionId: number, source: string, target: string): Promise<void> {
+  await api.delete(`/missions/${missionId}/topology/edges`, { params: { source, target } });
 }

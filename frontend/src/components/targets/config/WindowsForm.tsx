@@ -53,6 +53,22 @@ export default function WindowsForm({ form, setField, setConnectionMethod, bench
           WinRM uses ports <strong>5985</strong> (HTTP) or <strong>5986</strong> (HTTPS).
           HTTPS is strongly recommended. For domain-joined machines, use 5985 with NTLM.
         </HintBox>
+        {form.connection_method === 'winrm' && (
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                onClick={() => setField('verify_tls', !form.verify_tls)}
+                className={`relative h-5 w-9 rounded-full transition-colors ${form.verify_tls ? 'bg-emerald-500' : 'bg-dark-border'}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.verify_tls ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </div>
+              <span className="text-xs text-dark-secondary">Verify TLS certificate</span>
+            </label>
+            {!form.verify_tls && (
+              <p className="text-[11px] text-amber-400/80">TLS verification disabled — accepts self-signed certificates. Use only for lab environments.</p>
+            )}
+          </div>
+        )}
       </FormSection>
 
       {/* ── Credentials ────────────────────────────────────── */}

@@ -264,7 +264,7 @@ async def execute_remediation_network(
         password = None
         if target.ssh_password_encrypted:
             try:
-                password = decrypt_value(target.ssh_password_encrypted, settings.SECRET_KEY)
+                password = decrypt_value(target.ssh_password_encrypted, settings.effective_encryption_key)
             except Exception:
                 pass
         target._decrypted_password = password
@@ -430,7 +430,7 @@ async def execute_remediation_agent(
         )
         db.commit()
 
-    session.status = "completed" if failed == 0 else "failed" if succeeded == 0 else "completed"
+    session.status = "completed" if failed == 0 else "partial" if succeeded > 0 else "failed"
     session.succeeded_items = succeeded
     session.failed_items = failed
     session.skipped_items = session.total_items - succeeded - failed

@@ -26,6 +26,7 @@ class TargetCreate(BaseModel):
     db_instance: str | None = None
     enable_password: str | None = None   # write-only, encrypted on save
     device_type: str | None = None
+    config_pull_method: str | None = None
 
 
 class TargetUpdate(BaseModel):
@@ -48,6 +49,7 @@ class TargetUpdate(BaseModel):
     db_instance: str | None = None
     enable_password: str | None = None
     device_type: str | None = None
+    config_pull_method: str | None = None
 
 
 class TargetResponse(BaseModel):
@@ -77,6 +79,9 @@ class TargetResponse(BaseModel):
     db_instance: str | None = None
     has_enable_password: bool = False            # never expose actual password
     device_type: str | None = None
+    config_pull_method: str | None = None
+    latest_config_id: int | None = None
+    verify_tls: bool = True
     last_scan_compliance: float | None = None    # computed from most recent scan
     last_scan_date: datetime | None = None       # computed
     scan_count: int = 0                          # computed

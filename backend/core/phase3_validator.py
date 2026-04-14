@@ -70,6 +70,8 @@ async def run_phase3(benchmark_id: int) -> None:
             .filter(
                 Rule.benchmark_id == benchmark_id,
                 RuleCommand.status.in_(["generated", "verified"]),
+                # Skip commands already processed by a previous Phase 3 run
+                ~RuleCommand.validation_status.in_(["applied", "dismissed", "validated", "corrected", "flagged"]),
                 RuleCommand.audit_command.isnot(None),
                 RuleCommand.audit_command != "",
             )
@@ -292,6 +294,7 @@ def apply_corrections(db: Session, rule_command_id: int) -> RuleCommand:
         cmd.validation_status = "applied"
         cmd.source = "phase3_corrected"
         cmd.updated_at = now
+        cmd.validation_corrections = None  # clear so they don't reappear on re-run
 
     db.commit()
     return cmd
@@ -304,6 +307,7 @@ def dismiss_corrections(db: Session, rule_command_id: int) -> RuleCommand:
         raise ValueError(f"RuleCommand {rule_command_id} not found")
 
     cmd.validation_status = "dismissed"
+    cmd.validation_corrections = None  # clear so they don't reappear on re-run
     cmd.updated_at = datetime.now(timezone.utc)
     db.commit()
     return cmd

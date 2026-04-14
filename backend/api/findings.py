@@ -21,6 +21,7 @@ from backend.schemas.finding import (
     FindingAIAdviceResponse,
     FindingResponse,
     FindingUpdateRequest,
+    BulkFindingUpdateRequest,
 )
 
 router = APIRouter(prefix="/findings", tags=["findings"])
@@ -150,6 +151,84 @@ def update_finding(
             logger.warning("Trail log failed: %s", exc)
 
     return _finding_to_response(finding, db)
+
+
+@router.patch("/bulk")
+def bulk_update_findings(
+    payload: BulkFindingUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Bulk-apply override fields to a list of findings.
+
+    Only applies the fields that are explicitly provided (not None).
+    Skips findings that belong to locked missions.
+    Returns the count of successfully updated findings.
+    """
+    from datetime import datetime, timezone as tz
+    from backend.api.missions import check_mission_lock
+
+    if not payload.finding_ids:
+        return {"updated": 0, "skipped": 0}
+
+    findings = db.query(Finding).filter(Finding.id.in_(payload.finding_ids)).all()
+
+    updated = 0
+    skipped = 0
+    has_override_field = any([
+        payload.auditor_status_override is not None,
+        payload.auditor_severity_override is not None,
+        payload.auditor_override is not None,
+        payload.override_reason is not None,
+    ])
+
+    for finding in findings:
+        # Skip findings in locked missions silently
+        scan = db.query(Scan).filter(Scan.id == finding.scan_id).first()
+        if scan and scan.mission_id:
+            from backend.models.mission import Mission
+            mission = db.query(Mission).filter(Mission.id == scan.mission_id).first()
+            if mission and mission.is_locked:
+                skipped += 1
+                continue
+
+        if payload.auditor_override is not None:
+            finding.auditor_override = payload.auditor_override or None
+        if payload.auditor_status_override is not None:
+            if payload.auditor_status_override not in {"PASS", "FAIL", "N/A", ""}:
+                continue
+            finding.auditor_status_override = payload.auditor_status_override or None
+        if payload.auditor_severity_override is not None:
+            if payload.auditor_severity_override not in {"critical", "high", "medium", "low", ""}:
+                continue
+            finding.auditor_severity_override = payload.auditor_severity_override or None
+        if payload.override_reason is not None:
+            finding.override_reason = payload.override_reason or None
+
+        if has_override_field:
+            finding.overridden_at = datetime.now(tz.utc)
+
+        updated += 1
+
+    db.commit()
+
+    # Log bulk action to Forge Trail
+    try:
+        log_action(
+            db,
+            user=current_user,
+            action="findings_bulk_overridden",
+            entity_type="finding",
+            details={
+                "count": updated,
+                "auditor_override": payload.auditor_override,
+                "auditor_status_override": payload.auditor_status_override,
+            },
+        )
+    except Exception as exc:
+        logger.warning("Trail log failed: %s", exc)
+
+    return {"updated": updated, "skipped": skipped}
 
 
 @router.post("/{finding_id}/ai-advice", response_model=FindingAIAdviceResponse)

@@ -15,7 +15,9 @@ from email.mime.text import MIMEText
 import httpx
 from sqlalchemy.orm import Session
 
+from backend.config import settings as app_config
 from backend.models.notification import Notification
+from backend.utils.encryption import decrypt_value
 
 logger = logging.getLogger("auditforge.sentinel.alerts")
 
@@ -104,6 +106,11 @@ def _send_email_sync(
 
             username = smtp_settings.get("smtp_username")
             password = smtp_settings.get("smtp_password")
+            if password:
+                try:
+                    password = decrypt_value(password, app_config.effective_encryption_key)
+                except Exception:
+                    pass  # Use raw value as fallback (pre-encryption data)
             if username and password:
                 server.login(username, password)
 

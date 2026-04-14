@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Eye, Loader2, Lock, Search, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Eye, Loader2, Lock, Search, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, CheckSquare, Square, X, ShieldCheck, ShieldOff, RefreshCw } from 'lucide-react';
 import type { ScanDetail, Finding } from '@/types';
 import * as api from '@/services/api';
 import { inputClass, findingStatusBadge, severityBadge } from './badgeHelpers';
@@ -45,6 +45,8 @@ export default function MissionFindings({ scans, isLocked = false, filterState, 
   const { selectedScanId, statusFilter, severityFilter, searchTerm, sortCol, sortDir, page } = filterState;
   const [allFindings, setAllFindings] = useState<AugmentedFinding[]>([]);
   const [findingsLoading, setFindingsLoading] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   const set = useCallback(
     (patch: Partial<FindingsFilterState>) => onFilterChange({ ...filterState, ...patch }),
@@ -62,6 +64,7 @@ export default function MissionFindings({ scans, isLocked = false, filterState, 
     let cancelled = false;
     (async () => {
       setFindingsLoading(true);
+      setSelectedIds(new Set());
       try {
         if (selectedScanId === 'all') {
           const results = await Promise.all(
@@ -172,6 +175,69 @@ export default function MissionFindings({ scans, isLocked = false, filterState, 
       </th>
     );
   }
+
+  /* ── Bulk selection helpers ────────────────────────────── */
+  const allPageIds = useMemo(() => pagedFindings.map(f => f.id), [pagedFindings]);
+  const allPageSelected = allPageIds.length > 0 && allPageIds.every(id => selectedIds.has(id));
+  const somePageSelected = allPageIds.some(id => selectedIds.has(id));
+
+  const toggleSelectAll = useCallback(() => {
+    if (allPageSelected) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        allPageIds.forEach(id => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        allPageIds.forEach(id => next.add(id));
+        return next;
+      });
+    }
+  }, [allPageSelected, allPageIds]);
+
+  const toggleRow = useCallback((id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkAction = useCallback(async (action: {
+    auditor_override?: string;
+    auditor_status_override?: string;
+    auditor_severity_override?: string;
+  }) => {
+    if (selectedIds.size === 0) return;
+    setBulkLoading(true);
+    try {
+      await api.bulkUpdateFindings({ finding_ids: Array.from(selectedIds), ...action });
+      // Refresh findings from server
+      if (selectedScanId && selectedScanId !== 'all') {
+        const res = await api.getScanFindings(selectedScanId as number);
+        setAllFindings(res.data);
+      } else if (selectedScanId === 'all') {
+        const results = await Promise.all(
+          completedScans.map(s =>
+            api.getScanFindings(s.id).then(r =>
+              r.data.map((f: Finding) => ({
+                ...f,
+                _scan_label: `#${s.id} ${s.target_hostname || s.target_ip || ''}`.trim(),
+              })),
+            ),
+          ),
+        );
+        setAllFindings(results.flat());
+      }
+      setSelectedIds(new Set());
+    } catch {
+      // silently ignore — individual row badges will reflect DB state on next load
+    } finally {
+      setBulkLoading(false);
+    }
+  }, [selectedIds, selectedScanId, completedScans]);
 
   /* ── CSV export ────────────────────────────────────────── */
   function exportCSV() {
@@ -291,6 +357,64 @@ export default function MissionFindings({ scans, isLocked = false, filterState, 
         );
       })()}
 
+      {/* ── Bulk Action Bar (visible when rows selected) ────── */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-ey-yellow/30 bg-ey-yellow/5 px-4 py-2.5">
+          <span className="text-xs font-medium text-ey-yellow">{selectedIds.size} selected</span>
+          <div className="h-3.5 w-px bg-dark-border" />
+          <button
+            onClick={() => handleBulkAction({ auditor_override: 'false_positive' })}
+            disabled={bulkLoading || isLocked}
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-dark-secondary hover:text-white bg-dark-elevated border border-dark-border disabled:opacity-40 transition-colors"
+            title="Mark selected findings as false positives"
+          >
+            {bulkLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ShieldOff className="h-3 w-3" />}
+            False Positive
+          </button>
+          <button
+            onClick={() => handleBulkAction({ auditor_override: 'accepted_risk' })}
+            disabled={bulkLoading || isLocked}
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-dark-secondary hover:text-white bg-dark-elevated border border-dark-border disabled:opacity-40 transition-colors"
+            title="Mark selected findings as accepted risk"
+          >
+            <ShieldCheck className="h-3 w-3" />
+            Accept Risk
+          </button>
+          <button
+            onClick={() => handleBulkAction({ auditor_status_override: 'PASS' })}
+            disabled={bulkLoading || isLocked}
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 bg-dark-elevated border border-dark-border disabled:opacity-40 transition-colors"
+            title="Override status to PASS for selected findings"
+          >
+            Override → PASS
+          </button>
+          <button
+            onClick={() => handleBulkAction({ auditor_status_override: 'FAIL' })}
+            disabled={bulkLoading || isLocked}
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-red-400 hover:text-red-300 bg-dark-elevated border border-dark-border disabled:opacity-40 transition-colors"
+            title="Override status to FAIL for selected findings"
+          >
+            Override → FAIL
+          </button>
+          <button
+            onClick={() => handleBulkAction({ auditor_override: '', auditor_status_override: '', auditor_severity_override: '' })}
+            disabled={bulkLoading || isLocked}
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium text-dark-secondary hover:text-white bg-dark-elevated border border-dark-border disabled:opacity-40 transition-colors"
+            title="Clear all overrides for selected findings"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Clear Overrides
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="ml-auto inline-flex items-center gap-1 rounded p-1 text-dark-muted hover:text-white"
+            title="Deselect all"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* ── Table ───────────────────────────────────────────── */}
       {!selectedScanId ? (
         <div className="rounded-xl border-2 border-dashed border-dark-border bg-dark-card p-12 text-center">
@@ -306,6 +430,19 @@ export default function MissionFindings({ scans, isLocked = false, filterState, 
           <table className="min-w-full divide-y divide-dark-border">
             <thead className="bg-dark-elevated">
               <tr>
+                <th className="w-10 px-3 py-3">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="text-dark-muted hover:text-ey-yellow transition-colors"
+                    title={allPageSelected ? 'Deselect page' : 'Select page'}
+                  >
+                    {allPageSelected
+                      ? <CheckSquare className="h-4 w-4 text-ey-yellow" />
+                      : somePageSelected
+                        ? <CheckSquare className="h-4 w-4 text-ey-yellow/50" />
+                        : <Square className="h-4 w-4" />}
+                  </button>
+                </th>
                 <SortHeader col="section_number" label="Section" />
                 <SortHeader col="rule_title" label="Rule" />
                 <SortHeader col="status" label="Status" center />
@@ -317,13 +454,33 @@ export default function MissionFindings({ scans, isLocked = false, filterState, 
             </thead>
             <tbody className="divide-y divide-dark-border">
               {pagedFindings.map(f => (
-                <tr key={f.id} className="hover:bg-dark-elevated/30">
+                <tr key={f.id} className={`hover:bg-dark-elevated/30 ${selectedIds.has(f.id) ? 'bg-ey-yellow/5' : ''}`}>
+                  <td className="w-10 px-3 py-3">
+                    <button
+                      onClick={() => toggleRow(f.id)}
+                      className="text-dark-muted hover:text-ey-yellow transition-colors"
+                    >
+                      {selectedIds.has(f.id)
+                        ? <CheckSquare className="h-4 w-4 text-ey-yellow" />
+                        : <Square className="h-4 w-4" />}
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-sm font-mono text-dark-secondary">{f.section_number || '—'}</td>
                   <td className="px-4 py-3 text-sm text-white max-w-xs">
                     <span className="block truncate" title={f.rule_title || ''}>{f.rule_title || '—'}</span>
                   </td>
                   <td className="px-4 py-3 text-center">{findingStatusBadge(f.auditor_status_override || f.status)}</td>
-                  <td className="px-4 py-3 text-center">{severityBadge(f.auditor_severity_override || f.severity)}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className="inline-flex items-center gap-1.5">
+                      {severityBadge(f.auditor_severity_override || f.severity)}
+                      {f.evaluation_source === 'config_file' && (
+                        <span className="inline-flex items-center rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-medium text-blue-400" title="Evaluated from config file">Config</span>
+                      )}
+                      {f.evaluation_source === 'live' && (
+                        <span className="inline-flex items-center rounded-full bg-green-500/15 px-1.5 py-0.5 text-[10px] font-medium text-green-400" title="Evaluated via live connection">Live</span>
+                      )}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-center text-xs text-dark-secondary">{f.auditor_override || '—'}</td>
                   {selectedScanId === 'all' && (
                     <td className="px-4 py-3 text-xs text-dark-secondary whitespace-nowrap">{(f as AugmentedFinding)._scan_label || `#${f.scan_id}`}</td>

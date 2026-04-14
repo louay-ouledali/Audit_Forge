@@ -509,6 +509,7 @@ async def execute_scheduled_run(db_factory, schedule_id: int) -> None:
 
 
 _running_schedules: set[int] = set()
+_schedule_lock = asyncio.Lock()
 
 
 async def _guarded_run(db_factory, schedule_id: int) -> None:
@@ -516,7 +517,8 @@ async def _guarded_run(db_factory, schedule_id: int) -> None:
     try:
         await execute_scheduled_run(db_factory, schedule_id)
     finally:
-        _running_schedules.discard(schedule_id)
+        async with _schedule_lock:
+            _running_schedules.discard(schedule_id)
 
 
 async def sentinel_loop(db_factory) -> None:
@@ -533,10 +535,11 @@ async def sentinel_loop(db_factory) -> None:
                 .all()
             )
             for schedule in due:
-                if schedule.id in _running_schedules:
-                    logger.info("Sentinel: schedule %d already running, skipping", schedule.id)
-                    continue
-                _running_schedules.add(schedule.id)
+                async with _schedule_lock:
+                    if schedule.id in _running_schedules:
+                        logger.info("Sentinel: schedule %d already running, skipping", schedule.id)
+                        continue
+                    _running_schedules.add(schedule.id)
                 logger.info("Sentinel: triggering schedule %d (%s)", schedule.id, schedule.name)
                 asyncio.create_task(_guarded_run(db_factory, schedule.id))
         except Exception as exc:

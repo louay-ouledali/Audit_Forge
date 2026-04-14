@@ -13,14 +13,15 @@ logger = logging.getLogger("auditforge.connectors.winrm")
 
 
 def _try_session(winrm, endpoint: str, username: str, password: str,
-                 transport: str, host: str):
+                 transport: str, host: str, verify_tls: bool = True):
     """Attempt a single WinRM session with the given transport. Returns session or raises."""
     logger.info("Trying WinRM %s auth to %s as %s", transport, endpoint, username)
+    cert_validation = "validate" if verify_tls else "ignore"
     session = winrm.Session(
         endpoint,
         auth=(username, password),
         transport=transport,
-        server_cert_validation="ignore",
+        server_cert_validation=cert_validation,
         operation_timeout_sec=30,
         read_timeout_sec=35,
     )
@@ -56,10 +57,11 @@ class WinRMConnector(BaseConnector):
                 "Install it with: pip install pywinrm"
             ) from exc
 
-        host = getattr(target, "ip_address", None) or getattr(target, "hostname", "")
+        host = getattr(target, "hostname", None) or getattr(target, "ip_address", "")
         port = getattr(target, "port", None) or 5985
         username = getattr(target, "ssh_username", None) or "Administrator"
         password = getattr(target, "_decrypted_password", None)
+        verify_tls = getattr(target, "verify_tls", True)
 
         if not password:
             raise ConnectionError("WinRM requires a password")
@@ -68,23 +70,23 @@ class WinRMConnector(BaseConnector):
         self._port = port
 
         # Build ordered list of (endpoint, transports) to try.
-        # HTTPS endpoints use ntlm & credssp; HTTP endpoints use ntlm & basic.
-        https_endpoint = f"https://{host}:5986/wsman"
-        http_endpoint = f"http://{host}:5985/wsman"
-        https_transports = ["ntlm", "credssp"]
+        # HTTPS endpoints use ntlm, basic & credssp; HTTP endpoints use ntlm & basic.
+        https_transports = ["ntlm", "basic", "credssp"]
         http_transports = ["ntlm", "basic"]
 
         if port == 5986:
-            # User explicitly chose HTTPS — try it first, fall back to HTTP
+            # User explicitly chose HTTPS — try it first, fall back to HTTP ports
             attempts = [
-                (https_endpoint, https_transports),
-                (http_endpoint, http_transports),
+                (f"https://{host}:5986/wsman", https_transports),
+                (f"http://{host}:5985/wsman", http_transports),
+                (f"http://{host}:47001/wsman", http_transports),
             ]
         else:
-            # Default / port 5985 — try HTTP first, then auto-fallback to HTTPS
+            # Default / HTTP — try configured port, then 47001 compat port, then HTTPS
             attempts = [
-                (http_endpoint, http_transports),
-                (https_endpoint, https_transports),
+                (f"http://{host}:{port}/wsman", http_transports),
+                (f"http://{host}:47001/wsman", http_transports),
+                (f"https://{host}:5986/wsman", https_transports),
             ]
 
         def _do_connect():
@@ -97,6 +99,7 @@ class WinRMConnector(BaseConnector):
                     try:
                         return _try_session(
                             winrm, endpoint, username, password, transport, host,
+                            verify_tls=verify_tls,
                         )
                     except Exception as exc:
                         last_error = exc
@@ -119,7 +122,7 @@ class WinRMConnector(BaseConnector):
                 f"      winrm set winrm/config/service '@{{AllowUnencrypted=\"true\"}}'\n"
             )
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             self._session = await loop.run_in_executor(None, _do_connect)
         except Exception as exc:
@@ -134,7 +137,7 @@ class WinRMConnector(BaseConnector):
         if self._session is None:
             raise RuntimeError("Not connected — call connect() first")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = time.monotonic()
 
         def _run():

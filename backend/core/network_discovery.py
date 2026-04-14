@@ -204,7 +204,7 @@ async def _ping_host(ip: str, timeout: float = 1.5) -> bool:
     ConnectionRefused on TCP is also evidence of life, but this catches
     hosts with zero open ports (phones, IoT devices, etc.).
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         if sys.platform == "win32":
             cmd = ["ping", "-n", "1", "-w", str(int(timeout * 1000)), ip]
@@ -264,7 +264,7 @@ async def _tcp_os_fingerprint(
     Returns a candidate dict or None.
     """
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         def _do_connect() -> tuple[int, int] | None:
             """Open TCP socket and extract TTL + window size from the socket."""
@@ -635,7 +635,7 @@ async def _netbios_name_query(
         b"\x00\x01"          # Class: IN
     )
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         transport, _ = await asyncio.wait_for(
             loop.create_datagram_endpoint(
@@ -736,7 +736,7 @@ async def _netbios_name_query(
 
 async def _reverse_dns(ip: str) -> str:
     """Attempt a reverse DNS lookup. Returns hostname or empty string."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         result = await asyncio.wait_for(
             loop.run_in_executor(None, lambda: socket.gethostbyaddr(ip)),
@@ -1601,7 +1601,7 @@ async def _snmp_sysdescr(
     msg_body = version + comm_tlv + pdu
     message = b"\x30" + bytes([len(msg_body)]) + msg_body
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         transport, protocol = await asyncio.wait_for(
             loop.create_datagram_endpoint(
@@ -1832,7 +1832,7 @@ async def _upnp_discover(ip: str, timeout: float = 2.0) -> dict[str, Any]:
     ).encode()
 
     data = None
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     # Try 1: Multicast M-SEARCH (reaches devices that only listen on multicast)
     try:
@@ -2015,7 +2015,7 @@ async def _mdns_probe(ip: str, timeout: float = 2.0) -> dict[str, Any]:
 
     # Try 2: Unicast fallback (direct to host)
     if not data:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             transport, _ = await asyncio.wait_for(
                 loop.create_datagram_endpoint(

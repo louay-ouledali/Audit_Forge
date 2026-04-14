@@ -1,6 +1,5 @@
 import api from './api-client';
 
-const TOKEN_KEY = 'auditforge_token';
 const USER_KEY = 'auditforge_user';
 
 export interface AuthUser {
@@ -9,12 +8,10 @@ export interface AuthUser {
   full_name: string | null;
 }
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
 export function isAuthenticated(): boolean {
-  return !!getToken();
+  // With httpOnly cookies, we can't check the token directly.
+  // Check if we have a stored user (set on login).
+  return !!localStorage.getItem(USER_KEY);
 }
 
 export function getStoredUser(): AuthUser | null {
@@ -25,17 +22,26 @@ export function getStoredUser(): AuthUser | null {
 
 export async function login(username: string, password: string): Promise<AuthUser> {
   const { data } = await api.post('/auth/login', { username, password });
-  localStorage.setItem(TOKEN_KEY, data.access_token);
+  // Token is now in httpOnly cookie — just store user info
   localStorage.setItem(USER_KEY, JSON.stringify(data.user));
   return data.user;
 }
 
-export function logout() {
-  localStorage.removeItem(TOKEN_KEY);
+export async function logout() {
+  try {
+    await api.post('/auth/logout');
+  } catch {
+    // Best effort
+  }
   localStorage.removeItem(USER_KEY);
   window.location.href = '/login';
 }
 
 export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {
   await api.put('/auth/change-password', { old_password: oldPassword, new_password: newPassword });
+}
+
+export async function getWsToken(): Promise<string> {
+  const { data } = await api.post('/auth/ws-token');
+  return data.token;
 }

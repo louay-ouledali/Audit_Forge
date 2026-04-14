@@ -68,7 +68,7 @@ def create_client(payload: ClientCreate, db: Session = Depends(get_db), current_
     data = payload.model_dump(exclude={"ad_password"})
     # Encrypt AD password if provided
     if payload.ad_password:
-        data["ad_password_encrypted"] = encrypt_value(payload.ad_password, settings.SECRET_KEY)
+        data["ad_password_encrypted"] = encrypt_value(payload.ad_password, settings.effective_encryption_key)
     # Store ad_use_ssl as integer in DB
     if data.get("ad_use_ssl") is not None:
         data["ad_use_ssl"] = 1 if data["ad_use_ssl"] else 0
@@ -98,7 +98,7 @@ def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(g
     # Encrypt AD password if provided
     if payload.ad_password is not None:
         if payload.ad_password:
-            updates["ad_password_encrypted"] = encrypt_value(payload.ad_password, settings.SECRET_KEY)
+            updates["ad_password_encrypted"] = encrypt_value(payload.ad_password, settings.effective_encryption_key)
         else:
             updates["ad_password_encrypted"] = None  # clear password
     # Store ad_use_ssl as integer in DB

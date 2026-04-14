@@ -311,7 +311,11 @@ def _product_similarity(a: _ProductInfo, b: _ProductInfo) -> float:
         if "server" in base_b and "server" not in base_a:
             return 0.0
         if base_a not in base_b and base_b not in base_a:
-            return 0.0
+            # Use word-boundary matching to avoid partial matches (e.g. "win" in "windows")
+            import re as _re
+            if (not _re.search(rf'\b{_re.escape(base_a)}\b', base_b)
+                    and not _re.search(rf'\b{_re.escape(base_b)}\b', base_a)):
+                return 0.0
 
     score = 100.0
 

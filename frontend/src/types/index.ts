@@ -59,6 +59,10 @@ export interface Target {
   db_instance: string | null;
   has_enable_password: boolean;
   device_type: string | null;
+  // Config-audit fields
+  config_pull_method: string | null;
+  latest_config_id: number | null;
+  verify_tls: boolean | null;
   // Computed fields from API
   last_scan_compliance: number | null;
   last_scan_date: string | null;
@@ -432,6 +436,9 @@ export interface RuleCommand {
   flag_reason: string | null;
   regeneration_count: number;
   last_regenerated_at: string | null;
+  confidence_score: number | null;
+  confidence_source: string | null;
+  original_command: string | null;
 }
 
 export interface CommandHistoryEntry {
@@ -587,6 +594,7 @@ export interface ScanDetail {
   benchmark_version?: string | null;
   target_hostname?: string | null;
   target_ip?: string | null;
+  target_type?: string | null;
   mission_name?: string | null;
   client_name?: string | null;
 }
@@ -615,6 +623,8 @@ export interface Finding {
   auditor_remediation: string | null;
   override_reason: string | null;
   overridden_at: string | null;
+  // Config audit source
+  evaluation_source: string | null;
   // Lock status from parent mission
   mission_locked?: boolean;
 }
@@ -1153,4 +1163,91 @@ export interface AiInsights {
   risk_trajectory: 'improving' | 'stable' | 'declining';
   patterns: string[];
   priority_remediations: string[];
+}
+
+// ── Config Audit types ──────────────────────────────────────────
+
+export interface ConfigSnapshot {
+  id: number;
+  target_id: number;
+  scan_id: number | null;
+  source: string;
+  config_format: string | null;
+  config_hash: string;
+  device_hostname: string | null;
+  platform_detected: string | null;
+  line_count: number | null;
+  snapshot_at: string;
+  created_at: string | null;
+}
+
+export interface ConfigSnapshotDetail extends ConfigSnapshot {
+  raw_config: string;
+}
+
+export interface ConfigCoverage {
+  total_rules: number;
+  answerable: number;
+  unanswerable: number;
+  coverage_pct: number;
+  unanswerable_commands: string[];
+}
+
+export interface ConfigDiff {
+  snapshot_a_id: number;
+  snapshot_b_id: number;
+  unified_diff: string;
+  lines_added: number;
+  lines_removed: number;
+}
+
+export interface SecurityCheckFinding {
+  check_id: string;
+  severity: string;
+  title: string;
+  description: string;
+  remediation: string;
+  matched_lines: string[];
+}
+
+// ── Topology types ──────────────────────────────────────────────
+
+export interface TopologyInterface {
+  name: string;
+  ip: string | null;
+  mask: string | null;
+  status: string | null;
+  description: string | null;
+}
+
+export interface TopologyRoute {
+  network: string;
+  mask: string;
+  gateway: string | null;
+  interface: string | null;
+}
+
+export interface TopologyNode {
+  id: string;
+  hostname: string | null;
+  platform: string;
+  target_id?: number;
+  interfaces: TopologyInterface[];
+  routes: TopologyRoute[];
+  vpn_peers?: string[];
+}
+
+export interface TopologyEdge {
+  id: string;
+  source: string;
+  target: string;
+  source_interface: string | null;
+  target_interface: string | null;
+  link_type: string;
+  shared_network: string | null;
+}
+
+export interface TopologyGraph {
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
 }

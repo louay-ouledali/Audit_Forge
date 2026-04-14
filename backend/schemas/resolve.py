@@ -25,11 +25,13 @@ class BulkSelectRequest(BaseModel):
 
 class ExecuteRequest(BaseModel):
     confirm_privilege: bool = False
+    current_password: str | None = None
 
 
 class AgentExecuteRequest(BaseModel):
     agent_id: int
     confirm_privilege: bool = False
+    current_password: str | None = None
 
 
 class ScanIntelligenceRequest(BaseModel):

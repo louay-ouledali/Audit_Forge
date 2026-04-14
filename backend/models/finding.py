@@ -39,6 +39,9 @@ class Finding(Base):
     override_reason = Column(Text, nullable=True)
     overridden_at = Column(DateTime, nullable=True)
 
+    # Config audit
+    evaluation_source = Column(String, nullable=True)  # "config_file" | "live" | null (legacy)
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     scan = relationship("Scan", back_populates="findings")

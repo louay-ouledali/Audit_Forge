@@ -35,9 +35,17 @@ class Scan(Base):
     script_generated_at = Column(DateTime)
     results_imported_at = Column(DateTime)
 
+    # Config audit
+    config_snapshot_id = Column(
+        Integer,
+        ForeignKey("config_snapshots.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     notes = Column(Text)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     target = relationship("Target", back_populates="scans")
+    config_snapshot = relationship("ConfigSnapshot", foreign_keys=[config_snapshot_id])
     mission = relationship("Mission", back_populates="scans")
     findings = relationship("Finding", back_populates="scan", cascade="all, delete-orphan")

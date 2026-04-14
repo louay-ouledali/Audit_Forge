@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
-from backend.core.auth import get_current_user
+from backend.core.auth import get_current_user, verify_password
 from backend.core.trail import log_action
 from backend.database import get_db
 from backend.models.remediation_item import RemediationItem
@@ -268,6 +268,10 @@ def execute_resolve_network(
     session = db.query(RemediationSession).filter(RemediationSession.id == session_id).first()
     if not session:
         raise HTTPException(404, "Session not found")
+
+    # Password gate for remediation execution
+    if not body.current_password or not verify_password(body.current_password, current_user.password_hash):
+        raise HTTPException(403, "Password required for remediation execution")
 
     if session.status in ("executing",):
         raise HTTPException(409, "Session is already executing")

@@ -623,6 +623,19 @@ def start_network_scan(
 
     check_mission_lock(payload.mission_id, db)
 
+    # Guard against duplicate concurrent scans on the same target
+    from backend.models.scan import Scan as _Scan
+    existing = db.query(_Scan).filter(
+        _Scan.target_id == payload.target_id,
+        _Scan.status.in_(["pending", "running"]),
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A scan is already running on this target (scan_id={existing.id}). "
+                   "Wait for it to complete or cancel it first.",
+        )
+
     # Create scan record
     scan = Scan(
         target_id=payload.target_id,

@@ -49,6 +49,9 @@ _TARGET_TYPE_MAP: dict[str, type[BaseConnector]] = {
     "mongodb": MongoDBConnector,
     "cassandra": SSHConnector,
     "vmware_esxi": SSHConnector,
+    "pfsense": NetmikoConnector,
+    "sharepoint": WinRMConnector,
+    "network": NetmikoConnector,
 }
 
 
@@ -68,24 +71,27 @@ def get_connector(target_type: str, connection_method: str | None = None) -> Bas
         If no connector is registered for the supplied type/method.
     """
 
-    key = (connection_method or "").lower().strip()
-    if key and key in _CONNECTOR_MAP:
-        return _CONNECTOR_MAP[key]()
+    tt = (target_type or "").lower().strip()
+    cm = (connection_method or "").lower().strip()
 
-    key = target_type.lower().strip()
-    if key in _CONNECTOR_MAP:
-        return _CONNECTOR_MAP[key]()
-    if key in _TARGET_TYPE_MAP:
-        return _TARGET_TYPE_MAP[key]()
+    # For network device types, always use the target_type mapping (NetmikoConnector)
+    # regardless of connection_method — "ssh" as transport doesn't mean SSHConnector.
+    if tt in _TARGET_TYPE_MAP:
+        return _TARGET_TYPE_MAP[tt]()
 
-    # Graceful fallback: SSH is the most universal connector.
-    # The user can always override via connection_method on the Target.
-    _logger.warning(
-        "No connector mapped for target_type='%s', connection_method='%s' "
-        "-- falling back to SSHConnector",
-        target_type, connection_method,
+    # Explicit connection_method override
+    if cm and cm in _CONNECTOR_MAP:
+        return _CONNECTOR_MAP[cm]()
+
+    # Fallback to target_type in the generic connector map
+    if tt in _CONNECTOR_MAP:
+        return _CONNECTOR_MAP[tt]()
+
+    raise ValueError(
+        f"No connector mapped for target_type={target_type!r}, "
+        f"connection_method={connection_method!r}. "
+        "Configure the target with a supported type or connection method."
     )
-    return SSHConnector()
 
 
 __all__ = [

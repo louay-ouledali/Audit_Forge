@@ -6,6 +6,7 @@ import type { Mission, MissionAnalysisResult, ComparableMission } from '@/types'
 import * as api from '@/services/api';
 import logoImg from '../assets/logo.png';
 import BrandLockup from '@/components/common/BrandLockup';
+import ConfirmDialog from '@/components/common/ConfirmDialog';
 
 type AnalysisTab = 'cross_target' | 'category_analysis' | 'cross_mission';
 
@@ -20,8 +21,9 @@ export default function MissionAnalysis() {
   const [selectedCompareId, setSelectedCompareId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzingType, setAnalyzingType] = useState<AnalysisTab | null>(null);
-  const [_error, setError] = useState('');
+  const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
 
   const fetchData = async () => {
     try {
@@ -78,13 +80,19 @@ export default function MissionAnalysis() {
     }
   };
 
-  const handleDelete = async (analysisId: number) => {
-    if (!window.confirm('Delete this analysis?')) return;
+  const handleDelete = (analysisId: number) => {
+    setPendingDeleteId(analysisId);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDeleteId) return;
     try {
-      await api.deleteMissionAnalysis(id, analysisId);
+      await api.deleteMissionAnalysis(id, pendingDeleteId);
       await fetchData();
     } catch {
       setError('Failed to delete analysis');
+    } finally {
+      setPendingDeleteId(null);
     }
   };
 
@@ -107,6 +115,12 @@ export default function MissionAnalysis() {
         <ArrowLeft className="h-4 w-4" />
         Back
       </button>
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+          {error}
+          <button onClick={() => setError('')} className="ml-3 text-red-300 hover:text-white">✕</button>
+        </div>
+      )}
 
         <div className="flex items-center gap-4 border-b border-dark-border pb-6 mt-1 mb-4">
           <BrandLockup service="lens" size="xl" />
@@ -229,6 +243,15 @@ export default function MissionAnalysis() {
           );
         })}
       </div>
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="Delete Analysis"
+        message="Are you sure you want to delete this analysis? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </div >
   );
 }

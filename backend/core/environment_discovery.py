@@ -156,7 +156,12 @@ async def discover_environment(
 
             result = await connector.execute(cmd)
             if result and result.stdout and result.stdout.strip():
-                value = result.stdout.strip().split("\n")[0].strip()
+                output_lines = result.stdout.strip().split("\n")
+                # Skip PostgreSQL SHOW header (column name + dashed separator)
+                if len(output_lines) >= 3 and all(c in "-+ " for c in output_lines[1].strip()):
+                    value = output_lines[2].strip()
+                else:
+                    value = output_lines[0].strip()
                 # Skip common error indicators
                 if value and not value.startswith("ERROR") and value != "NULL":
                     env[key] = value
@@ -178,6 +183,8 @@ def adapt_command(cmd: str, env: dict[str, str]) -> str:
     2. Known hardcoded default paths replaced with discovered values
     3. Shell variable assignments using discovered values
     """
+    import shlex
+
     if not cmd or not env:
         return cmd
 
@@ -187,7 +194,7 @@ def adapt_command(cmd: str, env: dict[str, str]) -> str:
     for key, value in env.items():
         placeholder = "{" + key + "}"
         if placeholder in adapted:
-            adapted = adapted.replace(placeholder, value)
+            adapted = adapted.replace(placeholder, shlex.quote(value))
 
     # 2. Replace known hardcoded paths
     for platform, path_groups in _DEFAULT_PATHS.items():

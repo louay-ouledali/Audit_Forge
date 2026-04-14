@@ -106,6 +106,12 @@ _SERVICE_PORT_MAP: dict[str, set[int]] = {
     "printer": {631, 9100},
 }
 
+# Inverted index: port → set of keywords that map to it (P7 optimization)
+_PORT_KEYWORD_INDEX: dict[int, set[str]] = {}
+for _kw, _ports in _SERVICE_PORT_MAP.items():
+    for _p in _ports:
+        _PORT_KEYWORD_INDEX.setdefault(_p, set()).add(_kw)
+
 
 # ---------------------------------------------------------------------------
 # Service Risk Knowledge Base — static, deterministic, no AI required.
@@ -545,9 +551,13 @@ def _link_findings_to_services(
         text_blob = (f.get("rule_title", "") + " " + f.get("description", "")).lower()
 
         matched: list[dict] = []
-        for keyword, ports in _SERVICE_PORT_MAP.items():
-            if keyword in text_blob:
-                for port_num in ports & open_port_numbers:
+        # Use inverted index: iterate open ports → check if any keywords match text
+        for port_num in open_port_numbers:
+            keywords_for_port = _PORT_KEYWORD_INDEX.get(port_num)
+            if not keywords_for_port:
+                continue
+            for keyword in keywords_for_port:
+                if keyword in text_blob:
                     # Raw Nmap service name
                     svc_raw = next(
                         (p.get("service", str(port_num)) for p in profile["open_ports"] if p.get("port") == port_num),

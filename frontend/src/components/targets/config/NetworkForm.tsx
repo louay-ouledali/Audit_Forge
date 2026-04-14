@@ -113,6 +113,22 @@ export default function NetworkForm({ form, setField, setConnectionMethod: _setC
           Some devices require an <strong>enable password</strong> to enter privileged exec mode (Cisco IOS, HP ProCurve).
           Palo Alto and Juniper typically don't need one.
         </HintBox>
+        {(form.device_type === 'paloalto_panos' || form.device_type === 'fortinet') && (
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div
+                onClick={() => setField('verify_tls', !form.verify_tls)}
+                className={`relative h-5 w-9 rounded-full transition-colors ${form.verify_tls ? 'bg-emerald-500' : 'bg-dark-border'}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${form.verify_tls ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </div>
+              <span className="text-xs text-dark-secondary">Verify HTTPS certificate (REST API)</span>
+            </label>
+            {!form.verify_tls && (
+              <p className="text-[11px] text-amber-400/80">TLS verification disabled — accepts self-signed certificates on the management interface.</p>
+            )}
+          </div>
+        )}
       </FormSection>
 
       {/* ── Benchmark ──────────────────────────────────────── */}
@@ -141,11 +157,39 @@ export default function NetworkForm({ form, setField, setConnectionMethod: _setC
       </FormSection>
 
       {/* ── Important Notes ────────────────────────────────── */}
-      <WarningBox>
-        <strong>USB Air-Gap NOT Supported.</strong><br />
-        Network devices require a live SSH session to execute <code className="text-amber-200">show running-config</code>,{' '}
-        <code className="text-amber-200">show ip route</code>, and similar commands. Use <strong>Scan Now</strong> for this target.
-      </WarningBox>
+      <HintBox>
+        <strong>Offline Config Audit:</strong> Upload a device configuration to evaluate CIS benchmarks
+        offline without a live connection. Live scans still work for rules that need runtime data.
+      </HintBox>
+
+      {/* ── Config Audit Mode ─────────────────────────────── */}
+      <FormSection title="Config Audit">
+        <div>
+          <label className={fieldLabel}>Config Pull Mode</label>
+          <select
+            value={form.config_pull_method ?? 'auto'}
+            onChange={e => setField('config_pull_method', e.target.value)}
+            className={fieldSelect}
+          >
+            <option value="auto">Auto-pull on scan (recommended)</option>
+            <option value="upload_only">Upload only (no auto-pull)</option>
+            <option value="disabled">Disabled</option>
+          </select>
+        </div>
+        <div>
+          <label className={fieldLabel}>Upload Configuration <span className="text-dark-muted">(optional)</span></label>
+          <textarea
+            value={form.config_upload_text ?? ''}
+            onChange={e => setField('config_upload_text', e.target.value)}
+            placeholder="Paste full running-config here..."
+            rows={6}
+            className={`${fieldInput} font-mono text-[11px] resize-y`}
+          />
+          <p className="mt-1 text-[10px] text-dark-muted">
+            Supported: Cisco IOS/ASA, FortiGate, PAN-OS XML, JunOS, Check Point, pfSense XML
+          </p>
+        </div>
+      </FormSection>
 
       {/* ── Prerequisites ──────────────────────────────────── */}
       <FormSection title="Prerequisites">

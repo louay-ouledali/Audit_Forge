@@ -47,24 +47,26 @@ class MSSQLConnector(BaseConnector):
         username = getattr(target, "ssh_username", None) or "sa"
         password = getattr(target, "_decrypted_password", None)
         database = getattr(target, "db_name", None) or "master"
+        verify_tls = getattr(target, "verify_tls", True)
 
         self._host = host
         self._database = database
 
         odbc_driver = _available_odbc_driver()
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         if odbc_driver:
             try:
                 import pyodbc  # type: ignore[import-untyped]
+                trust_cert = "yes" if not verify_tls else "no"
                 conn_str = (
                     f"DRIVER={{{odbc_driver}}};"
                     f"SERVER={host},{port};"
                     f"DATABASE={database};"
                     f"UID={username};"
-                    f"PWD={password or ''};"
+                    f"PWD={(password or '').replace('}', '}}').replace(';', '')};"
                     f"Connection Timeout=15;"
-                    f"TrustServerCertificate=yes;"
+                    f"TrustServerCertificate={trust_cert};"
                 )
                 def _do_pyodbc():
                     return pyodbc.connect(conn_str, timeout=15)
@@ -101,10 +103,12 @@ class MSSQLConnector(BaseConnector):
         if self._conn is None:
             raise RuntimeError("Not connected — call connect() first")
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         start = time.monotonic()
 
         def _run():
+            from backend.connectors.sql_guard import assert_readonly
+            assert_readonly(command)
             cur = self._conn.cursor()
             try:
                 cur.execute(command)
@@ -156,7 +160,7 @@ class MSSQLConnector(BaseConnector):
     async def disconnect(self) -> None:
         if self._conn is not None:
             try:
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, self._conn.close)
             except Exception:
                 pass

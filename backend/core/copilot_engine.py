@@ -16,6 +16,7 @@ from backend.ai.copilot_prompts import (
     RULE_GENERATION_PROMPT,
 )
 from backend.ai.llm_manager import llm_manager
+from backend.ai.prompt_sanitizer import sanitize_field
 from backend.core.command_templates import match_template
 from backend.core.rule_categorizer import TAG_KEYWORDS, auto_tag_rule
 from backend.models.benchmark import Benchmark
@@ -114,21 +115,40 @@ def mine_existing_rules(
     max_results: int = 60,
 ) -> list[PendingRule]:
     """Search existing benchmarks for rules applicable to a given platform/description."""
+    # Extract keywords for DB-level pre-filtering (P6)
+    keywords = [w for w in re.findall(r"\w{3,}", description.lower()) if len(w) >= 3]
+
     similar_benchmarks = (
         db.query(Benchmark)
         .filter(Benchmark.platform_family == platform_family)
         .all()
     )
+    bm_ids = [
+        bm.id for bm in similar_benchmarks
+        if not (exclude_benchmark_id and bm.id == exclude_benchmark_id)
+    ]
+    bm_map = {bm.id: bm for bm in similar_benchmarks}
+
+    if not bm_ids:
+        return []
+
+    # DB-level keyword pre-filter: only load rules matching at least one keyword
+    base_query = db.query(Rule).filter(Rule.benchmark_id.in_(bm_ids))
+    if keywords:
+        keyword_filters = [Rule.title.ilike(f"%{kw}%") for kw in keywords[:5]]
+        from sqlalchemy import or_
+        rules = base_query.filter(or_(*keyword_filters)).all()
+    else:
+        rules = base_query.all()
 
     candidates: list[tuple[float, Rule, Benchmark]] = []
-    for bm in similar_benchmarks:
-        if exclude_benchmark_id and bm.id == exclude_benchmark_id:
+    for rule in rules:
+        bm = bm_map.get(rule.benchmark_id)
+        if not bm:
             continue
-        rules = db.query(Rule).filter(Rule.benchmark_id == bm.id).all()
-        for rule in rules:
-            score = _jaccard_similarity(description, rule.title)
-            if score >= threshold:
-                candidates.append((score, rule, bm))
+        score = _jaccard_similarity(description, rule.title)
+        if score >= threshold:
+            candidates.append((score, rule, bm))
 
     # Deduplicate by normalized title
     seen_titles: set[str] = set()
@@ -301,10 +321,10 @@ async def explain_rule(rule: Rule, db: Session) -> str:
     cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
     prompt = EXPLAIN_RULE_PROMPT.format(
         section_number=rule.section_number,
-        title=rule.title,
-        description=rule.description or "N/A",
-        audit_command=cmd.audit_command if cmd else "N/A",
-        expected_output_description=cmd.expected_output_description if cmd else "N/A",
+        title=sanitize_field(rule.title or "", max_length=300),
+        description=sanitize_field(rule.description or "N/A", max_length=500),
+        audit_command=sanitize_field(cmd.audit_command if cmd else "N/A", max_length=500),
+        expected_output_description=sanitize_field(cmd.expected_output_description if cmd else "N/A", max_length=500),
     )
     try:
         return await llm_manager.invoke(prompt, task="copilot")
@@ -361,7 +381,10 @@ async def run_copilot_pipeline(
     llm_rules: list[PendingRule] = []
     if remaining_gaps:
         progress.append(f"Generating rules with AI for {len(remaining_gaps)} gap areas...")
-        next_section = max((int(r.section_number.split(".")[0]) for r in current_rules), default=0) + 100
+        try:
+            next_section = max((int(r.section_number.split(".")[0]) for r in current_rules if r.section_number), default=0) + 100
+        except (ValueError, AttributeError):
+            next_section = 100
         llm_rules = await generate_rules_for_gaps(remaining_gaps, platform, platform_family, next_section)
         progress.append(f"AI generated {len(llm_rules)} new rules")
 
