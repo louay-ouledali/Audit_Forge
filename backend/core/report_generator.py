@@ -32,12 +32,14 @@ from backend.models.rule import Rule
 from backend.models.scan import Scan
 from backend.models.target import Target
 
+from backend.frozen_paths import TEMPLATE_DIR, CORE_DIR
+
 logger = logging.getLogger("auditforge.reports")
 
-TEMPLATES_DIR = str(__import__("pathlib").Path(__file__).resolve().parent.parent / "templates")
+TEMPLATES_DIR = str(TEMPLATE_DIR)
 
-# Project logo (transparent 128×128 PNG) embedded as base64 for PDF cover
-_PROJECT_LOGO_PATH = __import__("pathlib").Path(__file__).resolve().parent / "_project_logo_b64.txt"
+# Project logo (transparent 128x128 PNG) embedded as base64 for PDF cover
+_PROJECT_LOGO_PATH = CORE_DIR / "_project_logo_b64.txt"
 _PROJECT_LOGO_B64 = _PROJECT_LOGO_PATH.read_text().strip() if _PROJECT_LOGO_PATH.exists() else ""
 
 
@@ -733,7 +735,7 @@ def aggregate_report_data(
             .all()
         )
 
-        # ── Batch-load related entities to avoid N+1 queries ──
+        # Batch-load related entities to avoid N+1 queries
         rule_ids = {f.rule_id for f in db_findings if f.rule_id}
         rules_map: dict[int, Rule] = {}
         if rule_ids:
@@ -851,7 +853,7 @@ def aggregate_report_data(
     for cat_key, info in by_category.items():
         info["label"] = _resolve_section_name(cat_key, findings_rows)
 
-    # ── Sort findings by section number for consistent ordering ──
+    # Sort findings by section number for consistent ordering
     def _section_sort_key(f):
         """Sort by numeric section parts (e.g., 1.1.1 → (1, 1, 1))."""
         parts = []
@@ -864,7 +866,7 @@ def aggregate_report_data(
 
     findings_rows.sort(key=_section_sort_key)
 
-    # ── Smart output truncation for display ──
+    # Smart output truncation for display
     for f in findings_rows:
         actual_t = smart_truncate(f["actual_output"], max_chars=400)
         expected_t = smart_truncate(f["expected_output"], max_chars=400)
@@ -876,16 +878,16 @@ def aggregate_report_data(
         f["expected_output_truncated"] = expected_t["truncated"]
         f["expected_output_length"] = expected_t["original_length"]
 
-    # ── False-positive detection ──
+    # False-positive detection
     findings_rows, fp_summary = enrich_findings_with_fp(findings_rows)
 
-    # ── Device profiles from DiscoveryCache ──
+    # Device profiles from DiscoveryCache
     device_profiles = _build_device_profiles(targets_map, _targets_bulk, db)
 
-    # ── Enrich bare port entries with service names from Risk KB ──
+    # Enrich bare port entries with service names from Risk KB
     _enrich_port_entries(device_profiles)
 
-    # ── Link findings to open services (informational only) ──
+    # Link findings to open services (informational only)
     _scans_map_for_link = {s.id: s for s in scans}
     _link_findings_to_services(findings_rows, device_profiles, _scans_map_for_link)
 
@@ -1509,17 +1511,39 @@ def _load_whitelabel_settings(db: Session) -> dict[str, str]:
 # PDF generation
 # ---------------------------------------------------------------------------
 
-def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
-    """Render an HTML template with Jinja2 and convert to PDF via WeasyPrint."""
-    from weasyprint import HTML  # imported here to isolate heavy dep
+def _html_to_pdf(html_string: str) -> bytes:
+    """Convert an HTML string to PDF, trying WeasyPrint first, then xhtml2pdf."""
+    # Try WeasyPrint (best quality, needs GTK3 DLLs)
+    try:
+        from weasyprint import HTML as WeasyprintHTML
+        return WeasyprintHTML(string=html_string).write_pdf()
+    except (ImportError, OSError) as exc:
+        logger.info("WeasyPrint unavailable (%s), falling back to xhtml2pdf", exc)
 
+    # Fallback: xhtml2pdf (pure Python, no native deps)
+    try:
+        from xhtml2pdf import pisa
+        import io as _io
+        buf = _io.BytesIO()
+        pisa_status = pisa.CreatePDF(html_string, dest=buf)
+        if pisa_status.err:
+            raise RuntimeError(f"xhtml2pdf returned {pisa_status.err} error(s)")
+        return buf.getvalue()
+    except ImportError:
+        raise RuntimeError(
+            "No PDF library available. Install WeasyPrint (with GTK3) or xhtml2pdf."
+        )
+
+
+def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
+    """Render an HTML template with Jinja2 and convert to PDF."""
     env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=True)
     template = env.get_template("report.html.j2")
 
     if not include_passed:
         data = {**data, "findings": [f for f in data["findings"] if f["status"] != "PASS"]}
 
-    # ── White-label settings ──
+    # White-label settings
     _wl = _load_whitelabel_settings(db)
     data["company_name"] = _wl.get("company_name", "AuditForge")
     data["company_logo_base64"] = _wl.get("company_logo_base64", "")
@@ -1539,7 +1563,7 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
     data.update(charts)
     data["fp_summary"] = data.get("fp_summary", {})
 
-    # ── Convert AI summary from Markdown to HTML ──
+    # Convert AI summary from Markdown to HTML
     if data.get("ai_summary"):
         data["ai_summary_html"] = _md_to_html(data["ai_summary"])
     else:
@@ -1547,13 +1571,13 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
 
     # categories_enriched already computed in aggregate_report_data()
 
-    # ── Compute overall risk score (A-F letter grade) ──
+    # Compute overall risk score (A-F letter grade)
     data["risk_score"] = _compute_risk_score(data)
 
-    # ── Build per-target findings breakdown ──
+    # Build per-target findings breakdown
     data["per_target_findings"] = _build_per_target_findings(data)
 
-    # ── Build device profiles list for template ──
+    # Build device profiles list for template
     dp = data.get("device_profiles", {})
     data["device_profiles_list"] = list(dp.values())
     data["has_device_profiles"] = len(data["device_profiles_list"]) > 0
@@ -1571,9 +1595,9 @@ def generate_pdf_report(data: dict, include_passed: bool, db: Session) -> bytes:
     html_string = template.render(**data, include_passed=include_passed)
 
     try:
-        pdf_bytes = HTML(string=html_string).write_pdf()
+        pdf_bytes = _html_to_pdf(html_string)
     except Exception as exc:
-        logger.exception("WeasyPrint PDF generation failed")
+        logger.exception("PDF generation failed")
         raise RuntimeError(f"PDF generation failed: {exc}") from exc
 
     return pdf_bytes
@@ -1587,7 +1611,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     """Create a multi-sheet Excel workbook and return as bytes."""
     wb = Workbook()
 
-    # ── Sheet 1: Executive Summary ──
+    # Sheet 1: Executive Summary
     ws1 = wb.active
     ws1.title = "Executive Summary"
     summary = data["summary"]
@@ -1634,7 +1658,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     ws1.column_dimensions["A"].width = 22
     ws1.column_dimensions["B"].width = 20
 
-    # ── Sheet 2: Findings ──
+    # Sheet 2: Findings
     ws2 = wb.create_sheet("Findings")
     columns = [
         "Scan ID", "Target", "Benchmark", "Section", "Rule Title",
@@ -1690,7 +1714,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     for col_idx in range(1, len(columns) + 1):
         ws2.column_dimensions[get_column_letter(col_idx)].width = 18
 
-    # ── Sheet 3: Compliance by Target ──
+    # Sheet 3: Compliance by Target
     ws3 = wb.create_sheet("Compliance by Target")
     ws3.append(["Target", "IP Address", "Benchmark", "Compliance %", "Passed", "Failed", "Errors"])
     for col_idx in range(1, 8):
@@ -1709,7 +1733,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     for col_idx in range(1, 8):
         ws3.column_dimensions[get_column_letter(col_idx)].width = 18
 
-    # ── Sheet 4: Compliance by Category ──
+    # Sheet 4: Compliance by Category
     ws4 = wb.create_sheet("Compliance by Category")
     ws4.append(["Category", "Total", "Passed", "Failed", "Compliance %"])
     for col_idx in range(1, 6):
@@ -1737,7 +1761,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     for col_idx in range(1, 6):
         ws4.column_dimensions[get_column_letter(col_idx)].width = 30
 
-    # ── Sheet 5: Groups (when builder groups are present) ──
+    # Sheet 5: Groups (when builder groups are present)
     builder_groups = data.get("builder_groups")
     if builder_groups:
         ws5 = wb.create_sheet("Groups")
@@ -1797,7 +1821,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
             ws5.column_dimensions[get_column_letter(col_idx)].width = 22
         ws5.column_dimensions["H"].width = 40  # Description
 
-    # ── Apply text wrapping and column widths to Findings ──
+    # Apply text wrapping and column widths to Findings
     wrap_align = Alignment(wrap_text=True, vertical="top")
     for col_idx in [8, 9, 10, 11, 12, 13]:  # Description through AI Advice
         for row_idx in range(2, ws2.max_row + 1):
@@ -1811,7 +1835,7 @@ def generate_excel_report(data: dict, include_passed: bool) -> bytes:
     ws2.column_dimensions["M"].width = 30  # AI Advice
     ws2.column_dimensions["P"].width = 25  # Related Services
 
-    # ── Sheet: Device Profiles (from discovery data) ──
+    # Sheet: Device Profiles (from discovery data)
     device_profiles = data.get("device_profiles", {})
     dp_list = list(device_profiles.values())
     if dp_list:
@@ -1906,40 +1930,40 @@ def generate_html_report(data: dict, include_passed: bool, db: Session | None = 
     if not include_passed:
         findings = [f for f in findings if f["status"] != "PASS"]
 
-    # ── White-label settings ──
+    # White-label settings
     _wl = _load_whitelabel_settings(db) if db else {}
     company_name = _wl.get("company_name", "AuditForge")
     company_logo_base64 = _wl.get("company_logo_base64", "")
     auditor_name = _wl.get("auditor_name", "")
 
-    # ── Phase 2: grouped findings & builder metadata ──
+    # Phase 2: grouped findings & builder metadata
     grouped_findings = _build_grouped_findings(data, findings)
     sections = data.get("sections") or {}
     group_summaries = data.get("group_summaries") or {}
     audience = data.get("audience", "technical")
     has_builder = bool(data.get("builder_groups"))
 
-    # ── Generate all SVG charts (shared logic) ──
+    # Generate all SVG charts (shared logic)
     charts = _generate_all_charts(data, grouped_findings)
 
-    # ── Compute risk score (parity with PDF) ──
+    # Compute risk score (parity with PDF)
     risk_score = _compute_risk_score(data)
 
-    # ── Per-target findings breakdown (parity with PDF) ──
+    # Per-target findings breakdown (parity with PDF)
     per_target_findings = _build_per_target_findings(data)
 
-    # ── Device profiles list (parity with PDF) ──
+    # Device profiles list (parity with PDF)
     dp = data.get("device_profiles", {})
     device_profiles_list = list(dp.values())
     has_device_profiles = len(device_profiles_list) > 0
 
-    # ── Convert AI summary from Markdown to HTML ──
+    # Convert AI summary from Markdown to HTML
     ai_summary_html = _md_to_html(data.get("ai_summary", ""))
 
-    # ── Phase 4: Business Impact Section ──
+    # Phase 4: Business Impact Section
     business_impact_groups = _generate_business_impact(findings)
 
-    # ── Findings JSON for JS filtering/sorting engine ──
+    # Findings JSON for JS filtering/sorting engine
     findings_json = json.dumps(findings, default=str).replace("</", "<\\/")
 
     fp_summary = data.get("fp_summary", {})

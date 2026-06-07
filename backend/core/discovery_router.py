@@ -25,7 +25,7 @@ import httpx
 
 logger = logging.getLogger("auditforge.discovery.router")
 
-# ── Agent connection settings ────────────────────────────────
+# Agent connection settings
 
 AGENT_HOST = os.environ.get("DISCOVERY_AGENT_HOST", "host.docker.internal")
 AGENT_PORT = int(os.environ.get("DISCOVERY_AGENT_PORT", "37120"))
@@ -84,7 +84,7 @@ async def get_discovery_engine() -> str:
     return "agent" if _agent_available else "docker_limited"
 
 
-# ── In-memory progress (mirrors agent progress for the API) ──
+# In-memory progress (mirrors agent progress for the API)
 
 _proxy_progress: dict[str, dict[str, Any]] = {}
 
@@ -132,7 +132,7 @@ def cleanup_discovery(discovery_id: str) -> None:
     _local_cleanup(discovery_id)
 
 
-# ── Main discovery entry point ───────────────────────────────
+# Main discovery entry point
 
 async def discover_network(
     subnet: str,

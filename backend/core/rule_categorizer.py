@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re  # UNUSED — safe to remove
 
-# ── Weight multipliers per source field ──
+# Weight multipliers per source field
 WEIGHT_TITLE = 3
 WEIGHT_DESCRIPTION = 2
 WEIGHT_RAW = 1
@@ -121,7 +121,7 @@ TAG_KEYWORDS: dict[str, list[str]] = {
     ],
 }
 
-# ── CIS section-number prefix mapping (common across CIS benchmarks) ──
+# CIS section-number prefix mapping (common across CIS benchmarks)
 # When keyword matching fails, section numbering provides strong category hints.
 CIS_SECTION_MAP: dict[str, str] = {
     "1.1":  "filesystem_permissions",   # Filesystem configuration
@@ -148,7 +148,7 @@ CIS_SECTION_MAP: dict[str, str] = {
     "6.2":  "user_accounts",
 }
 
-# ── Pretty names ──
+# Pretty names
 DISPLAY_NAMES: dict[str, str] = {
     "password_policy":         "Password Policy",
     "user_accounts":           "User Accounts & Privileges",

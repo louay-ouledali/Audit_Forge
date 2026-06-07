@@ -177,7 +177,7 @@ async def generate_ai_summary_endpoint(payload: AISummaryRequest, db: Session = 
     return AISummaryResponse(summary=summary_text)
 
 
-# ── Report Builder endpoints ─────────────────────────────────
+# Report Builder endpoints
 
 @router.post("/builder/findings")
 def builder_get_findings(payload: BuilderFindingsRequest, db: Session = Depends(get_db)):
@@ -289,7 +289,7 @@ def builder_auto_group(payload: AutoGroupRequest, db: Session = Depends(get_db))
 
     rule_ids = [f.rule_id for f in findings if f.rule_id not in excluded]
 
-    # ── Batch-load all rules in one query (optimization) ──
+    # Batch-load all rules in one query (optimization)
     rules_by_id: dict[int, Rule] = {}
     if rule_ids:
         rules = db.query(Rule).filter(Rule.id.in_(rule_ids)).all()

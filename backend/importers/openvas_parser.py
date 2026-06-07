@@ -48,7 +48,7 @@ _THREAT_SEVERITY = {
 }
 
 
-# ── Detection ────────────────────────────────────────────────────────
+# Detection
 
 def detect_openvas_xml(content: str) -> bool:
     """Quick check whether content looks like an OpenVAS/GVM XML report."""
@@ -65,7 +65,7 @@ def detect_openvas_xml(content: str) -> bool:
     return False
 
 
-# ── XML Parsing ──────────────────────────────────────────────────────
+# XML Parsing
 
 def parse_openvas_xml(
     content: str,

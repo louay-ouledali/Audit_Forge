@@ -48,9 +48,7 @@ from backend.models.rule import Rule  # noqa: E402
 from backend.models.rule_command import RuleCommand  # noqa: E402
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Severity levels
-# ═══════════════════════════════════════════════════════════════════════════════
 
 class Severity:
     ERROR = "ERROR"
@@ -58,9 +56,7 @@ class Severity:
     INFO = "INFO"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Issue dataclass
-# ═══════════════════════════════════════════════════════════════════════════════
 
 class Issue:
     __slots__ = ("severity", "section", "field", "message", "detail")
@@ -85,9 +81,7 @@ class Issue:
         return prefix
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Validation patterns
-# ═══════════════════════════════════════════════════════════════════════════════
 
 # Valid expected_output_regex operators
 VALID_EXPRESSION_PATTERNS = [
@@ -148,9 +142,7 @@ HALLUCINATION_PATTERNS = [
 ]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Checker functions
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def detect_platform(command: str) -> str:
     """Guess the platform of a command: 'windows', 'linux', 'sql', 'network', 'unknown'."""
@@ -180,7 +172,7 @@ def check_benchmark(benchmark: Benchmark, rules: list[Rule], *, show_commands: b
         sec = rule.section_number
         cmd = rule.commands  # uselist=False -> RuleCommand or None
 
-        # ── Missing command entirely ─────────────────────────────────────
+        # Missing command entirely
         if cmd is None:
             issues.append(Issue(Severity.ERROR, sec, "command", "No RuleCommand record exists"))
             continue
@@ -189,7 +181,7 @@ def check_benchmark(benchmark: Benchmark, rules: list[Rule], *, show_commands: b
         expression = (cmd.expected_output_regex or "").strip()
         remediation = (cmd.remediation_command or "").strip()
 
-        # ── Missing audit command ────────────────────────────────────────
+        # Missing audit command
         if not audit_cmd:
             issues.append(Issue(Severity.ERROR, sec, "audit_command", "Audit command is empty"))
         else:
@@ -244,7 +236,7 @@ def check_benchmark(benchmark: Benchmark, rules: list[Rule], *, show_commands: b
                     ))
                     break  # one hallucination flag per command
 
-        # ── Expected output expression ───────────────────────────────────
+        # Expected output expression
         if not expression:
             issues.append(Issue(
                 Severity.WARNING, sec, "expected_output",
@@ -259,7 +251,7 @@ def check_benchmark(benchmark: Benchmark, rules: list[Rule], *, show_commands: b
                     f"Non-standard expression format: '{expression[:60]}'",
                 ))
 
-        # ── Remediation command ──────────────────────────────────────────
+        # Remediation command
         if not remediation:
             issues.append(Issue(
                 Severity.INFO, sec, "remediation_command",
@@ -271,14 +263,14 @@ def check_benchmark(benchmark: Benchmark, rules: list[Rule], *, show_commands: b
                 "Remediation command is identical to audit command",
             ))
 
-        # ── Description/title sanity ─────────────────────────────────────
+        # Description/title sanity
         if not rule.title or len(rule.title.strip()) < 5:
             issues.append(Issue(
                 Severity.WARNING, sec, "title",
                 f"Title is missing or too short: '{rule.title}'",
             ))
 
-    # ── Duplicate command detection ──────────────────────────────────────
+    # Duplicate command detection
     for cmd_hash, count in command_hashes.items():
         if count > 1 and len(cmd_hash) > 15:  # Ignore very short duplicates
             sections = command_map[cmd_hash]
@@ -291,9 +283,7 @@ def check_benchmark(benchmark: Benchmark, rules: list[Rule], *, show_commands: b
     return issues
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Report generation
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def grade_benchmark(total_rules: int, issues: list[Issue]) -> str:
     """Compute a quality grade from A+ to F."""
@@ -350,9 +340,7 @@ def print_report(benchmark: Benchmark, issues: list[Issue], *, errors_only: bool
     print()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Main
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="AuditForge Benchmark Quality Checker")

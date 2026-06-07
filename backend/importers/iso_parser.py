@@ -40,9 +40,7 @@ _ISO_THEMES = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Format detection
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def detect_iso_json(content: str) -> bool:
     """Return True if content looks like an ISO 27001 JSON export."""
@@ -87,9 +85,7 @@ def _has_iso_control_ids(text: str) -> bool:
     return len(matches) >= 3
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  JSON parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def parse_iso_json(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     """Parse an ISO 27001 JSON control catalog."""
@@ -170,9 +166,7 @@ def parse_iso_json(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     return findings, platform_info
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  CSV parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def parse_iso_csv(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     """Parse an ISO 27001 CSV export."""
@@ -223,9 +217,7 @@ def parse_iso_csv(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     return findings, platform_info
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Rule extraction
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_rules_from_iso(findings: list[ParsedFinding]) -> list[ExtractedRule]:
     """Convert ISO ParsedFindings into ExtractedRule objects."""
@@ -246,9 +238,7 @@ def extract_rules_from_iso(findings: list[ParsedFinding]) -> list[ExtractedRule]
     return rules
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_column_map(fieldnames: list[str]) -> dict[str, str]:
     """Build a normalized column name → actual column name mapping."""

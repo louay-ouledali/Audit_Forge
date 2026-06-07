@@ -91,7 +91,7 @@ def remove_rule_tag(rule_id: int, tag_id: int, db: Session = Depends(get_db)):
     return {"data": None, "message": "Tag removed"}
 
 
-# ── Command Management ──
+# Command Management
 
 @router.get("/{rule_id}/command", response_model=RuleCommandEnvelope)
 def get_rule_command(rule_id: int, db: Session = Depends(get_db)):
@@ -129,7 +129,7 @@ def update_rule_command(rule_id: int, payload: RuleCommandUpdate, db: Session = 
     return {"data": RuleCommandResponse.model_validate(cmd), "message": "Command updated"}
 
 
-# ── Command Flagging ──
+# Command Flagging
 
 @router.post("/{rule_id}/command/flag", response_model=RuleCommandEnvelope)
 def flag_command(rule_id: int, payload: FlagCommandRequest, db: Session = Depends(get_db)):
@@ -153,7 +153,7 @@ def flag_command(rule_id: int, payload: FlagCommandRequest, db: Session = Depend
     return {"data": RuleCommandResponse.model_validate(cmd), "message": "Command flagged"}
 
 
-# ── Command Regeneration ──
+# Command Regeneration
 
 @router.post("/{rule_id}/command/regenerate", response_model=RuleCommandEnvelope)
 async def regenerate_command(
@@ -233,7 +233,7 @@ async def regenerate_command(
     return {"data": RuleCommandResponse.model_validate(cmd), "message": "Command regenerated"}
 
 
-# ── Command Protection ──
+# Command Protection
 
 @router.post("/{rule_id}/command/protect", response_model=RuleCommandEnvelope)
 def protect_command(rule_id: int, payload: ProtectCommandRequest | None = None, db: Session = Depends(get_db)):
@@ -278,7 +278,7 @@ def unlock_command(rule_id: int, payload: UnlockCommandRequest, db: Session = De
     return {"data": RuleCommandResponse.model_validate(cmd), "message": "Command unlocked"}
 
 
-# ── Command History ──
+# Command History
 
 @router.get("/{rule_id}/command/history", response_model=CommandHistoryResponse)
 def get_command_history(rule_id: int, db: Session = Depends(get_db)):
@@ -309,7 +309,7 @@ def get_command_history(rule_id: int, db: Session = Depends(get_db)):
     return {"data": entries, "total": len(entries), "message": "success"}
 
 
-# ── Single Command Verify ──
+# Single Command Verify
 
 @router.post("/{rule_id}/command/verify", response_model=RuleCommandEnvelope)
 def verify_single_rule_command(rule_id: int, db: Session = Depends(get_db)):
@@ -349,7 +349,7 @@ def verify_single_rule_command(rule_id: int, db: Session = Depends(get_db)):
     return {"data": RuleCommandResponse.model_validate(cmd), "message": "Verification complete"}
 
 
-# ── Verification Reports for a Rule Command ──
+# Verification Reports for a Rule Command
 
 @router.get("/{rule_id}/command/verification-reports", response_model=VerificationResultsResponse)
 def get_command_verification_reports(rule_id: int, db: Session = Depends(get_db)):

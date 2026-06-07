@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 
 
-# ── Request schemas ───────────────────────────────────────────────
+# Request schemas
 
 class ConnectSessionCreate(BaseModel):
     client_id: int
@@ -23,7 +23,7 @@ class AgentScanRequest(BaseModel):
     agent_ids: list[int] | None = None  # None = scan all connected agents
 
 
-# ── Response schemas ──────────────────────────────────────────────
+# Response schemas
 
 class ConnectAgentResponse(BaseModel):
     id: int

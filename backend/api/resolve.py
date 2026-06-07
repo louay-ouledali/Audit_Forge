@@ -36,7 +36,7 @@ logger = logging.getLogger("auditforge.resolve")
 router = APIRouter(prefix="/resolve", tags=["resolve"])
 
 
-# ── 1. Create session ────────────────────────────────────────────────
+# 1. Create session
 
 @router.post("/sessions", response_model=ResolveSessionResponse)
 def create_resolve_session(
@@ -102,7 +102,7 @@ def create_resolve_session(
     return session
 
 
-# ── 2. Get session ───────────────────────────────────────────────────
+# 2. Get session
 
 @router.get("/sessions/{session_id}", response_model=ResolveSessionResponse)
 def get_resolve_session(
@@ -116,7 +116,7 @@ def get_resolve_session(
     return session
 
 
-# ── 3. List sessions for target ──────────────────────────────────────
+# 3. List sessions for target
 
 @router.get("/targets/{target_id}/sessions", response_model=list[ResolveSessionSummary])
 def list_target_sessions(
@@ -137,7 +137,7 @@ def list_target_sessions(
     return sessions
 
 
-# ── 4. Update single item ───────────────────────────────────────────
+# 4. Update single item
 
 @router.put("/items/{item_id}", response_model=ResolveItemResponse)
 def update_resolve_item(
@@ -174,7 +174,7 @@ def update_resolve_item(
     return item
 
 
-# ── 5. Bulk select/deselect ─────────────────────────────────────────
+# 5. Bulk select/deselect
 
 @router.put("/sessions/{session_id}/bulk-select")
 def bulk_select_items(
@@ -207,7 +207,7 @@ def bulk_select_items(
     return {"updated": updated}
 
 
-# ── 6. Export script (air-gapped) ────────────────────────────────────
+# 6. Export script (air-gapped)
 
 @router.post("/sessions/{session_id}/export")
 def export_resolve_script(
@@ -256,7 +256,7 @@ def export_resolve_script(
     )
 
 
-# ── 7. Execute network (live) ───────────────────────────────────────
+# 7. Execute network (live)
 
 @router.post("/sessions/{session_id}/execute")
 def execute_resolve_network(
@@ -332,7 +332,7 @@ def execute_resolve_network(
     return {"status": "executing", "session_id": session_id}
 
 
-# ── 8. Execute via agent ────────────────────────────────────────────
+# 8. Execute via agent
 
 @router.post("/sessions/{session_id}/execute-agent")
 def execute_resolve_agent(
@@ -398,7 +398,7 @@ def execute_resolve_agent(
     return {"status": "executing", "session_id": session_id}
 
 
-# ── 9. Get results ──────────────────────────────────────────────────
+# 9. Get results
 
 @router.get("/sessions/{session_id}/results", response_model=list[ResolveItemResponse])
 def get_resolve_results(
@@ -415,7 +415,7 @@ def get_resolve_results(
     return items
 
 
-# ── 10. Export results CSV ───────────────────────────────────────────
+# 10. Export results CSV
 
 @router.get("/sessions/{session_id}/results/csv")
 def export_resolve_results_csv(
@@ -445,7 +445,7 @@ def export_resolve_results_csv(
     )
 
 
-# ── 11. Scan Intelligence ───────────────────────────────────────────
+# 11. Scan Intelligence
 
 @router.post("/scan-intelligence", response_model=ScanIntelligenceResponse)
 def get_scan_intelligence(
@@ -459,7 +459,7 @@ def get_scan_intelligence(
     return result
 
 
-# ── Delete session ───────────────────────────────────────────────────
+# Delete session
 
 @router.delete("/sessions/{session_id}")
 def delete_resolve_session(

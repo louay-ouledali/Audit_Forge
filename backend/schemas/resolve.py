@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 
 
-# ── Requests ──────────────────────────────────────────────────────────
+# Requests
 
 class ResolveSessionCreate(BaseModel):
     mission_id: int
@@ -39,7 +39,7 @@ class ScanIntelligenceRequest(BaseModel):
     scan_ids: list[int]
 
 
-# ── Responses ─────────────────────────────────────────────────────────
+# Responses
 
 class ResolveItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -96,7 +96,7 @@ class ResolveSessionSummary(BaseModel):
     failed_items: int
 
 
-# ── Scan Intelligence ─────────────────────────────────────────────────
+# Scan Intelligence
 
 class ScanSummary(BaseModel):
     scan_id: int

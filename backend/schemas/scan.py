@@ -28,7 +28,7 @@ class ScriptPreviewResponse(BaseModel):
     rules: list[ScriptPreviewRule]
 
 
-# ── Network Scan ──────────────────────────────────────────────
+# Network Scan
 
 
 class NetworkScanRequest(BaseModel):
@@ -68,7 +68,7 @@ class ScanCancelResponse(BaseModel):
     message: str
 
 
-# ── Scan Batch ("Scan All") ──────────────────────────────────
+# Scan Batch ("Scan All")
 
 
 class ScanBatchRequest(BaseModel):

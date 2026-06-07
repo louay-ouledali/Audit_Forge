@@ -70,7 +70,7 @@ export interface Target {
   default_benchmark_name: string | null;
 }
 
-// ── Target Connection & Readiness types ──────────────────────
+// Target Connection & Readiness types
 
 export interface ConnectionTestResult {
   target_id: number;
@@ -129,7 +129,7 @@ export interface BenchmarkMatchResult {
   reason: string;
 }
 
-// ── Scan Batch types ─────────────────────────────────────────
+// Scan Batch types
 
 export interface ScanBatchRequest {
   mission_id: number;
@@ -180,7 +180,7 @@ export interface DiscoveredHostEnriched extends DiscoveredHost {
   match_method?: 'mac' | 'ip' | '';
 }
 
-// ── Target Enriched (client-side enrichment) ─────────────────
+// Target Enriched (client-side enrichment)
 
 export interface TargetEnriched extends Target {
   isScanning: boolean;
@@ -216,7 +216,7 @@ export interface Benchmark {
   source_details?: string | null;
 }
 
-// ── Benchmark Catalog (hierarchical classification) ──
+// Benchmark Catalog (hierarchical classification)
 
 export interface CatalogBenchmark {
   id: number;
@@ -279,7 +279,7 @@ export interface EnrichStatus {
   status: string;
 }
 
-// ── Phase 2: Custom Benchmark + AI Rule Creation ──
+// Phase 2: Custom Benchmark + AI Rule Creation
 
 export interface CustomBenchmarkCreate {
   name: string;
@@ -319,7 +319,7 @@ export interface RuleFullUpdate {
   enabled?: boolean;
 }
 
-// ── Phase 3: Rule Testing, Validation, Migration Readiness ──
+// Phase 3: Rule Testing, Validation, Migration Readiness
 
 export interface RuleTestRequest {
   target_id: number;
@@ -475,7 +475,7 @@ export interface LLMTestResult {
   error?: string;
 }
 
-// ── Script Export (USB) types ─────────────────────────────────
+// Script Export (USB) types
 
 export interface GenerateScriptRequest {
   benchmark_id: number;
@@ -499,7 +499,7 @@ export interface ScriptPreviewResponse {
   rules: ScriptPreviewRule[];
 }
 
-// ── Network Scan types ───────────────────────────────────────
+// Network Scan types
 
 export interface DiscoveredHost {
   ip: string;
@@ -568,7 +568,7 @@ export interface ScanCancelResponse {
   message: string;
 }
 
-// ── Module 8: Findings & Import types ────────────────────────
+// Module 8: Findings & Import types
 
 export interface ScanDetail {
   id: number;
@@ -647,7 +647,7 @@ export interface ImportResultsResponse {
   scan_id?: number;
 }
 
-// ── Module 11: Report Generation types ───────────────────────
+// Module 11: Report Generation types
 
 export interface ReportGenerateRequest {
   scope: 'scan' | 'target' | 'mission' | 'custom';
@@ -675,7 +675,7 @@ export interface AISummaryResponse {
   summary: string;
 }
 
-// ── Report Builder types ─────────────────────────────────────
+// Report Builder types
 
 export interface BuilderFinding {
   finding_id: number;
@@ -707,7 +707,7 @@ export interface BuilderPreviewRequest {
   severity_filter?: string[];
 }
 
-// ── Phase 2: Grouping & Audience ─────────────────────────────
+// Phase 2: Grouping & Audience
 
 export interface RuleGroup {
   name: string;
@@ -731,7 +731,7 @@ export interface GroupSummaryResponse {
   summary: string;
 }
 
-// ── Module 12: Post-Mission AI Analysis types ────────────────
+// Module 12: Post-Mission AI Analysis types
 
 export interface AnalysisRequest {
   analysis_type: 'cross_target' | 'cross_mission' | 'category_analysis';
@@ -756,7 +756,7 @@ export interface ComparableMission {
   compliance: number | null;
 }
 
-// ── Phase 3: Validate & Correct types ────────────────────────
+// Phase 3: Validate & Correct types
 
 export interface ValidateStatus {
   status: string;
@@ -787,7 +787,7 @@ export interface ValidationResultItem {
   expected_output_regex: string | null;
 }
 
-// ── Phase 4: Framework Coverage + Platform Expansion ─────────
+// Phase 4: Framework Coverage + Platform Expansion
 
 export interface FrameworkCoverageItem {
   key: string;
@@ -826,7 +826,7 @@ export interface FrameworkRulesResponse {
   total: number;
 }
 
-// ── Active Directory Discovery ─────────────────────────────────
+// Active Directory Discovery
 
 export interface ADConnectionTestResult {
   success: boolean;
@@ -887,7 +887,7 @@ export interface BackupInfo {
   created_at: string;
 }
 
-// ── Version Grouping & Diff ──────────────────────────────────
+// Version Grouping & Diff
 
 export interface BenchmarkVersionItem {
   id: number;
@@ -940,7 +940,7 @@ export interface CacheAccelerationStats {
   coverage_percent: number;
 }
 
-// ── AuditForge Connect ──────────────────────────────────────────
+// AuditForge Connect
 
 export interface ConnectAgent {
   id: number;
@@ -970,7 +970,7 @@ export interface ConnectSession {
   agents: ConnectAgent[];
 }
 
-// ── Forge Copilot ───────────────────────────────────────────
+// Forge Copilot
 
 export interface CopilotAction {
   tool: string;
@@ -1010,7 +1010,7 @@ export interface CopilotPipelineResult {
   created?: { created: number; rules: CopilotPendingRule[] };
 }
 
-// ── Forge Sentinel ──────────────────────────────────────────────
+// Forge Sentinel
 
 export interface Schedule {
   id: number;
@@ -1073,7 +1073,7 @@ export interface AppNotification {
   created_at: string;
 }
 
-// ── Forge Resolve ────────────────────────────────────────────────────
+// Forge Resolve
 
 export interface RemediationSession {
   id: number;
@@ -1165,7 +1165,7 @@ export interface AiInsights {
   priority_remediations: string[];
 }
 
-// ── Config Audit types ──────────────────────────────────────────
+// Config Audit types
 
 export interface ConfigSnapshot {
   id: number;
@@ -1210,7 +1210,7 @@ export interface SecurityCheckFinding {
   matched_lines: string[];
 }
 
-// ── Topology types ──────────────────────────────────────────────
+// Topology types
 
 export interface TopologyInterface {
   name: string;

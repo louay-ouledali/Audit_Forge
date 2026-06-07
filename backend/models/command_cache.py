@@ -25,40 +25,38 @@ class CommandCache(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
 
-    # ── Identity ──
+    # Identity
     cache_key = Column(String(64), nullable=False)        # SHA-256 of normalised rule identity
     platform = Column(String, nullable=False)             # exact, e.g. "Windows 11 Enterprise"
     platform_family = Column(String, nullable=False)
     section_number = Column(String, nullable=False)
     rule_title_normalized = Column(String, nullable=False) # lowercase, stripped, no profile markers
 
-    # ── Command data ──
+    # Command data
     audit_command = Column(Text)
     expected_output_regex = Column(Text)
     expected_output_description = Column(Text)
     remediation_command = Column(Text)
     remediation_description = Column(Text)
 
-    # ── Provenance ──
+    # Provenance
     source_benchmark_id = Column(Integer, ForeignKey("benchmarks.id", ondelete="SET NULL"), nullable=True)
     source_framework = Column(String, default="cis")      # cis/nist/stig/iso/disa/custom
 
-    # ── Confidence & matching ──
+    # Confidence & matching
     confidence = Column(Float, nullable=False, default=1.0)  # 0.0 – 1.0
     match_type = Column(String, nullable=False, default="exact_version")  # exact_version/cross_version/cross_framework
 
-    # ── Verification ──
+    # Verification
     verification_status = Column(String, default="unverified")  # unverified/verified/flagged
 
-    # ── Usage tracking ──
+    # Usage tracking
     hit_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_used_at = Column(DateTime, nullable=True)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Helpers (importable by command_cache_manager and elsewhere)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 _STRIP_RE = re.compile(r"\(L[12]\)|\(NG\)|\(BL\)|[^\w\s]", re.IGNORECASE)
 _SPACE_RE = re.compile(r"\s+")

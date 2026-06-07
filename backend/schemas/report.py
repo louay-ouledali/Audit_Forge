@@ -36,7 +36,7 @@ class AISummaryResponse(BaseModel):
     summary: str
 
 
-# ── Report Builder schemas ────────────────────────────────────
+# Report Builder schemas
 
 
 class BuilderPreviewRequest(BaseModel):
@@ -57,7 +57,7 @@ class BuilderFindingsRequest(BaseModel):
     scan_ids: list[int]
 
 
-# ── Phase 2: Grouping & Audience ──────────────────────────────
+# Phase 2: Grouping & Audience
 
 
 class AutoGroupRequest(BaseModel):

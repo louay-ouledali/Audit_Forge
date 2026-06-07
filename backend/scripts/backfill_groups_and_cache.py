@@ -33,9 +33,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("backfill")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Product-base extraction (mirrors severity_enricher._extract_product_info)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _extract_canonical_name(name: str) -> str:
     """Extract a canonical group name from a benchmark name.
@@ -58,9 +56,7 @@ def _extract_canonical_name(name: str) -> str:
     return cleaned.strip()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Main backfill logic
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def backfill_groups(db: Session) -> dict[str, int]:
     """Create benchmark_groups and link existing benchmarks."""

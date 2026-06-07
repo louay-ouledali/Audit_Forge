@@ -69,7 +69,7 @@ export default function ImportPreviewModal({ open, onClose, preview, loading, fi
   const [selectedTargetId, setSelectedTargetId] = useState<number | null>(null);
   const [importError, setImportError] = useState('');
 
-  // ── Unknown import state ──
+  // Unknown import state
   const [unknownJobId, setUnknownJobId] = useState<string | null>(null);
   const [unknownStatus, setUnknownStatus] = useState<api.UnknownImportResult | null>(null);
   const [unknownAnalyzing, setUnknownAnalyzing] = useState(false);

@@ -110,7 +110,7 @@ export default function ADDiscovery({
     };
   }, [useStored, clientAdConfigured, clientId, dcHost, domain, username, password, useSsl]);
 
-  // ── Test Connection ────────────────────────────────────
+  // Test Connection
   const handleTestConnection = useCallback(async () => {
     setTesting(true);
     setError('');
@@ -128,7 +128,7 @@ export default function ADDiscovery({
     }
   }, [getCredentials]);
 
-  // ── Discover Computers ─────────────────────────────────
+  // Discover Computers
   const handleDiscover = useCallback(async () => {
     setDiscovering(true);
     setError('');
@@ -155,7 +155,7 @@ export default function ADDiscovery({
     }
   }, [getCredentials, ouFilter]);
 
-  // ── Check WinRM ────────────────────────────────────────
+  // Check WinRM
   const handleCheckWinRM = useCallback(async () => {
     const hosts = computers
       .filter((c) => c.selected && (c.ip_address || c.dns_hostname))
@@ -189,7 +189,7 @@ export default function ADDiscovery({
     }
   }, [computers]);
 
-  // ── Enable WinRM ───────────────────────────────────────
+  // Enable WinRM
   const handleEnableWinRM = useCallback(async () => {
     const hosts = computers
       .filter(
@@ -230,7 +230,7 @@ export default function ADDiscovery({
     }
   }, [computers, clientId, handleCheckWinRM]);
 
-  // ── Download WinRM Script ──────────────────────────────
+  // Download WinRM Script
   const handleDownloadScript = useCallback(async () => {
     const hosts = computers
       .filter((c) => c.selected && (c.ip_address || c.dns_hostname))
@@ -251,7 +251,7 @@ export default function ADDiscovery({
     }
   }, [computers, clientId]);
 
-  // ── Bulk Create Targets ────────────────────────────────
+  // Bulk Create Targets
   const handleBulkCreate = useCallback(async () => {
     const selected = computers.filter((c) => c.selected);
     if (selected.length === 0) return;
@@ -286,7 +286,7 @@ export default function ADDiscovery({
     }
   }, [computers, clientId, missionId, onTargetsCreated]);
 
-  // ── Selection helpers ──────────────────────────────────
+  // Selection helpers
   const toggleAll = useCallback(
     (checked: boolean) =>
       setComputers((prev) => prev.map((c) => ({ ...c, selected: checked }))),
@@ -301,7 +301,7 @@ export default function ADDiscovery({
     []
   );
 
-  // ── Filtered / stats ──────────────────────────────────
+  // Filtered / stats
   const filteredComputers = useMemo(() => {
     return computers.filter((c) => {
       if (searchFilter) {

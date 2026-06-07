@@ -28,9 +28,11 @@ from backend.models.rule_command import RuleCommand  # UNUSED — safe to remove
 from backend.models.rule_tag import RuleTag
 from backend.models.scan_preset import ScanPreset
 
+from backend.frozen_paths import TEMPLATE_DIR
+
 logger = logging.getLogger("auditforge.core.script_generator")
 
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+TEMPLATES_DIR = TEMPLATE_DIR
 
 # Maps (platform_family, platform_hint) → (template_filename, script_ext)
 PLATFORM_TEMPLATE_MAP: dict[str, tuple[str, str]] = {
@@ -61,7 +63,7 @@ def _get_jinja_env() -> Environment:
     return _jinja_env
 
 
-# ── Rule filtering ──────────────────────────────────────────
+# Rule filtering
 
 
 def filter_rules(
@@ -118,7 +120,7 @@ def filter_rules(
     return query.order_by(Rule.section_number).all()
 
 
-# ── Template selection ──────────────────────────────────────
+# Template selection
 
 
 def _resolve_template(benchmark: Benchmark) -> tuple[str, str]:
@@ -143,7 +145,7 @@ def _resolve_template(benchmark: Benchmark) -> tuple[str, str]:
     return ("generic_audit.txt.j2", "audit_commands.txt")
 
 
-# ── Rule → template dict ───────────────────────────────────
+# Rule → template dict
 
 
 def _rule_to_dict(rule: Rule) -> dict[str, Any]:
@@ -164,7 +166,7 @@ def _rule_to_dict(rule: Rule) -> dict[str, Any]:
     }
 
 
-# ── Public API ──────────────────────────────────────────────
+# Public API
 
 
 def preview_script_rules(

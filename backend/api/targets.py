@@ -87,7 +87,7 @@ def _enrich_target_response(target: Target, db: Session) -> TargetResponse:
     return resp
 
 
-# ── List all targets (for rule testing selector) ─────────────
+# List all targets (for rule testing selector)
 @router.get("/targets", response_model=TargetListResponse)
 def list_all_targets(db: Session = Depends(get_db)) -> dict:
     targets = db.query(Target).order_by(Target.id).all()
@@ -95,7 +95,7 @@ def list_all_targets(db: Session = Depends(get_db)) -> dict:
     return {"data": result, "total": len(result)}
 
 
-# ── List targets by client ───────────────────────────────────
+# List targets by client
 @router.get("/clients/{client_id}/targets", response_model=TargetListResponse)
 def list_targets_for_client(client_id: int, db: Session = Depends(get_db)) -> dict:
     client = db.query(Client).filter(Client.id == client_id).first()
@@ -106,7 +106,7 @@ def list_targets_for_client(client_id: int, db: Session = Depends(get_db)) -> di
     return {"data": result, "total": len(result)}
 
 
-# ── List targets assigned to a mission (via junction table) ──
+# List targets assigned to a mission (via junction table)
 @router.get("/missions/{mission_id}/targets", response_model=TargetListResponse)
 def list_targets_for_mission(mission_id: int, db: Session = Depends(get_db)) -> dict:
     mission = db.query(Mission).filter(Mission.id == mission_id).first()
@@ -121,7 +121,7 @@ def list_targets_for_mission(mission_id: int, db: Session = Depends(get_db)) -> 
     return {"data": result, "total": len(result)}
 
 
-# ── Assign / unassign target to mission ──────────────────────
+# Assign / unassign target to mission
 @router.post("/missions/{mission_id}/targets/{target_id}")
 def assign_target_to_mission(
     mission_id: int, target_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
@@ -230,7 +230,7 @@ def delete_target(target_id: int, db: Session = Depends(get_db)) -> dict:
     return {"data": None, "message": "Target deleted"}
 
 
-# ── Phase 2 — New Target Endpoints ──────────────────────────
+# Phase 2 — New Target Endpoints
 
 
 # Platform-specific test commands used by test-connection
@@ -529,7 +529,8 @@ from fastapi.responses import FileResponse
 # Platform-specific prerequisite guides — now in backend/core/prerequisites.py
 
 # Directory containing downloadable preparation scripts
-_SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
+from backend.frozen_paths import SCRIPTS_DIR
+_SCRIPTS_DIR = SCRIPTS_DIR
 
 # Allowed script filenames (prevent directory traversal)
 _ALLOWED_SCRIPTS = {

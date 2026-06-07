@@ -42,7 +42,7 @@ def _table_exists(table: str) -> bool:
 
 
 def upgrade() -> None:
-    # ── New columns on targets table ──────────────────────────
+    # New columns on targets table
     new_cols = [
         ("platform_subtype", sa.String()),
         ("default_benchmark_id", sa.Integer()),
@@ -58,7 +58,7 @@ def upgrade() -> None:
         if not _column_exists("targets", col_name):
             op.add_column("targets", sa.Column(col_name, col_type, nullable=True))
 
-    # ── scan_batches table ────────────────────────────────────
+    # scan_batches table
     if not _table_exists("scan_batches"):
         op.create_table(
             "scan_batches",
@@ -80,7 +80,7 @@ def upgrade() -> None:
             sa.Column("completed_at", sa.DateTime(), nullable=True),
         )
 
-    # ── scan_batch_items table ────────────────────────────────
+    # scan_batch_items table
     if not _table_exists("scan_batch_items"):
         op.create_table(
             "scan_batch_items",

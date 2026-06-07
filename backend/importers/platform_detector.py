@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("auditforge.importers.platform_detector")
 
 
-# ── Keyword-based content scoring tables ─────────────────────
+# Keyword-based content scoring tables
 # Each entry: (regex_pattern, weight)
 # Patterns are evaluated case-insensitively against finding content.
 
@@ -150,7 +150,7 @@ _PLATFORM_KEYWORD_TABLES: list[tuple[str, str, str, list[tuple[str, int]]]] = [
     ("AWS", "Cloud", "Cloud", _CLOUD_KEYWORDS),
 ]
 
-# ── Plugin ID → Platform mapping ────────────────────────────────
+# Plugin ID → Platform mapping
 
 _PLUGIN_PLATFORM_MAP = {
     "21156": ("Windows", "Windows"),
@@ -243,7 +243,7 @@ def merge_platform_info(base: PlatformInfo, *others: PlatformInfo) -> PlatformIn
     return result
 
 
-# ── Build search queries for benchmark matching ──────────────────
+# Build search queries for benchmark matching
 
 def build_benchmark_search_terms(info: PlatformInfo) -> list[str]:
     """Generate a list of search terms for finding a matching benchmark in the DB.
@@ -265,7 +265,7 @@ def build_benchmark_search_terms(info: PlatformInfo) -> list[str]:
     return terms
 
 
-# ── Private helpers ─────────────────────────────────────────────
+# Private helpers
 
 
 def _refine_from_name(name: str, info: PlatformInfo) -> None:
@@ -475,7 +475,7 @@ def _detect_os(text: str, info: PlatformInfo) -> None:
         info.platform_family = "Cloud"
 
 
-# ── Content-based heuristic platform detection ───────────────
+# Content-based heuristic platform detection
 
 # Minimum confidence ratio (winner_score / total_score) to accept a heuristic result
 _HEURISTIC_MIN_CONFIDENCE = 0.40
@@ -575,7 +575,7 @@ def detect_platform_from_findings(findings: "list[ParsedFinding]") -> PlatformIn
     return info
 
 
-# ── AI-powered platform detection ────────────────────────────
+# AI-powered platform detection
 
 _AI_PLATFORM_SYSTEM_PROMPT = """You are a security audit platform detector. Analyse the provided sample of compliance audit finding titles and determine the target platform.
 

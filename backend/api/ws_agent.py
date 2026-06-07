@@ -27,7 +27,7 @@ HEARTBEAT_INTERVAL = 30  # seconds
 HEARTBEAT_TIMEOUT = 15  # seconds
 
 
-# ── Agent WebSocket ───────────────────────────────────────────────
+# Agent WebSocket
 
 @router.websocket("/ws/agent/{token}")
 async def agent_websocket(websocket: WebSocket, token: str):
@@ -246,7 +246,7 @@ async def _handle_system_info(
         logger.debug("Failed to cache agent ports in DiscoveryCache", exc_info=True)
 
 
-# ── Heartbeat ─────────────────────────────────────────────────────
+# Heartbeat
 
 async def _heartbeat_loop(websocket: WebSocket, token: str) -> None:
     """Periodically ping the agent to detect stale connections."""
@@ -261,7 +261,7 @@ async def _heartbeat_loop(websocket: WebSocket, token: str) -> None:
         pass
 
 
-# ── Monitor broadcasts ────────────────────────────────────────────
+# Monitor broadcasts
 
 _session_monitors: dict[int, list[WebSocket]] = {}
 
@@ -424,7 +424,7 @@ async def _broadcast_to_monitors(session_id: int, message: dict) -> None:
         monitors.remove(ws)
 
 
-# ── Command result dispatch ───────────────────────────────────────
+# Command result dispatch
 # Used by agent_executor to receive command results from connected agents.
 
 _pending_futures: dict[str, dict[str, asyncio.Future]] = {}  # token -> {cmd_id -> Future}

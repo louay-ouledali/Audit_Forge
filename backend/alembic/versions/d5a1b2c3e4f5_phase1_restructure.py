@@ -27,7 +27,7 @@ def _has_column(conn, table: str, column: str) -> bool:
 def upgrade() -> None:
     conn = op.get_bind()
 
-    # ── 1. Create new tables (if not already created by init_db) ──
+    # 1. Create new tables (if not already created by init_db)
     conn.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS mission_targets (
             id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +62,7 @@ def upgrade() -> None:
     """))
     conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_saved_reports_mission_id ON saved_reports (mission_id)"))
 
-    # ── 2. Add columns to missions (locking) ─────────────────
+    # 2. Add columns to missions (locking)
     if not _has_column(conn, "missions", "is_locked"):
         conn.execute(sa.text("ALTER TABLE missions ADD COLUMN is_locked BOOLEAN DEFAULT 0"))
     if not _has_column(conn, "missions", "password_hash"):
@@ -72,7 +72,7 @@ def upgrade() -> None:
     if not _has_column(conn, "missions", "locked_by"):
         conn.execute(sa.text("ALTER TABLE missions ADD COLUMN locked_by VARCHAR"))
 
-    # ── 3. Add override columns to findings ───────────────────
+    # 3. Add override columns to findings
     if not _has_column(conn, "findings", "auditor_status_override"):
         conn.execute(sa.text("ALTER TABLE findings ADD COLUMN auditor_status_override VARCHAR"))
     if not _has_column(conn, "findings", "auditor_severity_override"):
@@ -86,12 +86,12 @@ def upgrade() -> None:
     if not _has_column(conn, "findings", "overridden_at"):
         conn.execute(sa.text("ALTER TABLE findings ADD COLUMN overridden_at DATETIME"))
 
-    # ── 4. Add mission_id to scans ────────────────────────────
+    # 4. Add mission_id to scans
     if not _has_column(conn, "scans", "mission_id"):
         conn.execute(sa.text("ALTER TABLE scans ADD COLUMN mission_id INTEGER REFERENCES missions(id) ON DELETE SET NULL"))
     conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_scans_mission_id ON scans (mission_id)"))
 
-    # ── 5. Migrate targets: mission_id → client_id ────────────
+    # 5. Migrate targets: mission_id → client_id
     #
     # SQLite doesn't support DROP COLUMN before 3.35+, so we use
     # batch mode which recreates the table. But first, we populate

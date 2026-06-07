@@ -30,7 +30,7 @@ from backend.models.benchmark_group import BenchmarkGroup
 from backend.models.rule import Rule
 
 
-# ── Platform family normalization ─────────────────────────────
+# Platform family normalization
 
 _PLATFORM_FAMILY_MAP: dict[str, str] = {
     "unix": "linux",
@@ -100,7 +100,7 @@ router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 BENCHMARKS_DIR = PROJECT_ROOT / "benchmarks"
 BENCHMARKS_DIR.mkdir(exist_ok=True)
 
-# ── In-memory store for unknown import jobs ──
+# In-memory store for unknown import jobs
 # Maps job_id → job state dict. Cleaned up periodically.
 _unknown_import_jobs: dict[str, dict] = {}
 
@@ -192,9 +192,7 @@ async def import_benchmark(
     return BenchmarkImportResponse(benchmark_id=benchmark.id)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
 # Unknown Benchmark Import (AI-powered reverse engineering)
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 async def _run_unknown_import(job_id: str, content: str, db_factory):
@@ -453,9 +451,7 @@ def confirm_unknown_import(
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════
 # Phase 2: Custom Benchmark Creation
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 @router.post("/create", response_model=CustomBenchmarkResponse, status_code=201)
@@ -486,9 +482,7 @@ def create_custom_benchmark(
     return CustomBenchmarkResponse(benchmark_id=benchmark.id, name=benchmark.name)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
 # Phase 2: AI-Assisted Rule Creation (within a benchmark)
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 @router.post("/{benchmark_id}/rules/create", response_model=AIRuleCreateResponse, status_code=201)
@@ -622,9 +616,7 @@ def delete_rule_from_benchmark(
     return {"message": f"Rule {rule.section_number} deleted"}
 
 
-# ═══════════════════════════════════════════════════════════════════════════
 # Phase 2: Bulk AI Command Generation
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 @router.post("/{benchmark_id}/generate-commands", response_model=BulkGenerateResponse)
@@ -675,9 +667,7 @@ async def bulk_generate_commands(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
 # Phase 2: Benchmark Export (.auditforge.json)
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 @router.get("/{benchmark_id}/export")
@@ -841,7 +831,7 @@ async def import_benchmark_file(
     }
 
 
-# ── Phase 3: Rule Testing, Validation, Migration Readiness ──────────────────
+# Phase 3: Rule Testing, Validation, Migration Readiness
 
 
 @router.post("/{benchmark_id}/rules/{rule_id}/test", response_model=RuleTestResponse)
@@ -1119,9 +1109,7 @@ def _update_migration_readiness(benchmark_id: int, db: Session):
     db.commit()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
 # Version Groups & Diff
-# ═══════════════════════════════════════════════════════════════════════════
 
 
 @router.get("/groups", response_model=BenchmarkGroupListResponse)
@@ -1460,7 +1448,7 @@ def list_benchmark_rules(
     return {"data": result, "total": len(result)}
 
 
-# ── Phase 1: Export / Import Rules ──
+# Phase 1: Export / Import Rules
 
 
 @router.get("/{benchmark_id}/rules/export")
@@ -1613,7 +1601,7 @@ async def import_rules(
     }
 
 
-# ── Phase 2: Export / Import Commands ──
+# Phase 2: Export / Import Commands
 
 
 @router.get("/{benchmark_id}/commands/export")
@@ -1782,7 +1770,7 @@ async def import_commands(
     }
 
 
-# ── Phase 2: Enrichment ──
+# Phase 2: Enrichment
 
 @router.post("/{benchmark_id}/enrich")
 async def start_enrichment(
@@ -1842,7 +1830,7 @@ def get_enrichment_status(benchmark_id: int, db: Session = Depends(get_db)):
     )
 
 
-# ── AI Severity Classification (manual trigger) ──
+# AI Severity Classification (manual trigger)
 
 @router.post("/{benchmark_id}/enrich-severities")
 async def enrich_severities(
@@ -1959,7 +1947,7 @@ def _run_severity_enrichment(benchmark_id: int):
         db.close()
 
 
-# ── Verification ──
+# Verification
 
 @router.post("/{benchmark_id}/verify")
 async def start_verification(
@@ -2001,7 +1989,7 @@ def get_verification_status(benchmark_id: int, db: Session = Depends(get_db)):
     )
 
 
-# ── Verification Results ──
+# Verification Results
 
 @router.get("/{benchmark_id}/verify/results", response_model=VerificationResultsResponse)
 def get_verification_results(
@@ -2034,7 +2022,7 @@ def get_verification_results(
     }
 
 
-# ── Bulk Regenerate ──
+# Bulk Regenerate
 
 @router.post("/{benchmark_id}/commands/bulk-regenerate")
 async def bulk_regenerate_commands(
@@ -2145,7 +2133,7 @@ async def bulk_regenerate_commands(
     }
 
 
-# ── Bulk Accept ──
+# Bulk Accept
 
 @router.post("/{benchmark_id}/verify/bulk-accept")
 def bulk_accept_commands(benchmark_id: int, db: Session = Depends(get_db)):
@@ -2177,7 +2165,7 @@ def bulk_accept_commands(benchmark_id: int, db: Session = Depends(get_db)):
     return {"message": f"Accepted {count} commands", "count": count}
 
 
-# ── Override Gate ──
+# Override Gate
 
 @router.post("/{benchmark_id}/verify/override")
 def override_verification_gate(benchmark_id: int, db: Session = Depends(get_db)):
@@ -2192,7 +2180,7 @@ def override_verification_gate(benchmark_id: int, db: Session = Depends(get_db))
     return {"message": "Benchmark marked as ready (verification overridden)", "benchmark_id": benchmark_id}
 
 
-# ── Bulk Protect ──
+# Bulk Protect
 
 @router.post("/{benchmark_id}/commands/bulk-protect")
 def bulk_protect_commands(benchmark_id: int, db: Session = Depends(get_db)):
@@ -2225,7 +2213,7 @@ def bulk_protect_commands(benchmark_id: int, db: Session = Depends(get_db)):
     return {"message": f"Protected {count} commands", "protected_count": count}
 
 
-# ── Phase 3: Validate & Correct (optional) ──
+# Phase 3: Validate & Correct (optional)
 
 @router.post("/{benchmark_id}/validate")
 async def start_validation(
@@ -2605,7 +2593,7 @@ async def bulk_regenerate_flagged_validation(
     }
 
 
-# ── Framework Coverage Dashboard ──
+# Framework Coverage Dashboard
 
 # Known framework families for categorization
 FRAMEWORK_DEFINITIONS = {

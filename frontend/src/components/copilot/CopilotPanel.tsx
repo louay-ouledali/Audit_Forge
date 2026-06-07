@@ -29,7 +29,7 @@ interface CopilotPanelProps {
 
 import BrandLockup from '@/components/common/BrandLockup';
 
-// ── Module-level LRU cache so chat survives tab switches (max 50 entries) ──
+// Module-level LRU cache so chat survives tab switches (max 50 entries)
 const _LRU_MAX = 50;
 const _chatCache = new Map<number, { messages: CopilotMessageData[]; conversationId?: string }>();
 
@@ -180,7 +180,7 @@ export default function CopilotPanel({
     }
   };
 
-  // ── Approval handlers — toast only, no chat system messages ──
+  // Approval handlers — toast only, no chat system messages
   const handleApprove = async (ruleIds: number[]) => {
     try {
       await copilotApprove(benchmarkId, ruleIds, 'approve');

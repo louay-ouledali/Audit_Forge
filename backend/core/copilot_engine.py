@@ -25,7 +25,7 @@ from backend.models.rule_command import RuleCommand
 
 logger = logging.getLogger(__name__)
 
-# ── Dataclasses ──────────────────────────────────────────────
+# Dataclasses
 
 @dataclass
 class PendingRule:
@@ -47,7 +47,7 @@ class Intent:
     raw_message: str = ""
 
 
-# ── Intent patterns (NLP, zero LLM) ─────────────────────────
+# Intent patterns (NLP, zero LLM)
 
 INTENT_PATTERNS: dict[str, list[str]] = {
     "create_benchmark": [
@@ -93,7 +93,7 @@ def route_intent(message: str, context: dict) -> Intent:
     return Intent(name="general_chat", entities={}, raw_message=message)
 
 
-# ── Rule Mining (Agent 1 — pure DB) ─────────────────────────
+# Rule Mining (Agent 1 — pure DB)
 
 def _jaccard_similarity(text_a: str, text_b: str) -> float:
     words_a = set(re.findall(r"\w+", text_a.lower()))
@@ -175,7 +175,7 @@ def mine_existing_rules(
     return deduped
 
 
-# ── Template Matching (Agent 2 — zero LLM) ──────────────────
+# Template Matching (Agent 2 — zero LLM)
 
 def match_templates_for_candidates(
     candidates: list[PendingRule],
@@ -197,7 +197,7 @@ def match_templates_for_candidates(
     return candidates
 
 
-# ── Coverage Gap Analysis (Agent 3 — mostly NLP) ────────────
+# Coverage Gap Analysis (Agent 3 — mostly NLP)
 
 EXPECTED_CATEGORIES: dict[str, list[str]] = {
     "linux": [
@@ -249,7 +249,7 @@ def analyze_coverage_gaps(
     return sorted(expected - covered)
 
 
-# ── Merger ───────────────────────────────────────────────────
+# Merger
 
 def merge_and_rank(
     mined: list[PendingRule],
@@ -274,7 +274,7 @@ def merge_and_rank(
     return ranked, remaining_gaps
 
 
-# ── LLM Rule Generation (last resort, ~20% of cases) ────────
+# LLM Rule Generation (last resort, ~20% of cases)
 
 async def generate_rules_for_gaps(
     gaps: list[str],
@@ -314,7 +314,7 @@ async def generate_rules_for_gaps(
         return []
 
 
-# ── Explain Rule ─────────────────────────────────────────────
+# Explain Rule
 
 async def explain_rule(rule: Rule, db: Session) -> str:
     """Generate a plain-English explanation of a rule."""
@@ -332,7 +332,7 @@ async def explain_rule(rule: Rule, db: Session) -> str:
         return f"Rule **{rule.section_number}**: {rule.title}\n\n{rule.description or 'No description available.'}"
 
 
-# ── Full Pipeline Orchestrator ───────────────────────────────
+# Full Pipeline Orchestrator
 
 async def run_copilot_pipeline(
     benchmark_id: int,

@@ -33,7 +33,7 @@ from backend.schemas.preloaded import (  # noqa: E402
 )
 
 
-# ─── quality scoring ────────────────────────────────────────────────────────
+# quality scoring
 
 QUALITY_WEIGHTS = {
     "commands": 25,
@@ -66,7 +66,7 @@ def compute_quality_score(stats: dict) -> tuple[float, str]:
     return round(score, 1), grade
 
 
-# ─── detailed checks beyond schema ──────────────────────────────────────────
+# detailed checks beyond schema
 
 def run_deep_checks(pack: PreloadedBenchmarkPack) -> list[str]:
     """Return additional quality warnings not covered by Pydantic validators."""
@@ -129,7 +129,7 @@ def run_deep_checks(pack: PreloadedBenchmarkPack) -> list[str]:
     return warnings
 
 
-# ─── output formatting ──────────────────────────────────────────────────────
+# output formatting
 
 def print_human_report(
     path: Path,
@@ -236,7 +236,7 @@ def output_json_report(
     )
 
 
-# ─── CLI ─────────────────────────────────────────────────────────────────────
+# CLI
 
 def main() -> None:
     parser = argparse.ArgumentParser(

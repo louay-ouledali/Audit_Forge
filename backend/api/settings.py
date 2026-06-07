@@ -8,7 +8,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import inspect, text  # UNUSED: 'inspect' — safe to remove
 from sqlalchemy.orm import Session
@@ -119,7 +119,7 @@ def update_settings(payload: SettingsUpdate, db: Session = Depends(get_db)) -> d
     return {"data": data, "message": "Settings updated"}
 
 
-# ── Database Backup & Restore ─────────────────────────────────
+# Database Backup & Restore
 
 
 def _get_db_path() -> Path:
@@ -233,7 +233,7 @@ async def restore_backup(
             except Exception:
                 pass
 
-    # ── Replace the database file ─────────────────────────────
+    # Replace the database file
     # 1) Close ALL connections (session + engine pool)
     db.close()
     engine.dispose()
@@ -300,7 +300,7 @@ async def restore_backup(
     )
 
 
-# ── Auto-backup management ────────────────────────────────────
+# Auto-backup management
 
 
 @router.get("/backups")
@@ -386,39 +386,77 @@ def restore_auto_backup(filename: str, db: Session = Depends(get_db)):
     }
 
 
-# ── Reset Preloaded Benchmarks ─────────────────────────────────
+# Reset Preloaded Benchmarks
 
 
-@router.post("/reset-preloaded")
-def reset_preloaded_benchmarks(db: Session = Depends(get_db)):
-    """Delete all preloaded benchmarks and re-import them from disk packs.
+# In-memory status for the async reset task
+_reset_status: dict = {"running": False, "message": "", "done": False, "error": False}
 
-    Custom, user-imported, and Nessus-reconstructed benchmarks are preserved.
-    """
+
+def _do_reset_preloaded():
+    """Heavy reset work — runs in a background thread."""
+    from backend.database import SessionLocal
     from backend.models.benchmark import Benchmark
     from backend.core.preloaded_loader import sync_preloaded
 
-    preloaded = db.query(Benchmark).filter(Benchmark.source == "preloaded").all()
-    deleted_count = len(preloaded)
+    _reset_status.update(running=True, done=False, error=False, message="Deleting old preloaded benchmarks...")
+    db = SessionLocal()
+    try:
+        preloaded = db.query(Benchmark).filter(Benchmark.source == "preloaded").all()
+        deleted_count = len(preloaded)
 
-    for bm in preloaded:
-        db.delete(bm)
-    db.commit()
+        for bm in preloaded:
+            db.delete(bm)
+        db.commit()
 
-    logger.info("Deleted %d preloaded benchmarks for reset", deleted_count)
+        logger.info("Deleted %d preloaded benchmarks for reset", deleted_count)
 
-    # Re-import all packs from disk
-    result = sync_preloaded(db)
-    loaded = result.get("loaded", 0)
+        _reset_status["message"] = f"Deleted {deleted_count} benchmarks, reloading packs from disk..."
+
+        result = sync_preloaded(db)
+        loaded = result.get("loaded", 0)
+
+        _reset_status.update(
+            running=False,
+            done=True,
+            error=False,
+            message=f"Reset complete: {deleted_count} removed, {loaded} reloaded from disk.",
+        )
+        logger.info("Reset preloaded complete: %d deleted, %d loaded", deleted_count, loaded)
+    except Exception as exc:
+        logger.error("Reset preloaded failed: %s", exc)
+        _reset_status.update(running=False, done=True, error=True, message=f"Reset failed: {exc}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+@router.post("/reset-preloaded")
+def reset_preloaded_benchmarks(background_tasks: BackgroundTasks):
+    """Kick off preloaded benchmark reset in the background.
+
+    Custom, user-imported, and Nessus-reconstructed benchmarks are preserved.
+    Returns immediately — poll GET /settings/reset-preloaded/status for progress.
+    """
+    if _reset_status.get("running"):
+        raise HTTPException(status_code=409, detail="A reset is already in progress")
+
+    background_tasks.add_task(_do_reset_preloaded)
 
     return {
-        "message": f"Reset complete: {deleted_count} preloaded benchmarks removed, {loaded} reloaded from disk.",
-        "deleted": deleted_count,
-        "loaded": loaded,
+        "message": "Benchmark reset started — this may take a minute.",
+        "deleted": 0,
+        "loaded": 0,
     }
 
 
-# ── Single-key setting (MUST be LAST — catches /{key} patterns) ─────
+@router.get("/reset-preloaded/status")
+def reset_preloaded_status():
+    """Poll the progress of a running or recently completed reset."""
+    return _reset_status
+
+
+# Single-key setting (MUST be LAST — catches /{key} patterns)
 
 
 @router.get("/{key}", response_model=SingleSettingResponse)

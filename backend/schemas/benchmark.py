@@ -109,7 +109,7 @@ class ValidationResultsResponse(BaseModel):
     total: int
 
 
-# ── Phase 2: Custom Benchmark + AI Rule Creation ──
+# Phase 2: Custom Benchmark + AI Rule Creation
 
 
 class CustomBenchmarkCreate(BaseModel):
@@ -169,7 +169,7 @@ class BenchmarkExportResponse(BaseModel):
     message: str = "success"
 
 
-# ── Phase 3: Rule Testing, Validation, Migration Readiness ──
+# Phase 3: Rule Testing, Validation, Migration Readiness
 
 
 class RuleTestRequest(BaseModel):
@@ -241,7 +241,7 @@ class ScanComparisonResponse(BaseModel):
     items: list[ScanComparisonItem] = []
 
 
-# ── Version Grouping & Diff ──
+# Version Grouping & Diff
 
 
 class BenchmarkVersionItem(BaseModel):
@@ -307,7 +307,7 @@ class CacheAccelerationStats(BaseModel):
     coverage_percent: float = 0.0
 
 
-# ── Unknown Benchmark Import ──
+# Unknown Benchmark Import
 
 
 class UnknownImportPlatformDetection(BaseModel):

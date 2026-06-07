@@ -180,7 +180,7 @@ _THRESHOLD_RE = re.compile(
     r"|(?:at\s+most|maximum\s+of|no\s+more\s+than|<=)\s+(\d+)"
     r")\b", re.IGNORECASE,
 )
-# ── Registry path extraction ──
+# Registry path extraction
 # Primary: matches HKLM\path:ValueName  (colon separator as in CIS PDF tables)
 # Spaces, braces, hyphens allowed for keys like "Windows NT\Terminal Services"
 # and GUID sub-keys like "{827D319E-...}"
@@ -415,7 +415,7 @@ def _try_registry(rule: dict[str, Any]) -> dict[str, str] | None:
     ps_key_path = key_path.replace("HKLM\\", "HKLM:\\", 1)
     ps_key_path = ps_key_path.replace("HKCU\\", "HKCU:\\", 1)
 
-    # ── Special handling for REG_MULTI_SZ / REG_SZ values ──
+    # Special handling for REG_MULTI_SZ / REG_SZ values
     # Some registry values are strings or multi-string arrays, NOT integers.
     # For these, ==1 is nonsensical; use the correct expression.
     title_lower = (rule.get("title") or "").lower()

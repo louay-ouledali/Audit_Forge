@@ -46,7 +46,7 @@ def run_security_checks(raw_config: str, format_id: str) -> list[SecurityFinding
     return findings
 
 
-# ── Universal checks ──────────────────────────────────────────────
+# Universal checks
 
 
 def _check_weak_snmp(lines: list[str]) -> list[SecurityFinding]:
@@ -197,7 +197,7 @@ def _check_cleartext_passwords(lines: list[str]) -> list[SecurityFinding]:
     return []
 
 
-# ── IOS-specific checks ──────────────────────────────────────────
+# IOS-specific checks
 
 
 def _check_ios_telnet(lines: list[str]) -> list[SecurityFinding]:
@@ -264,7 +264,7 @@ def _check_ios_http_server(lines: list[str]) -> list[SecurityFinding]:
     return []
 
 
-# ── FortiOS-specific checks ──────────────────────────────────────
+# FortiOS-specific checks
 
 
 def _check_forti_admin_http(lines: list[str]) -> list[SecurityFinding]:

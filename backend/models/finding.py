@@ -21,7 +21,7 @@ class Finding(Base):
     severity = Column(String)
     evaluation_explanation = Column(Text)  # Human-readable explanation of the comparison result
 
-    # ── Import provenance (source-agnostic, 2 columns) ──────
+    # Import provenance (source-agnostic, 2 columns)
     import_source = Column(String, nullable=True)      # "nessus", "qualys", "native", null
     import_metadata = Column(Text, nullable=True)       # JSON blob: {plugin_id, source_row, ...}
 
@@ -31,7 +31,7 @@ class Finding(Base):
     auditor_notes = Column(Text)
     auditor_override = Column(String)  # confirmed / false_positive / accepted_risk
 
-    # ── Auditor override fields ──────────────────────────
+    # Auditor override fields
     auditor_status_override = Column(String, nullable=True)    # PASS / FAIL / N/A
     auditor_severity_override = Column(String, nullable=True)  # critical / high / medium / low
     auditor_description = Column(Text, nullable=True)

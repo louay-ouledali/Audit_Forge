@@ -21,7 +21,7 @@ class Mission(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    # ── Mission locking ──────────────────────────────────
+    # Mission locking
     is_locked = Column(Boolean, default=False)
     password_hash = Column(String, nullable=True)
     locked_at = Column(DateTime, nullable=True)

@@ -101,7 +101,7 @@ def parse_description(raw: str) -> dict[str, Any]:
 
     text = raw.strip()
 
-    # ── Extract title + status from first line ──────────────────
+    # Extract title + status from first line
     # Format: "2.2.3 Ensure 'Access this computer ...' is set to ..." : [FAILED]
     # Or:     "1.1.1 Some title" : [PASSED]
     first_line_match = re.match(
@@ -122,7 +122,7 @@ def parse_description(raw: str) -> dict[str, Any]:
             result["title"] = title_match.group(2).strip().strip("'\"")
             text = text[title_match.end():].strip()
 
-    # ── Split into sections using headers ───────────────────────
+    # Split into sections using headers
     sections = _split_into_sections(text)
 
     for key in ["description", "rationale", "impact", "solution", "default_value",

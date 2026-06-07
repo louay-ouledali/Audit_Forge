@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 
-# ── Topology data structures ─────────────────────────────────────
+# Topology data structures
 
 @dataclass
 class InterfaceInfo:
@@ -36,7 +36,7 @@ class TopologyData:
     vpn_peers: list[str] = field(default_factory=list)
 
 
-# ── Parser base ──────────────────────────────────────────────────
+# Parser base
 
 @dataclass
 class ParsedConfigResult:
@@ -72,7 +72,7 @@ class BaseConfigParser(ABC):
         """
         return TopologyData()
 
-    # ── Shared utilities ─────────────────────────────────────────
+    # Shared utilities
 
     @staticmethod
     def _grep_lines(lines: list[str], pattern: str, *, case_insensitive: bool = True) -> list[str]:

@@ -35,7 +35,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     tables = sa.inspect(conn).get_table_names()
 
-    # ── findings.rule_id: SET NULL on rule deletion ──
+    # findings.rule_id: SET NULL on rule deletion
     if "findings" in tables:
         try:
             with op.batch_alter_table("findings", schema=None) as batch_op:
@@ -47,8 +47,8 @@ def upgrade() -> None:
         except Exception:
             pass
 
-    # ── scans.benchmark_id: SET NULL on benchmark deletion ──
-    # ── scans.preset_id:    SET NULL on preset deletion ──
+    # scans.benchmark_id: SET NULL on benchmark deletion
+    # scans.preset_id: SET NULL on preset deletion
     if "scans" in tables:
         try:
             with op.batch_alter_table("scans", schema=None) as batch_op:
@@ -66,7 +66,7 @@ def upgrade() -> None:
         except Exception:
             pass
 
-    # ── scan_presets.benchmark_id: CASCADE on benchmark deletion ──
+    # scan_presets.benchmark_id: CASCADE on benchmark deletion
     if "scan_presets" in tables:
         try:
             with op.batch_alter_table("scan_presets", schema=None) as batch_op:
@@ -77,7 +77,7 @@ def upgrade() -> None:
         except Exception:
             pass
 
-    # ── mission_analyses.compared_mission_id: SET NULL on mission deletion ──
+    # mission_analyses.compared_mission_id: SET NULL on mission deletion
     if "mission_analyses" in tables:
         try:
             with op.batch_alter_table("mission_analyses", schema=None) as batch_op:

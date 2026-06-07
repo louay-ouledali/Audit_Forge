@@ -24,9 +24,7 @@ logger = logging.getLogger("auditforge.schemas.preloaded")
 CURRENT_SCHEMA_VERSION = "2.0"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Sub-models
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 class PreloadedBenchmarkMeta(BaseModel):
@@ -186,7 +184,7 @@ class PreloadedRule(BaseModel):
     and produce intelligent reports — without any LLM calls at runtime.
     """
 
-    # ── Identity (from Phase 1) ──────────────────────────────────────────
+    # Identity (from Phase 1)
     section_number: str = Field(..., description="CIS section number, e.g. '1.1.1', '18.10.3.2'")
     title: str = Field(..., description="Rule title from the CIS benchmark")
     description: str | None = Field(None, description="Full rule description from the CIS PDF")
@@ -209,13 +207,13 @@ class PreloadedRule(BaseModel):
     enabled: bool = Field(default=True, description="Whether this rule is active by default")
     tags: list[RuleTag] = Field(default_factory=list, description="Functional category tags")
 
-    # ── Multi-framework fields (schema v2.0) ─────────────────────────────
+    # Multi-framework fields (schema v2.0)
     framework_ref: str | None = Field(
         None,
         description="Original reference ID in the source framework (e.g. STIG 'V-253283', NIST 'AC-2(1)', ISO 'A.5.1')"
     )
 
-    # ── Audit command (from Phase 2, curated) ────────────────────────────
+    # Audit command (from Phase 2, curated)
     audit_command: str | None = Field(
         None, description="The audit command (PowerShell / Bash / SQL) to check this rule"
     )
@@ -245,7 +243,7 @@ class PreloadedRule(BaseModel):
         None, description="Human-readable remediation instructions"
     )
 
-    # ── Baked intelligence ────────────────────────────────────────────────
+    # Baked intelligence
     empty_output_interpretation: str | None = Field(
         None,
         description=(
@@ -265,7 +263,7 @@ class PreloadedRule(BaseModel):
         description="Pre-defined false positive conditions (expert-authored, deterministic)",
     )
 
-    # ── Remediation metadata ─────────────────────────────────────────────
+    # Remediation metadata
     remediation_gpo_path: str | None = Field(
         None,
         description="Group Policy path for Windows rules, e.g. 'Computer Configuration\\...\\Enforce password history'",
@@ -280,7 +278,7 @@ class PreloadedRule(BaseModel):
         default=False, description="Whether the remediation requires a system reboot to take effect"
     )
 
-    # ── Semantic metadata ────────────────────────────────────────────────
+    # Semantic metadata
     narrative_group: str | None = Field(
         None,
         description="Key into report_profile.narrative_groups — determines report grouping",
@@ -311,9 +309,7 @@ class PreloadedRule(BaseModel):
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Top-level pack schema
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 class PreloadedBenchmarkPack(BaseModel):
@@ -339,7 +335,7 @@ class PreloadedBenchmarkPack(BaseModel):
         ..., min_length=1, description="Array of enriched rules"
     )
 
-    # ── Cross-field validators ───────────────────────────────────────────
+    # Cross-field validators
 
     @model_validator(mode="after")
     def validate_rule_count_matches(self) -> PreloadedBenchmarkPack:
@@ -399,9 +395,7 @@ class PreloadedBenchmarkPack(BaseModel):
         return self
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Pack validation & loading utilities
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 class PackValidationResult(BaseModel):
@@ -430,7 +424,7 @@ def validate_pack(path: str | Path) -> tuple[PreloadedBenchmarkPack | None, Pack
     errors: list[str] = []
     warnings: list[str] = []
 
-    # ── File-level checks ────────────────────────────────────────────────
+    # File-level checks
     if not path.exists():
         return None, PackValidationResult(valid=False, errors=[f"File not found: {path}"])
     if not path.suffix == ".json" and not path.name.endswith(".auditforge.json"):
@@ -446,13 +440,13 @@ def validate_pack(path: str | Path) -> tuple[PreloadedBenchmarkPack | None, Pack
     except json.JSONDecodeError as exc:
         return None, PackValidationResult(valid=False, errors=[f"Invalid JSON: {exc}"])
 
-    # ── Schema validation ────────────────────────────────────────────────
+    # Schema validation
     try:
         pack = PreloadedBenchmarkPack.model_validate(data)
     except Exception as exc:
         return None, PackValidationResult(valid=False, errors=[str(exc)])
 
-    # ── Completeness checks (warnings, not errors) ───────────────────────
+    # Completeness checks (warnings, not errors)
     total = len(pack.rules)
     with_commands = sum(1 for r in pack.rules if r.audit_command)
     with_expression = sum(1 for r in pack.rules if r.expected_output_expression)
@@ -478,7 +472,7 @@ def validate_pack(path: str | Path) -> tuple[PreloadedBenchmarkPack | None, Pack
     if with_mitre < total * 0.7:
         warnings.append(f"Only {pct(with_mitre)}% of rules have MITRE ATT&CK mapping (target: >=70%)")
 
-    # ── Related/group_with symmetry check ────────────────────────────────
+    # Related/group_with symmetry check
     section_set = {r.section_number for r in pack.rules}
     for rule in pack.rules:
         for ref in rule.related_rules:

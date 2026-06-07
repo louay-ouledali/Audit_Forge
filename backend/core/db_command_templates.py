@@ -14,9 +14,7 @@ import re
 from typing import Any
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Helpers
-# ═══════════════════════════════════════════════════════════════════
 
 def _result(
     audit_command: str,
@@ -61,9 +59,7 @@ def _title_lower(rule: dict[str, Any]) -> str:
     return _title(rule).lower()
 
 
-# ═══════════════════════════════════════════════════════════════════
 # PostgreSQL Templates
-# ═══════════════════════════════════════════════════════════════════
 
 # Map CIS titles / keywords → PostgreSQL setting name
 _PG_SHOW_MAP: dict[str, str] = {
@@ -363,9 +359,7 @@ _PG_TEMPLATES = [
 ]
 
 
-# ═══════════════════════════════════════════════════════════════════
 # MSSQL Templates
-# ═══════════════════════════════════════════════════════════════════
 
 # Map of common sys.configurations option names to their expected values
 _MSSQL_SYS_CONFIG_RULES: dict[str, tuple[str, str]] = {
@@ -610,9 +604,7 @@ _MSSQL_TEMPLATES = [
 ]
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Oracle Templates
-# ═══════════════════════════════════════════════════════════════════
 
 # Map Oracle parameter names from common CIS rule keywords
 _ORACLE_PARAM_MAP: dict[str, tuple[str, str]] = {
@@ -861,9 +853,7 @@ _ORACLE_TEMPLATES = [
 ]
 
 
-# ═══════════════════════════════════════════════════════════════════
 # MySQL Templates
-# ═══════════════════════════════════════════════════════════════════
 
 _MYSQL_SHOW_MAP: dict[str, tuple[str, str]] = {
     "have_ssl":              ("have_ssl", "==YES"),
@@ -1085,9 +1075,7 @@ _MYSQL_TEMPLATES = [
 ]
 
 
-# ═══════════════════════════════════════════════════════════════════
 # MongoDB Templates
-# ═══════════════════════════════════════════════════════════════════
 
 def _try_mongo_config(rule: dict[str, Any]) -> dict[str, str] | None:
     """Match MongoDB configuration file rules."""
@@ -1160,9 +1148,7 @@ _MONGODB_TEMPLATES = [
 ]
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Network Device Templates (expansion)
-# ═══════════════════════════════════════════════════════════════════
 
 def _try_fortigate_command(rule: dict[str, Any]) -> dict[str, str] | None:
     """Match FortiGate CLI rules."""
@@ -1260,7 +1246,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
     text = _text(rule).lower()
     title = _title_lower(rule)
 
-    # ── Authentication / Login ──
+    # Authentication / Login
     if any(k in title for k in ("password", "login", "authentication", "root")):
         if "class" in title or "user" in title or "account" in title or "root" in title:
             return _result(
@@ -1284,7 +1270,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
                 command_transport="cli",
             )
 
-    # ── NTP ──
+    # NTP
     if "ntp" in title:
         return _result(
             audit_command="show configuration system ntp | display set",
@@ -1293,7 +1279,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── Syslog / Logging ──
+    # Syslog / Logging
     if any(k in title for k in ("syslog", "logging", "log host", "log server")):
         return _result(
             audit_command="show configuration system syslog | display set",
@@ -1302,7 +1288,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── SSH ──
+    # SSH
     if "ssh" in title:
         if any(k in title for k in ("version", "protocol")):
             return _result(
@@ -1318,7 +1304,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── SNMP ──
+    # SNMP
     if "snmp" in title:
         if "community" in title:
             return _result(
@@ -1334,7 +1320,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── IKE / IPsec / VPN ──
+    # IKE / IPsec / VPN
     if any(k in title for k in ("ike", "ipsec", "vpn")):
         if "proposal" in title or "policy" in title:
             return _result(
@@ -1357,7 +1343,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── Firewall Filters ──
+    # Firewall Filters
     if any(k in title for k in ("firewall", "filter", "acl", "access control", "access list")):
         return _result(
             audit_command="show configuration firewall | display set",
@@ -1366,7 +1352,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── Routing Protocol Authentication (OSPF, BGP, IS-IS) ──
+    # Routing Protocol Authentication (OSPF, BGP, IS-IS)
     if "ospf" in title:
         if "auth" in title or "md5" in title:
             return _result(
@@ -1397,7 +1383,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── Services ──
+    # Services
     if any(k in title for k in ("telnet", "ftp", "finger", "http")):
         if "disable" in title or "ensure" in title:
             return _result(
@@ -1407,7 +1393,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
                 command_transport="cli",
             )
 
-    # ── Console / Session Timeout ──
+    # Console / Session Timeout
     if any(k in title for k in ("idle timeout", "session timeout", "console timeout", "cli timeout")):
         return _result(
             audit_command="show configuration system login | display set | match idle-timeout",
@@ -1416,7 +1402,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── Banner / MOTD ──
+    # Banner / MOTD
     if "banner" in title or "motd" in title:
         return _result(
             audit_command="show configuration system login message | display set",
@@ -1425,7 +1411,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── DNS ──
+    # DNS
     if "dns" in title and ("server" in title or "name" in title):
         return _result(
             audit_command="show configuration system name-server | display set",
@@ -1434,7 +1420,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── Version / Software ──
+    # Version / Software
     if "version" in title or "firmware" in title or "software" in title:
         if "latest" in title or "update" in title or "patch" in title:
             return _result(
@@ -1444,7 +1430,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
                 command_transport="cli",
             )
 
-    # ── Zones / Security Policies ──
+    # Zones / Security Policies
     if "zone" in title or "security polic" in title:
         return _result(
             audit_command="show configuration security policies | display set",
@@ -1453,7 +1439,7 @@ def _try_juniper_command(rule: dict[str, Any]) -> dict[str, str] | None:
             command_transport="cli",
         )
 
-    # ── Broad text-body matching for common Juniper audit patterns ──
+    # Broad text-body matching for common Juniper audit patterns
     if "show configuration" in text and "display set" in text:
         # Rule text already describes the exact Juniper command; extract it
         import re
@@ -1476,9 +1462,7 @@ _NETWORK_EXT_TEMPLATES = [
 ]
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Public API
-# ═══════════════════════════════════════════════════════════════════
 
 _DB_TEMPLATES_BY_PLATFORM: dict[str, list] = {
     # PostgreSQL

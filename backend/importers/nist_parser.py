@@ -47,9 +47,7 @@ _PRIORITY_MAP = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Format detection
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def detect_nist_json(content: str) -> bool:
     """Return True if content looks like a NIST OSCAL JSON catalog."""
@@ -107,9 +105,7 @@ def _has_nist_control_ids(text: str) -> bool:
     return bool(families & _NIST_FAMILY_IDS)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  OSCAL JSON parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def parse_nist_json(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     """Parse a NIST OSCAL JSON catalog file."""
@@ -204,9 +200,7 @@ def _parse_oscal_control(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  CSV parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def parse_nist_csv(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     """Parse a NIST 800-53 CSV export."""
@@ -260,9 +254,7 @@ def parse_nist_csv(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     return findings, platform_info
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  XML parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def parse_nist_xml(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     """Parse a NIST 800-53 XML file."""
@@ -325,9 +317,7 @@ def parse_nist_xml(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     return findings, platform_info
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Rule extraction
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_rules_from_nist(findings: list[ParsedFinding]) -> list[ExtractedRule]:
     """Convert NIST ParsedFindings into ExtractedRule objects."""
@@ -347,9 +337,7 @@ def extract_rules_from_nist(findings: list[ParsedFinding]) -> list[ExtractedRule
     return rules
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _build_column_map(fieldnames: list[str]) -> dict[str, str]:
     """Build a normalized column name → actual column name mapping."""

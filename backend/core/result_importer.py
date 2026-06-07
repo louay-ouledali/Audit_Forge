@@ -72,7 +72,7 @@ def parse_json_results(raw: str, scan_id: int, benchmark_id: int, db: Session) -
 
         cmd = db.query(RuleCommand).filter(RuleCommand.rule_id == rule.id).first()
 
-        # ── Re-classify using error patterns (mirrors PS template logic) ──
+        # Re-classify using error patterns (mirrors PS template logic)
         # Even when the PS script already set a status, double-check the
         # actual_output for execution-error patterns.  The PS template's
         # Test-ExecutionError already catches most, but if any slip through

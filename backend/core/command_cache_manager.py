@@ -23,9 +23,7 @@ from backend.models.rule_command import RuleCommand
 logger = logging.getLogger("auditforge.core.command_cache_manager")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Title similarity
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _jaccard_similarity(a: str, b: str) -> float:
     """Word-level Jaccard similarity between two normalised titles."""
@@ -38,9 +36,7 @@ def _jaccard_similarity(a: str, b: str) -> float:
     return len(intersection) / len(union)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Populate cache from a completed benchmark
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def populate_cache_from_benchmark(db: Session, benchmark_id: int) -> dict[str, int]:
     """Populate the command cache from all rules with commands in a benchmark.
@@ -121,9 +117,7 @@ def populate_cache_from_benchmark(db: Session, benchmark_id: int) -> dict[str, i
     return {"inserted": inserted, "skipped": skipped, "total": len(rules)}
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Lookup commands for a benchmark entering Phase 2
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def lookup_commands_for_benchmark(
     db: Session,
@@ -188,7 +182,7 @@ def lookup_commands_for_benchmark(
 
         norm_title = normalize_title(rule.title)
 
-        # ── Strategy 1: Exact section_number match ──
+        # Strategy 1: Exact section_number match
         if rule.section_number in by_section:
             for entry in by_section[rule.section_number]:
                 title_sim = _jaccard_similarity(norm_title, entry.rule_title_normalized)
@@ -216,7 +210,7 @@ def lookup_commands_for_benchmark(
                     best_confidence = conf
                     best_match = _entry_to_dict(entry, rule, conf, "cross_version" if conf >= 0.9 else "cross_framework")
 
-        # ── Strategy 2: Title-only match (no section_number) ──
+        # Strategy 2: Title-only match (no section_number)
         if best_confidence < 0.7:
             for entry in by_title:
                 title_sim = _jaccard_similarity(norm_title, entry.rule_title_normalized)
@@ -263,9 +257,7 @@ def _entry_to_dict(entry: CommandCache, rule: Rule, confidence: float, match_typ
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Strict platform lookup (for unknown benchmarks — Feature 3)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def strict_platform_lookup(
     db: Session,
@@ -350,9 +342,7 @@ def strict_platform_lookup(
     return results
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Apply cached commands to a benchmark
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def apply_cached_commands(
     db: Session,
@@ -443,9 +433,7 @@ def apply_cached_commands(
     return {"auto_imported": auto_imported, "flagged": flagged, "skipped": skipped}
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Cache statistics
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def get_cache_stats(db: Session, platform: str | None = None) -> dict[str, Any]:
     """Return cache statistics, optionally filtered by platform."""

@@ -1,23 +1,48 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
 build/
+*.egg
+
+# Environment
 .env
 .env.*
 !.env.example
+
+# Database
 data/*.db
+data/*.db-wal
+data/*.db-shm
 data/*.bak
 data/backups/
+
+# Node
 node_modules/
 frontend/dist/
 .vite/
+
+# Logs
 *.log
+
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Benchmarks (user uploads)
 benchmarks/*.pdf
 benchmarks/*.json
+
+# Testing
 .pytest_cache/
 tmp/
-scripts/test_output/
 
-frontend/src/pages/_originals/
+# Claude
+.claude/

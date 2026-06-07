@@ -132,7 +132,7 @@ def evaluate(expression: str, actual_output: str) -> ComparisonResult:
     expr = expression.strip()
     actual = normalize_unicode(actual_output).strip()
 
-    # ── Compound expression support (&&) ─────────────────────────────────
+    # Compound expression support (&&)
     if "&&" in expr:
         sub_exprs = [s.strip() for s in expr.split("&&") if s.strip()]
         if len(sub_exprs) > 1:

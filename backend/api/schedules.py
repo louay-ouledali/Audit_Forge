@@ -25,7 +25,7 @@ def _utc_iso(dt: datetime | None) -> str | None:
     return utc_iso(dt)
 
 
-# ── Schemas ──────────────────────────────────────────────────────────
+# Schemas
 class ScheduleCreate(BaseModel):
     name: str
     mission_id: int
@@ -129,7 +129,7 @@ def _run_to_dict(r: SentinelRun) -> dict:
     }
 
 
-# ── Endpoints ────────────────────────────────────────────────────────
+# Endpoints
 @router.get("")
 def list_schedules(
     mission_id: int | None = None,
@@ -143,7 +143,7 @@ def list_schedules(
     return {"data": [_schedule_to_dict(s) for s in schedules]}
 
 
-# ── Report download (MUST be before /{schedule_id} to avoid route conflict) ──
+# Report download (MUST be before /{schedule_id} to avoid route conflict)
 
 @router.get("/reports/{filename}")
 async def download_sentinel_report(filename: str, _=Depends(get_current_user)):

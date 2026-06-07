@@ -680,9 +680,7 @@ If unsure, use "flagged" status with a clear explanation in notes.
 """
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Phase 4: Unknown Benchmark Reverse Engineering
-# ═══════════════════════════════════════════════════════════════════════════════
 
 UNKNOWN_PLATFORM_SYSTEM = """You are a cybersecurity expert analyzing a document to identify which platform and operating system it targets.
 Return a single JSON object with EXACTLY these keys:

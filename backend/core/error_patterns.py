@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 
-# ── Execution-error patterns (→ ERROR) ─────────────────────────
+# Execution-error patterns (→ ERROR)
 # These indicate the command could not execute at all.
 EXECUTION_ERROR_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"is not recognized as the name of a cmdlet", re.IGNORECASE),
@@ -38,7 +38,7 @@ EXECUTION_ERROR_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"CategoryInfo\s*:", re.IGNORECASE),
 ]
 
-# ── Not-configured patterns (→ FAIL with empty-string eval) ────
+# Not-configured patterns (→ FAIL with empty-string eval)
 # A missing registry key, property, or GPO path.
 NOT_CONFIGURED_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"Cannot find path", re.IGNORECASE),
@@ -50,14 +50,14 @@ NOT_CONFIGURED_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"No such file or directory", re.IGNORECASE),
 ]
 
-# ── Service-not-found patterns ─────────────────────────────────
+# Service-not-found patterns
 SERVICE_NOT_FOUND_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"Cannot find any service", re.IGNORECASE),
     re.compile(r"No service with service name", re.IGNORECASE),
     re.compile(r"service .+ was not found", re.IGNORECASE),
 ]
 
-# ── Module-not-found patterns (Linux kernel modules) ──────────
+# Module-not-found patterns (Linux kernel modules)
 # "FATAL: Module X not found" means the module binary doesn't even
 # exist on disk — this is *more* secure than just blacklisting it.
 MODULE_NOT_FOUND_PATTERNS: list[re.Pattern[str]] = [

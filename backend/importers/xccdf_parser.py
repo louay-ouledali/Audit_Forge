@@ -52,9 +52,7 @@ _RESULT_MAP = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Format detection
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def detect_xccdf(content: str) -> bool:
     """Return True if content is a non-STIG XCCDF file.
@@ -84,9 +82,7 @@ def detect_xccdf(content: str) -> bool:
     return not is_stig
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  XCCDF parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def parse_xccdf(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     """Parse a generic XCCDF benchmark XML file.
@@ -249,9 +245,7 @@ def parse_xccdf(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     return findings, platform_info
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Rule extraction
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_rules_from_xccdf(findings: list[ParsedFinding]) -> list[ExtractedRule]:
     """Convert XCCDF ParsedFindings into ExtractedRule objects."""
@@ -272,9 +266,7 @@ def extract_rules_from_xccdf(findings: list[ParsedFinding]) -> list[ExtractedRul
     return rules
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _clean_html(text: str) -> str:
     """Remove basic HTML tags from XCCDF description content."""

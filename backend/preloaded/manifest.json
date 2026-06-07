@@ -1,0 +1,4 @@
+{
+  "description": "AuditForge pre-loaded benchmark registry. No packs are bundled in the public release — CIS/STIG benchmark content is licensed (Center for Internet Security / DISA) and not redistributable. Import your own packs to populate this.",
+  "packs": []
+}

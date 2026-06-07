@@ -305,11 +305,11 @@ def _evaluate_result(
     output_text = stdout_text if stdout_text.strip() else stderr_text
     output_stripped = output_text.strip() if output_text else ""
 
-    # ── Tier 0: Total failure — non-zero exit and no output at all ──
+    # Tier 0: Total failure — non-zero exit and no output at all
     if result.exit_code != 0 and not combined_output:
         return "ERROR", f"Command failed with exit code {result.exit_code}"
 
-    # ── Tier 1: Execution error (bad command, access denied, etc.) → ERROR ──
+    # Tier 1: Execution error (bad command, access denied, etc.) → ERROR
     category = classify_output(combined_output)
     if category == "execution_error":
         # Only evaluate against stdout if stdout itself is clean (no error markers).
@@ -322,7 +322,7 @@ def _evaluate_result(
             return "FAIL", f"Evaluated from clean stdout despite stderr errors: {comp_result.explanation}"
         return "ERROR", "Command execution error detected in output"
 
-    # ── Tier 2: Not configured (missing registry key / GPO path) → FAIL ──
+    # Tier 2: Not configured (missing registry key / GPO path) → FAIL
     # Evaluate with empty string so the comparison engine doesn't extract
     # numbers from the error message text.
     if category == "not_configured":
@@ -335,7 +335,7 @@ def _evaluate_result(
             return "FAIL", "Not Configured (registry key/GPO path missing)"
         return "FAIL", "Not Configured (registry key/GPO path missing)"
 
-    # ── Tier 2b: Service not found → treat as Disabled ──
+    # Tier 2b: Service not found → treat as Disabled
     if category == "service_not_found":
         if expected_regex:
             comp_result = evaluate_expression(expected_regex, "Disabled")
@@ -344,13 +344,13 @@ def _evaluate_result(
             return "FAIL", "Service not installed"
         return "FAIL", "Service not installed"
 
-    # ── Tier 2c: Module not found → module can't be loaded = secure ──
+    # Tier 2c: Module not found → module can't be loaded = secure
     # A kernel module that doesn't exist on disk is *more* secure than one
     # that is merely blacklisted via /bin/true.
     if category == "module_not_found":
         return "PASS", "Kernel module not found on system (equivalent to disabled)"
 
-    # ── Tier 3: Normal evaluation via comparison engine ──
+    # Tier 3: Normal evaluation via comparison engine
     # No expression to check — just confirm the command didn't error
     if not expected_regex:
         if result.exit_code != 0 and not (stdout_text.strip() if stdout_text else ""):

@@ -17,7 +17,7 @@ down_revision = "d5a1b2c3e4f5"
 branch_labels = None
 depends_on = None
 
-# ── Unicode replacement map ──
+# Unicode replacement map
 _REPLACEMENTS: list[tuple[str, str]] = [
     ("\u201C", '"'),   # left double quote
     ("\u201D", '"'),   # right double quote

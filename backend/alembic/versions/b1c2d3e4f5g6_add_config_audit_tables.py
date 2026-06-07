@@ -17,7 +17,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     tables = sa.inspect(conn).get_table_names()
 
-    # ── config_snapshots table ────────────────────────────────
+    # config_snapshots table
     if "config_snapshots" not in tables:
         op.create_table(
             "config_snapshots",
@@ -36,7 +36,7 @@ def upgrade() -> None:
         )
         op.create_index("ix_config_snapshots_target_id", "config_snapshots", ["target_id"])
 
-    # ── mission_topology table ────────────────────────────────
+    # mission_topology table
     if "mission_topology" not in tables:
         op.create_table(
             "mission_topology",
@@ -48,7 +48,7 @@ def upgrade() -> None:
             sa.Column("last_rebuilt_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
         )
 
-    # ── Column additions (with idempotency guards) ────────────
+    # Column additions (with idempotency guards)
     def _has_column(table: str, column: str) -> bool:
         return column in {c["name"] for c in sa.inspect(conn).get_columns(table)}
 

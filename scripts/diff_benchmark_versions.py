@@ -29,9 +29,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from backend.schemas.preloaded import PreloadedBenchmarkPack, validate_pack  # noqa: E402
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Diff engine
-# ═══════════════════════════════════════════════════════════════════════════════
 
 # Fields that constitute a "breaking change" (affect scan/evaluation behaviour)
 BREAKING_FIELDS = {
@@ -176,9 +174,7 @@ def diff_packs(pack_a: dict, pack_b: dict) -> dict:
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Output formatting
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def print_human_diff(report: dict, only_breaking: bool = False) -> None:
     """Pretty-print the diff report to stdout."""
@@ -250,9 +246,7 @@ def _truncate(s: str, max_len: int) -> str:
     return s if len(s) <= max_len else s[:max_len] + "..."
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  CLI
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
     parser = argparse.ArgumentParser(

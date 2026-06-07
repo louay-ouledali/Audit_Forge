@@ -40,7 +40,7 @@ MAX_PDF_PAGES = 5000
 ENRICHMENT_BATCH_SIZE = 3
 LLM_CALL_COOLDOWN = 2.0
 
-# ────────────────────────── PDF helpers ──────────────────────────
+# PDF helpers
 
 
 def compute_pdf_hash(pdf_path: Path) -> str:
@@ -94,7 +94,7 @@ def extract_first_pages_text(pages: list[dict[str, Any]], n: int = 5) -> str:
     return "\n\n".join(p["text"] for p in pages[:n])
 
 
-# ────────────────────────── Page classification ──────────────────────────
+# Page classification
 
 # Patterns that indicate a page is a cover / TOC / front-matter page
 _TOC_INDICATORS = re.compile(
@@ -175,7 +175,7 @@ def filter_content_pages(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return content
 
 
-# ────────────────── PDF text cleaning ──────────────────
+# PDF text cleaning
 
 # Common PDF extraction artifacts to remove before rule segmentation
 _PAGE_NUMBER_LINE = re.compile(
@@ -209,7 +209,7 @@ def _clean_pdf_text(text: str) -> str:
     return text
 
 
-# ────────────────── Regex-based rule segmentation ──────────────────
+# Regex-based rule segmentation
 
 # CIS rule heading:  "1.1.1 Ensure …" or "18.9.4.2 (L1) Ensure …" or "5.1 (L2) Ensure …"
 # Must have at least 2 numeric parts (X.Y) — chapter headers with only 2 parts
@@ -456,17 +456,17 @@ def segment_rules_from_text(all_text: str) -> list[dict[str, str]]:
         end = headings[idx + 1].start() if idx + 1 < len(headings) else len(all_text)
         body = all_text[start:end].strip()
 
-        # ── Fix truncated titles ──
+        # Fix truncated titles
         # CIS PDFs often wrap long titles across multiple lines.  The regex
         # captures only the first line.  We extend the title by consuming
         # continuation lines from the top of the body — lines that are NOT
         # a field marker, NOT another section heading, and NOT empty.
         title, body = _extend_title_from_body(title, body)
 
-        # ── Normalise title (strip 'Ensure' / 'Configure' / 'Verify') ──
+        # Normalise title (strip 'Ensure' / 'Configure' / 'Verify')
         title = _normalize_title(title)
 
-        # ── Filter out obvious TOC entries and noise ──
+        # Filter out obvious TOC entries and noise
         # Skip empty or very short bodies (TOC line items)
         if len(body) < 30:
             continue
@@ -655,7 +655,7 @@ def _estimate_severity(title: str, description: str, audit: str) -> str:
     return "medium"
 
 
-# ────────────────── Main Phase 1 pipeline ──────────────────
+# Main Phase 1 pipeline
 
 
 def _deduplicate_rules(rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -698,7 +698,7 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
         benchmark.phase1_status = "processing"
         db.commit()
 
-        # ── Step 1: Extract text ──
+        # Step 1: Extract text
         logger.info("[Phase1 B%d] Extracting PDF text …", benchmark_id)
         try:
             pages = extract_text_from_pdf(pdf_path)
@@ -717,7 +717,7 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
 
         logger.info("[Phase1 B%d] %d pages, %d chars total", benchmark_id, len(pages), total_chars)
 
-        # ── Step 2: Metadata via LLM (only LLM call in the pipeline) ──
+        # Step 2: Metadata via LLM (only LLM call in the pipeline)
         logger.info("[Phase1 B%d] Detecting metadata via LLM …", benchmark_id)
         first_text = extract_first_pages_text(pages, n=5)
         try:
@@ -740,7 +740,7 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
             benchmark.platform, benchmark.platform_family,
         )
 
-        # ── Step 3: Segment individual rules via regex ──
+        # Step 3: Segment individual rules via regex
         all_text = "\n\n".join(p["text"] for p in pages)
         all_text = _clean_pdf_text(all_text)
         raw_rules = segment_rules_from_text(all_text)
@@ -757,7 +757,7 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
             logger.warning("[Phase1 B%d] Zero rule headings found", benchmark_id)
             return
 
-        # ── Step 5: Parse each rule's fields (pure regex, no LLM) ──
+        # Step 5: Parse each rule's fields (pure regex, no LLM)
         parsed_rules: list[dict[str, Any]] = []
         for raw in raw_rules:
             try:
@@ -779,7 +779,7 @@ async def run_phase1(benchmark_id: int, pdf_path: Path) -> None:
             db.commit()
             return
 
-        # ── Step 6: Save to database ──
+        # Step 6: Save to database
         for rule_data in parsed_rules:
             profile_app = rule_data.get("profile_applicability", [])
             if isinstance(profile_app, list):

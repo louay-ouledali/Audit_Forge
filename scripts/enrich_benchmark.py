@@ -39,9 +39,7 @@ from backend.schemas.preloaded import (  # noqa: E402
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _load_pack(path: Path) -> tuple[dict, PreloadedBenchmarkPack]:
     """Load raw dict + validated pack from a JSON file."""
@@ -96,9 +94,7 @@ def _print_rule_summary(rule: dict, i: int, total: int) -> None:
     print(f"{'─' * 72}")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Filter modes
-# ═══════════════════════════════════════════════════════════════════════════════
 
 FILTERS = {
     "all":          lambda r: True,
@@ -112,15 +108,13 @@ FILTERS = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Interactive editing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def edit_rule_interactive(rule: dict, narrative_keys: list[str]) -> dict:
     """Interactively edit enrichment fields on a single rule. Returns modified rule."""
     changes: list[str] = []
 
-    # ── Narrative group ──
+    # Narrative group
     current_ng = rule.get("narrative_group") or ""
     print(f"\n  Available narrative groups: {', '.join(narrative_keys)}")
     new_ng = _prompt("Narrative group", current_ng)
@@ -128,7 +122,7 @@ def edit_rule_interactive(rule: dict, narrative_keys: list[str]) -> dict:
         rule["narrative_group"] = new_ng if new_ng else None
         changes.append(f"narrative_group: '{current_ng}' → '{new_ng}'")
 
-    # ── Risk weight ──
+    # Risk weight
     current_rw = str(rule.get("risk_weight", 5))
     new_rw = _prompt("Risk weight (1-10)", current_rw)
     try:
@@ -139,7 +133,7 @@ def edit_rule_interactive(rule: dict, narrative_keys: list[str]) -> dict:
     except ValueError:
         pass
 
-    # ── MITRE ATT&CK ──
+    # MITRE ATT&CK
     current_mitre = rule.get("mitre_attack") or []
     print(f"  Current MITRE: {current_mitre}")
     mitre_input = _prompt("MITRE ATT&CK (comma-separated, e.g. T1110.001,T1078)", ",".join(current_mitre))
@@ -148,33 +142,33 @@ def edit_rule_interactive(rule: dict, narrative_keys: list[str]) -> dict:
         rule["mitre_attack"] = new_mitre
         changes.append(f"mitre_attack: {current_mitre} → {new_mitre}")
 
-    # ── Empty output interpretation ──
+    # Empty output interpretation
     current_interp = rule.get("empty_output_interpretation") or ""
     new_interp = _prompt("Empty output interpretation", current_interp)
     if new_interp != current_interp:
         rule["empty_output_interpretation"] = new_interp if new_interp else None
         changes.append("empty_output_interpretation updated")
 
-    # ── Remediation risk ──
+    # Remediation risk
     current_risk = rule.get("remediation_risk") or ""
     new_risk = _prompt("Remediation risk (low/medium/high)", current_risk)
     if new_risk in ("low", "medium", "high") and new_risk != current_risk:
         rule["remediation_risk"] = new_risk
         changes.append(f"remediation_risk: '{current_risk}' → '{new_risk}'")
 
-    # ── Safe to automate ──
+    # Safe to automate
     current_auto = rule.get("safe_to_automate", False)
     if _prompt_yes_no("Safe to automate?", current_auto) != current_auto:
         rule["safe_to_automate"] = not current_auto
         changes.append(f"safe_to_automate: {current_auto} → {not current_auto}")
 
-    # ── Requires restart ──
+    # Requires restart
     current_restart = rule.get("requires_restart", False)
     if _prompt_yes_no("Requires restart?", current_restart) != current_restart:
         rule["requires_restart"] = not current_restart
         changes.append(f"requires_restart: {current_restart} → {not current_restart}")
 
-    # ── FP conditions ──
+    # FP conditions
     if _prompt_yes_no("Add a false-positive condition?", False):
         fp: dict = {
             "id": _prompt("FP condition ID", "fp_" + rule.get("section_number", "").replace(".", "_")),
@@ -189,7 +183,7 @@ def edit_rule_interactive(rule: dict, narrative_keys: list[str]) -> dict:
         rule["fp_conditions"] = existing_fps
         changes.append(f"Added FP condition: {fp['id']}")
 
-    # ── Security themes ──
+    # Security themes
     current_themes = rule.get("security_themes") or []
     themes_input = _prompt("Security themes (comma-separated)", ",".join(current_themes))
     new_themes = [t.strip() for t in themes_input.split(",") if t.strip()] if themes_input else []
@@ -205,9 +199,7 @@ def edit_rule_interactive(rule: dict, narrative_keys: list[str]) -> dict:
     return rule
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Batch operations
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def auto_assign_narrative_groups(data: dict) -> int:
     """Heuristic assignment of narrative groups based on section prefix and title keywords.
@@ -318,9 +310,7 @@ def batch_mitre_from_csv(data: dict, csv_path: Path) -> int:
     return count
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Delta report
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def compute_delta(original: dict, modified: dict) -> dict:
     """Compare original and modified pack dicts, return a structured delta."""
@@ -371,9 +361,7 @@ def compute_delta(original: dict, modified: dict) -> dict:
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Main
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -410,7 +398,7 @@ def main() -> None:
     raw_data = json.loads(pack_path.read_text(encoding="utf-8"))
     original_data = deepcopy(raw_data)
 
-    # ── Batch operations (non-interactive) ───────────────────────────────
+    # Batch operations (non-interactive)
     if args.auto_assign_groups:
         count = auto_assign_narrative_groups(raw_data)
         print(f"[AUTO] Assigned narrative groups to {count} rules.")
@@ -441,7 +429,7 @@ def main() -> None:
         print(f"[DELTA] {delta_path}  ({delta['rules_modified']} rules, {delta['total_field_changes']} field changes)")
         return
 
-    # ── Interactive enrichment ───────────────────────────────────────────
+    # Interactive enrichment
     rules = raw_data.get("rules", [])
     rule_filter = FILTERS.get(args.filter, FILTERS["all"])
     filtered_indices = [i for i, r in enumerate(rules) if rule_filter(r)]

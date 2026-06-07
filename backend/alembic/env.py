@@ -9,7 +9,14 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 # Ensure the backend package is importable
-sys.path.insert(0, str(Path(__file__).resolve().parents[1].parent))
+_project_root = str(Path(__file__).resolve().parents[1].parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+# Also support PyInstaller frozen mode
+if getattr(sys, "frozen", False):
+    _meipass = str(Path(sys._MEIPASS))
+    if _meipass not in sys.path:
+        sys.path.insert(0, _meipass)
 
 from backend.config import settings  # noqa: E402
 from backend.database import Base  # noqa: E402

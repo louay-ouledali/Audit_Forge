@@ -16,7 +16,7 @@ import { useToast } from '@/components/common/Toast';
 import CopilotPanel from '@/components/copilot/CopilotPanel';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 
-// ── Helper Badges ──
+// Helper Badges
 
 function severityBadge(severity: string) {
   const styles: Record<string, string> = {
@@ -82,7 +82,7 @@ function commandStatusBadge(cmd: RuleCommand | null | undefined) {
   return <span className="rounded bg-dark-overlay px-2 py-0.5 text-[10px] font-medium text-dark-secondary">{cmd.status}</span>;
 }
 
-// ── Tab type ──
+// Tab type
 type TabId = 'rules' | 'pipeline' | 'validation' | 'coverage' | 'copilot';
 
 export default function BenchmarkDetail() {
@@ -91,7 +91,7 @@ export default function BenchmarkDetail() {
   const location = useLocation();
   const toast = useToast();
 
-  // ── Core state ──
+  // Core state
   const [benchmark, setBenchmark] = useState<Benchmark | null>(null);
   const [rules, setRules] = useState<Rule[]>([]);
   const [enrichStatus, setEnrichStatus] = useState<EnrichStatus | null>(null);
@@ -134,7 +134,7 @@ export default function BenchmarkDetail() {
   const [confirmDeleteRule, setConfirmDeleteRule] = useState<{ id: number; section: string } | null>(null);
   const [readinessLoading, setReadinessLoading] = useState(false);
 
-  // ── Tab state ──
+  // Tab state
   const [activeTab, setActiveTab] = useState<TabId>('rules');
   const [pendingCopilotCount, setPendingCopilotCount] = useState(0);
 
@@ -144,7 +144,7 @@ export default function BenchmarkDetail() {
     if (state?.openCopilot) setActiveTab('copilot');
   }, [location.state]);
 
-  // ── Data fetching ──
+  // Data fetching
   const fetchData = useCallback(async () => {
     try {
       const [bm, es, vs, vds] = await Promise.all([
@@ -218,7 +218,7 @@ export default function BenchmarkDetail() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showVersionDropdown]);
 
-  // ── Handlers ──
+  // Handlers
 
   const handleEnrich = async () => {
     try { await api.startEnrichment(benchmarkId); await fetchData(); }
@@ -326,7 +326,7 @@ export default function BenchmarkDetail() {
     finally { setActionLoading(false); }
   };
 
-  // ── Export/Import ──
+  // Export/Import
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -355,7 +355,7 @@ export default function BenchmarkDetail() {
     finally { setActionLoading(false); if (commandsImportRef.current) commandsImportRef.current.value = ''; }
   };
 
-  // ── Rule CRUD ──
+  // Rule CRUD
   const handleRuleCreated = async (result: AIRuleCreateResponse) => {
     setShowAddRule(false);
     setSuccessMsg(result.message + (result.commands_generated ? ' (commands generated)' : ''));
@@ -447,7 +447,7 @@ export default function BenchmarkDetail() {
     catch { setVerificationReports([]); }
   };
 
-  // ── Loading / Not found ──
+  // Loading / Not found
   if (loading) {
     return (
       <div className="space-y-6 animate-pulse">
@@ -471,7 +471,7 @@ export default function BenchmarkDetail() {
   const enrichPercent = enrichStatus && enrichStatus.total > 0
     ? Math.round((enrichStatus.processed / enrichStatus.total) * 100) : 0;
 
-  // ── Tab definitions ──
+  // Tab definitions
   const tabs: { id: TabId; label: string; badge?: string; show: boolean }[] = [
     { id: 'rules', label: 'Rules', badge: `${benchmark.total_rules}`, show: benchmark.phase1_status === 'completed' || benchmark.source === 'custom' },
     { id: 'pipeline', label: 'Pipeline', show: true },
@@ -482,9 +482,7 @@ export default function BenchmarkDetail() {
 
   const visibleTabs = tabs.filter(t => t.show);
 
-  // ══════════════════════════════════════════
   // RENDER
-  // ══════════════════════════════════════════
 
   return (
     <div className="space-y-4">

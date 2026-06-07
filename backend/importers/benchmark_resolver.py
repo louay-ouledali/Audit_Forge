@@ -103,7 +103,7 @@ def resolve_benchmark(
             f"v{platform_info.benchmark_version} and creation is disabled."
         )
 
-    # ── Reconstruct benchmark ──────────────────────────────────
+    # Reconstruct benchmark
     benchmark, rules_created = _reconstruct_benchmark(platform_info, extracted_rules, db)
     logger.info("Reconstructed benchmark '%s' v%s with %d rules",
                  benchmark.name, benchmark.version, rules_created)

@@ -39,7 +39,7 @@ async def test_llm():
         return {"success": False, "error": str(exc), "response": None, "response_time_ms": 0}
 
 
-# ── LLM Cache endpoints ──
+# LLM Cache endpoints
 
 @router.get("/cache/stats")
 def get_cache_stats():
@@ -54,7 +54,7 @@ def clear_cache(task: Optional[str] = Query(None, description="Only clear entrie
     return {"deleted": deleted, "task": task}
 
 
-# ── Model listing ──
+# Model listing
 
 @router.get("/models")
 async def list_available_models():
@@ -96,7 +96,7 @@ async def list_available_models():
         return {"models": [], "error": str(exc)}
 
 
-# ── Token usage tracking ──
+# Token usage tracking
 
 @router.get("/token-usage")
 def get_token_usage(period: str = Query("month", description="'month' or 'all'")):

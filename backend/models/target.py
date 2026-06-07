@@ -30,7 +30,7 @@ class Target(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    # ── Phase 1 — Scanning Enhancement Fields ────────────────
+    # Phase 1 — Scanning Enhancement Fields
     # Platform sub-type for more specific connector/benchmark matching
     # e.g. "cisco_ios", "ubuntu", "server_2022", "postgresql", …
     platform_subtype = Column(String, nullable=True)

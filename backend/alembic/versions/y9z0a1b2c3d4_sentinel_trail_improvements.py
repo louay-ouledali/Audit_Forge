@@ -23,7 +23,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
 
-    # ── notifications indexes ──────────────────────────────────────
+    # notifications indexes
     if "notifications" in inspector.get_table_names():
         existing_indexes = {idx["name"] for idx in inspector.get_indexes("notifications")}
         if "ix_notifications_user_id" not in existing_indexes:
@@ -31,13 +31,13 @@ def upgrade() -> None:
         if "ix_notifications_user_read" not in existing_indexes:
             op.create_index("ix_notifications_user_read", "notifications", ["user_id", "is_read"])
 
-    # ── schedules indexes ──────────────────────────────────────────
+    # schedules indexes
     if "schedules" in inspector.get_table_names():
         existing_indexes = {idx["name"] for idx in inspector.get_indexes("schedules")}
         if "ix_schedules_next_run_at" not in existing_indexes:
             op.create_index("ix_schedules_next_run_at", "schedules", ["next_run_at"])
 
-    # ── audit_logs: new columns + nullable mission_id + indexes ────
+    # audit_logs: new columns + nullable mission_id + indexes
     if "audit_logs" in inspector.get_table_names():
         columns = {c["name"] for c in inspector.get_columns("audit_logs")}
         with op.batch_alter_table("audit_logs") as batch_op:

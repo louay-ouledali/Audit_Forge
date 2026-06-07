@@ -222,7 +222,7 @@ def _check_safety(audit_command: str | None, platform_family: str) -> dict:
     # Normalize platform_family
     pf = normalize_platform_family(platform_family)
 
-    # ── Context-aware bypass ──────────────────────────────────────────────
+    # Context-aware bypass
     # Network read-only commands (show, display, get, diagnose …) are safe
     if pf == "network" and _is_readonly_network_cmd(stripped):
         return {"result": "pass", "message": "Read-only network command", "details": []}
@@ -232,7 +232,7 @@ def _check_safety(audit_command: str | None, platform_family: str) -> dict:
     if pf == "database" and _is_readonly_sql_cmd(stripped):
         return {"result": "pass", "message": "Read-only SQL query", "details": []}
 
-    # ── Standard pattern matching ─────────────────────────────────────────
+    # Standard pattern matching
     patterns = PLATFORM_PATTERNS.get(pf, DANGEROUS_LINUX)
     hits: list[str] = []
     for pattern, description in patterns:

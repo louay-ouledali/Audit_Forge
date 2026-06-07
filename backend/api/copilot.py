@@ -32,7 +32,7 @@ from backend.models.rule import Rule
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/copilot", tags=["copilot"])
 
-# ── Schemas ──────────────────────────────────────────────────
+# Schemas
 
 
 class ChatRequest(BaseModel):
@@ -64,7 +64,7 @@ class BatchEditConfirmRequest(BaseModel):
     confirmed: bool = False
 
 
-# ── Conversation Store (DB-backed) ───────────────────────────
+# Conversation Store (DB-backed)
 
 _CONV_TTL = 120 * 60  # 2 hours
 _CONV_MAX_MESSAGES = 50
@@ -134,7 +134,7 @@ def cleanup_expired_conversations():
         db.close()
 
 
-# ── Helpers ──────────────────────────────────────────────────
+# Helpers
 
 
 def _get_benchmark_or_404(benchmark_id: int, db: Session) -> Benchmark:
@@ -184,7 +184,7 @@ async def _execute_tool(tool_name: str, params: dict, db: Session, benchmark_id:
         return {"error": f"Tool {tool_name} failed: {str(e)}"}
 
 
-# ── LLM Response Validation ──────────────────────────────────
+# LLM Response Validation
 
 
 class ToolCallSchema(BaseModel):
@@ -234,7 +234,7 @@ def _validate_llm_response(raw: Any) -> CopilotLLMResponse:
         return CopilotLLMResponse(response=raw.get("response", ""))
 
 
-# ── Chat endpoint (agentic loop) ─────────────────────────────
+# Chat endpoint (agentic loop)
 
 
 @router.post("/{benchmark_id}/chat")
@@ -257,13 +257,13 @@ async def copilot_chat(
     all_actions: list[dict] = []
     response_text = ""
 
-    # ── Phase 1: Check for forced workflows (anti-hallucination) ──
+    # Phase 1: Check for forced workflows (anti-hallucination)
     forced = await _detect_forced_workflow(payload.message, bm, db, benchmark_id, system_prompt, history)
     if forced is not None:
         all_actions = forced["actions"]
         response_text = forced["response"]
     else:
-        # ── Agentic loop: LLM -> tools -> LLM (max 5 iterations) ──
+        # Agentic loop: LLM -> tools -> LLM (max 5 iterations)
         max_iterations = 5
         user_prompt = sanitize_chat_message(payload.message)
 
@@ -370,7 +370,7 @@ async def copilot_chat(
     }
 
 
-# ── Forced Workflows (anti-hallucination) ─────────────────────
+# Forced Workflows (anti-hallucination)
 
 _FORCED_WORKFLOW_PATTERNS: list[tuple[str, str, list[str]]] = [
     # (name, regex_pattern, tool_names_to_force)
@@ -738,7 +738,7 @@ async def _context_aware_fallback(
     )
 
 
-# ── Generate benchmark (full pipeline) ──────────────────────
+# Generate benchmark (full pipeline)
 
 
 @router.post("/{benchmark_id}/generate-benchmark")
@@ -777,7 +777,7 @@ async def generate_benchmark_rules(
     return result
 
 
-# ── Approval endpoints ───────────────────────────────────────
+# Approval endpoints
 
 
 @router.post("/{benchmark_id}/approve")
@@ -861,7 +861,7 @@ def approve_with_edits(
     return {"approved": True, "rule_id": rule.id, "edits_applied": list(payload.edits.keys())}
 
 
-# ── Pending rules listing ────────────────────────────────────
+# Pending rules listing
 
 
 @router.get("/{benchmark_id}/pending")
@@ -897,7 +897,7 @@ def get_pending_rules(
     }
 
 
-# ── Batch edit confirm ───────────────────────────────────────
+# Batch edit confirm
 
 
 @router.post("/{benchmark_id}/confirm-batch-edit")

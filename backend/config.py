@@ -5,7 +5,9 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+from backend.frozen_paths import BUNDLE_DIR, DATA_ROOT, DB_DIR, ENV_FILE
+
+PROJECT_ROOT = DATA_ROOT  # writable root — used for benchmarks, reports, data
 
 
 def _generate_secret_key() -> str:
@@ -14,7 +16,7 @@ def _generate_secret_key() -> str:
     On first run (no SECRET_KEY in env or .env), writes a random
     256-bit key to `.env` so the same key is used on subsequent starts.
     """
-    env_path = PROJECT_ROOT / ".env"
+    env_path = ENV_FILE
     if env_path.exists():
         for line in env_path.read_text(encoding="utf-8").splitlines():
             if line.strip().startswith("SECRET_KEY="):
@@ -31,7 +33,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = ""  # If empty, derived from SECRET_KEY
     ENCRYPTION_KEY: str = ""  # If empty, derived from SECRET_KEY
     APP_ENV: str = "development"
-    DATABASE_URL: str = "sqlite:///data/auditforge.db"
+    DATABASE_URL: str = f"sqlite:///{DB_DIR / 'auditforge.db'}"
     SERVER_PORT: str = "8000"
     CORS_ORIGINS: list[str] = [
         "http://localhost:5173",
@@ -43,15 +45,15 @@ class Settings(BaseSettings):
     ]
     LLM_OLLAMA_URL: str = "http://host.docker.internal:11434"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": str(ENV_FILE), "env_file_encoding": "utf-8"}
 
     @property
     def resolved_database_url(self) -> str:
-        """Resolve relative sqlite paths against the project root."""
+        """Resolve relative sqlite paths against DATA_ROOT."""
         url = self.DATABASE_URL
         if url.startswith("sqlite:///") and not url.startswith("sqlite:////"):
             rel_path = url.replace("sqlite:///", "")
-            abs_path = PROJECT_ROOT / rel_path
+            abs_path = DATA_ROOT / rel_path
             abs_path.parent.mkdir(parents=True, exist_ok=True)
             return f"sqlite:///{abs_path}"
         return url

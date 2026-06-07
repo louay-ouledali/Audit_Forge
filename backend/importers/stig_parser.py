@@ -47,9 +47,7 @@ _SEVERITY_MAP = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Format detection
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def detect_stig_xccdf(content: str) -> bool:
     """Return True if content looks like a DISA STIG XCCDF XML file."""
@@ -72,9 +70,7 @@ def detect_stig_ckl(content: str) -> bool:
     return bool(re.search(r"<CHECKLIST>", content[:500]))
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  XCCDF parsing
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _find_text(elem: ET.Element, tag: str, ns: dict[str, str], default: str = "") -> str:
     """Find text content of a child element, trying multiple namespace prefixes."""
@@ -288,9 +284,7 @@ def parse_stig_ckl(content: str) -> tuple[list[ParsedFinding], PlatformInfo]:
     return findings, platform_info
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Rule extraction
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def extract_rules_from_stig(findings: list[ParsedFinding]) -> list[ExtractedRule]:
     """Convert STIG ParsedFindings into ExtractedRule objects."""
@@ -310,9 +304,7 @@ def extract_rules_from_stig(findings: list[ParsedFinding]) -> list[ExtractedRule
     return rules
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _extract_vuln_id(text: str) -> str:
     """Extract V-XXXXXX ID from STIG identifiers."""

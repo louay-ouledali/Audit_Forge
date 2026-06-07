@@ -32,9 +32,7 @@ from sqlalchemy.orm import Session
 logger = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Error Classification
-# ═══════════════════════════════════════════════════════════════════
 
 def classify_error(stderr: str, exit_code: int) -> str:
     """Classify error output into a category for targeted fixing."""
@@ -65,9 +63,7 @@ def classify_error(stderr: str, exit_code: int) -> str:
     return "unknown"
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Pattern-Based Fixes
-# ═══════════════════════════════════════════════════════════════════
 
 _PATTERN_FIXES: list[tuple[str, str, Any]] = [
     # grep with no matches exits 1 — append || true
@@ -108,9 +104,7 @@ def _try_pattern_fix(cmd: str, error_type: str, stderr: str) -> str | None:
     return None
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Main Self-Heal Entry Point
-# ═══════════════════════════════════════════════════════════════════
 
 async def attempt_self_heal(
     rule_command: Any,  # RuleCommand ORM object

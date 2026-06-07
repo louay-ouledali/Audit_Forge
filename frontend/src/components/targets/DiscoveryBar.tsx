@@ -386,8 +386,8 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
 
       {/* Body */}
       <div className="p-5 space-y-4">
-        {/* Agent warning */}
-        {(engine === 'docker_limited' || _agentAvailable === false) && (
+        {/* Agent warning — only in Docker mode (not Windows native / python engine) */}
+        {engine === 'docker_limited' && (
           <div className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
             <AlertTriangle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
             <div className="text-xs text-amber-300 space-y-1">
@@ -405,7 +405,7 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
 
         {/* Input row */}
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <input
               type="text"
               value={subnet}
@@ -423,7 +423,7 @@ export default function DiscoveryBar({ clientId, missionId, onTargetsAdded }: Pr
               value={scanProfile}
               onChange={e => setScanProfile(e.target.value)}
               disabled={discovering}
-              className={`${inputClass} min-w-[160px]`}
+              className={`${inputClass} !w-auto min-w-[160px] max-w-[240px] shrink-0`}
               title="Scan profile"
             >
               {Object.entries(profiles).map(([key, p]) => (

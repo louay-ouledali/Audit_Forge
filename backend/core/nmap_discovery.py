@@ -20,7 +20,7 @@ from typing import Any
 
 logger = logging.getLogger("auditforge.discovery.nmap")
 
-# ── Nmap availability cache ──────────────────────────────────
+# Nmap availability cache
 
 _nmap_available: bool | None = None  # None = not yet checked
 
@@ -29,15 +29,26 @@ def is_nmap_available() -> bool:
     """Check whether the ``nmap`` binary is on PATH.  Cached after first call."""
     global _nmap_available
     if _nmap_available is None:
-        _nmap_available = shutil.which("nmap") is not None
+        nmap_path = shutil.which("nmap")
+        # On Windows, also check the bundled nmap in the install directory
+        if nmap_path is None and os.name == "nt":
+            from backend.frozen_paths import FROZEN, BUNDLE_DIR
+            if FROZEN:
+                # Installed: nmap/ is a sibling of server/ under the install dir
+                install_nmap = BUNDLE_DIR.parent.parent / "nmap" / "nmap.exe"
+                if install_nmap.exists():
+                    nmap_path = str(install_nmap)
+                    # Add to PATH so python-nmap can also find it
+                    os.environ["PATH"] = str(install_nmap.parent) + os.pathsep + os.environ.get("PATH", "")
+        _nmap_available = nmap_path is not None
         if _nmap_available:
-            logger.info("Nmap binary found — using Nmap discovery engine")
+            logger.info("Nmap binary found at %s — using Nmap discovery engine", nmap_path)
         else:
             logger.warning("Nmap binary NOT found — will fall back to pure-Python discovery")
     return _nmap_available
 
 
-# ── Docker bridge detection ──────────────────────────────────
+# Docker bridge detection
 
 _docker_bridge: bool | None = None
 
@@ -109,7 +120,7 @@ def _subnet_is_external(subnet: str) -> bool:
         return True
 
 
-# ── Scan profiles ────────────────────────────────────────────
+# Scan profiles
 # Phase 2 profiles: run Nmap only on live hosts found by the fast probe.
 # Since we already know which hosts are alive, we use -Pn (skip discovery).
 
@@ -134,7 +145,7 @@ SCAN_PROFILES: dict[str, dict[str, Any]] = {
 DEFAULT_PROFILE = "standard"
 
 
-# ── Port → service name lookup ───────────────────────────────
+# Port → service name lookup
 # Used to label ports found by the fast TCP probe that Nmap didn't
 # identify.  Prevents ugly "PORT-5985" → shows "WinRM-HTTP" instead.
 _PORT_SERVICE_MAP: dict[int, str] = {
@@ -160,7 +171,7 @@ _PORT_SERVICE_MAP: dict[int, str] = {
 }
 
 
-# ── Fast TCP discovery ports ─────────────────────────────────
+# Fast TCP discovery ports
 # Broad list of ports likely to be open on home/enterprise networks.
 # These are used in the Phase 1 fast-probe to find live hosts.
 DISCOVERY_PORTS = [
@@ -180,7 +191,7 @@ _FAST_PROBE_PORTS = [
 ]
 
 
-# ── Phase 1: Fast parallel TCP host discovery ────────────────
+# Phase 1: Fast parallel TCP host discovery
 
 async def _fast_host_discovery(
     ips: list[str],
@@ -240,7 +251,7 @@ async def _fast_host_discovery(
     return results
 
 
-# ── HTTP banner fingerprinting ───────────────────────────────
+# HTTP banner fingerprinting
 
 _VENDOR_PATTERNS: list[tuple[str, str]] = [
     # (regex_pattern, vendor_name)
@@ -346,7 +357,7 @@ async def _http_banner_grab(
     return result
 
 
-# ── OS mapping ───────────────────────────────────────────────
+# OS mapping
 
 def _nmap_os_to_os_guess(os_name: str) -> str:
     """Map an Nmap OS name string to our canonical os_guess value."""
@@ -385,7 +396,7 @@ def _nmap_service_to_platform_hint(service_name: str, product: str) -> str:
     return "unknown"
 
 
-# ── Main Nmap discovery function ─────────────────────────────
+# Main Nmap discovery function
 
 async def nmap_discover_network(
     subnet: str,
@@ -456,12 +467,12 @@ async def nmap_discover_network(
     )
     start_time = time.monotonic()
 
-    # ── Phase 0: ARP sweep (same as pure-Python — fills MAC cache) ──
+    # Phase 0: ARP sweep (same as pure-Python — fills MAC cache)
     if all_ips:
         logger.info("Running ARP sweep for %d hosts...", len(all_ips))
         await _arp_sweep(all_ips)
 
-    # ── Phase 1: Fast async TCP probe to find live hosts ─────
+    # Phase 1: Fast async TCP probe to find live hosts
     # Instead of scanning 254 hosts with Nmap (5+ min), we do a fast
     # parallel TCP probe (3-5 sec) to identify which hosts are alive,
     # then run Nmap only on those live hosts.
@@ -475,7 +486,7 @@ async def nmap_discover_network(
             all_ips, discovery_id=discovery_id,
         )
 
-        # ── Phase 1b: UDP probe for consumer devices ──────────
+        # Phase 1b: UDP probe for consumer devices
         # Phones, TVs, game consoles, IoT have zero open TCP ports but
         # respond to mDNS (5353), SSDP (1900), NetBIOS (137), etc.
         # UDP unicast works through Docker bridge NAT.
@@ -530,7 +541,7 @@ async def nmap_discover_network(
                 udp_alive[ip] = ports
                 live_hosts.setdefault(ip, [])
 
-    # ── Phase 2: Run Nmap on live hosts only ─────────────────
+    # Phase 2: Run Nmap on live hosts only
     if discovery_id and discovery_id in _discovery_progress:
         _discovery_progress[discovery_id]["status"] = "scanning"
         _discovery_progress[discovery_id]["scanned"] = total  # probing done
@@ -556,7 +567,7 @@ async def nmap_discover_network(
             _discovery_progress[discovery_id]["error"] = str(exc)
         raise
 
-    # ── Parse Nmap results + merge fast-probe data ────────────
+    # Parse Nmap results + merge fast-probe data
     discovered: list[DiscoveredHost] = []
 
     # Build a set of all hosts to process: Nmap results + fast-probe-only hosts
@@ -579,11 +590,11 @@ async def nmap_discover_network(
             logger.info("Nmap discovery %s cancelled during enrichment", discovery_id)
             break
 
-        # ── Gather Nmap data (if available) ─────────────────
+        # Gather Nmap data (if available)
         host_data = all_results.get(host_ip)
         nmap_up = host_data is not None and host_data.state() == "up"
 
-        # ── Extract OS information ──────────────────────────
+        # Extract OS information
         os_version = ""
         os_guess = "unknown"
         os_confidence = 0
@@ -600,7 +611,7 @@ async def nmap_discover_network(
                 if os_classes:
                     vendor = os_classes[0].get("vendor", "")
 
-        # ── Extract open ports from Nmap ────────────────────
+        # Extract open ports from Nmap
         open_ports: list[dict[str, Any]] = []
         nmap_open_port_nums: set[int] = set()
 
@@ -634,7 +645,7 @@ async def nmap_discover_network(
 
                     open_ports.append(port_entry)
 
-        # ── Merge ports from fast probe that Nmap missed ────
+        # Merge ports from fast probe that Nmap missed
         if host_ip in live_hosts:
             for fp_port in live_hosts[host_ip]:
                 if fp_port not in nmap_open_port_nums:
@@ -646,7 +657,7 @@ async def nmap_discover_network(
                         "proto": "tcp",
                     })
 
-        # ── Merge UDP ports from Phase 1b ───────────────────
+        # Merge UDP ports from Phase 1b
         existing_ports = {p["port"] for p in open_ports}
         if host_ip in udp_alive:
             for udp_entry in udp_alive[host_ip]:
@@ -654,15 +665,15 @@ async def nmap_discover_network(
                     open_ports.append(udp_entry)
                     existing_ports.add(udp_entry["port"])
 
-        # ── Skip hosts with no open ports at all ────────────
+        # Skip hosts with no open ports at all
         if not open_ports:
             continue
 
-        # ── Determine OS guess from ports if Nmap didn't detect OS ──
+        # Determine OS guess from ports if Nmap didn't detect OS
         if os_guess == "unknown" and open_ports:
             os_guess = _guess_os(open_ports)
 
-        # ── Extract hostname ────────────────────────────────
+        # Extract hostname
         hostname = ""
         if host_data:
             hostnames_list = host_data.get("hostnames", [])
@@ -673,7 +684,7 @@ async def nmap_discover_network(
                         hostname = name
                         break
 
-        # ── Extract MAC address ─────────────────────────────
+        # Extract MAC address
         mac_address = ""
         if host_data:
             addresses = host_data.get("addresses", {})
@@ -684,7 +695,7 @@ async def nmap_discover_network(
         if not mac_address and host_ip in _arp_cache:
             mac_address = _arp_cache[host_ip]
 
-        # ── MAC OUI vendor (supplement Nmap) ────────────────
+        # MAC OUI vendor (supplement Nmap)
         if mac_address and not vendor:
             oui_vendor = _lookup_oui_vendor(mac_address)
             if oui_vendor:
@@ -699,11 +710,11 @@ async def nmap_discover_network(
                         vendor = v
                         break
 
-        # ── Determine device role + connection methods ──────
+        # Determine device role + connection methods
         device_role = _guess_device_role(open_ports, os_guess)
         connection_methods = _detect_connection_methods(os_guess, open_ports)
 
-        # ── Detection method string ─────────────────────────
+        # Detection method string
         detection_parts = ["nmap"]
         if host_data and host_data.get("osmatch"):
             detection_parts.append("nmap_os")
@@ -731,7 +742,7 @@ async def nmap_discover_network(
     if discovery_id and discovery_id in _discovery_progress:
         _discovery_progress[discovery_id]["found"] = len(discovered)
 
-    # ── Phase 3: Targeted enrichment ─────────────────────────
+    # Phase 3: Targeted enrichment
     logger.info("Enriching %d hosts with targeted probes...", len(discovered))
 
     for host in discovered:
@@ -825,7 +836,7 @@ async def nmap_discover_network(
             if "http" not in host.detection_method and host.banners.get("http_server"):
                 host.detection_method += "+http"
 
-    # ── Finalise ─────────────────────────────────────────────
+    # Finalise
     elapsed = time.monotonic() - start_time
     cancelled = (
         discovery_id

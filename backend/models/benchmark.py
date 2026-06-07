@@ -33,23 +33,23 @@ class Benchmark(Base):
     phase3_stats = Column(Text)  # JSON: {total, processed, validated, corrected, flagged}
     notes = Column(Text)
 
-    # ── Pre-loaded benchmark fields ──
+    # Pre-loaded benchmark fields
     source = Column(String, default="user_imported")  # "preloaded" or "user_imported"
     preloaded_version = Column(String, nullable=True)  # Pack version for upgrade tracking
     pack_hash = Column(String, nullable=True)  # SHA-256 of the .auditforge.json file
 
-    # ── Smart Import / Benchmark Studio fields ──
+    # Smart Import / Benchmark Studio fields
     is_editable = Column(Boolean, default=False)         # True for reconstructed/custom benchmarks
     parent_benchmark_id = Column(Integer, ForeignKey("benchmarks.id", ondelete="SET NULL"), nullable=True)
     migration_readiness = Column(Float, nullable=True)   # % of rules with validated commands
     source_details = Column(Text, nullable=True)         # JSON: {import_source, auto_detected, platform_info}
 
-    # ── Version grouping & multi-framework fields ──
+    # Version grouping & multi-framework fields
     group_id = Column(Integer, ForeignKey("benchmark_groups.id", ondelete="SET NULL"), nullable=True)
     framework = Column(String, default="cis")            # cis/nist/iso/stig/disa/custom/unknown
     is_baseline = Column(Boolean, default=False)         # Primary version in a group for comparison
 
-    # ── Connector routing metadata ──
+    # Connector routing metadata
     connection_hints = Column(Text, nullable=True)         # JSON: {"sql": "postgresql", "shell": "ssh"}
 
     group = relationship("BenchmarkGroup", back_populates="benchmarks", foreign_keys=[group_id])

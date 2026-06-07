@@ -36,7 +36,7 @@ router = APIRouter(prefix="/connect", tags=["connect"])
 _limiter = Limiter(key_func=get_remote_address)
 
 
-# ── Helpers ───────────────────────────────────────────────────────
+# Helpers
 
 def _generate_enrollment_code() -> str:
     """Generate a 12-character uppercase alphanumeric code."""
@@ -108,7 +108,7 @@ def _get_valid_session(
     return session
 
 
-# ── Session CRUD ──────────────────────────────────────────────────
+# Session CRUD
 
 @router.post("/sessions", response_model=dict)
 @_limiter.limit("2/minute")
@@ -200,7 +200,7 @@ async def terminate_session(session_id: int, db: Session = Depends(get_db), _=De
     return {"message": "Session terminated"}
 
 
-# ── Portal validation ─────────────────────────────────────────────
+# Portal validation
 
 @router.get("/portal/{enrollment_code}", response_model=dict)
 async def validate_portal(enrollment_code: str, db: Session = Depends(get_db)):
@@ -220,7 +220,7 @@ async def validate_portal(enrollment_code: str, db: Session = Depends(get_db)):
     }
 
 
-# ── Agent script generation ──────────────────────────────────────
+# Agent script generation
 
 @router.get("/agent/{enrollment_code}/{platform}")
 async def get_agent_script(
@@ -285,7 +285,7 @@ async def get_agent_script(
     )
 
 
-# ── Agent listing ─────────────────────────────────────────────────
+# Agent listing
 
 @router.get("/sessions/{session_id}/agents", response_model=dict)
 async def list_agents(session_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
@@ -311,7 +311,7 @@ async def list_agents(session_id: int, db: Session = Depends(get_db), _=Depends(
     return {"data": agents_data}
 
 
-# ── Scan initiation ──────────────────────────────────────────────
+# Scan initiation
 
 @router.post("/sessions/{session_id}/scan", response_model=dict)
 async def start_agent_scan(
@@ -426,7 +426,7 @@ def _infer_target_type(os_type: str | None) -> str:
     return "linux"
 
 
-# ── Portal extras ────────────────────────────────────────────────
+# Portal extras
 
 def _validate_portal_session(db: Session, enrollment_code: str) -> ConnectSession:
     """Validate enrollment code and return active session or raise 404."""
@@ -522,7 +522,7 @@ def get_usb_script(
     )
 
 
-# ── Static enablement scripts ────────────────────────────────────
+# Static enablement scripts
 
 _WINRM_ENABLE_SCRIPT = r"""# AuditForge — Enable WinRM for Remote Auditing
 # Run this script as Administrator on the target machine.

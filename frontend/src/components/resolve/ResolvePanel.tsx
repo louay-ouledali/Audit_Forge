@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import type { Target, ScanDetail, RemediationSession, RemediationItem, ScanIntelligence } from '@/types';
 import * as api from '@/services/api';
 
-// ── Badge helpers ────────────────────────────────────────────────────
+// Badge helpers
 
 const severityColor: Record<string, string> = {
   critical: 'bg-red-500/20 text-red-400 border-red-500/30',
@@ -28,7 +28,7 @@ const sourceColors: Record<string, string> = {
   auditor_edit: 'bg-purple-500/20 text-purple-400',
 };
 
-// ── Main Panel ───────────────────────────────────────────────────────
+// Main Panel
 
 interface ResolvePanelProps {
   target: Target;
@@ -567,7 +567,7 @@ export default function ResolvePanel({ target, missionId, scans, onClose }: Reso
 }
 
 
-// ── Item Card ────────────────────────────────────────────────────────
+// Item Card
 
 function RemediationItemCard({
   item, onToggle, onEditCommand, disabled,

@@ -232,7 +232,7 @@ export async function importBenchmarkFile(benchmarkId: number, file: File): Prom
   return data;
 }
 
-// ── Phase 3: Rule Testing, Validation, Migration Readiness ──
+// Phase 3: Rule Testing, Validation, Migration Readiness
 
 export async function testRuleCommand(benchmarkId: number, ruleId: number, payload: RuleTestRequest): Promise<RuleTestResponse> {
   const { data } = await api.post(`/benchmarks/${benchmarkId}/rules/${ruleId}/test`, payload);
@@ -545,8 +545,20 @@ export async function resetTokenUsage(): Promise<{ deleted: number }> {
 }
 
 export async function resetPreloadedBenchmarks(): Promise<{ message: string; deleted: number; loaded: number }> {
-  const { data } = await api.post('/settings/reset-preloaded');
-  return data;
+  // Kick off the background reset
+  await api.post('/settings/reset-preloaded');
+
+  // Poll until done (check every 2s, max 5 minutes)
+  const maxAttempts = 150;
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const { data: status } = await api.get('/settings/reset-preloaded/status');
+    if (status.done) {
+      if (status.error) throw new Error(status.message);
+      return { message: status.message, deleted: 0, loaded: 0 };
+    }
+  }
+  return { message: 'Reset is still running in the background. Check back shortly.', deleted: 0, loaded: 0 };
 }
 
 // Script Export (USB)
@@ -608,7 +620,7 @@ export async function cancelScan(scanId: number): Promise<ScanCancelResponse> {
   return data;
 }
 
-// ── Module 8: Scans CRUD ─────────────────────────────────────
+// Module 8: Scans CRUD
 
 export async function getScans(params?: { mission_id?: number; target_id?: number; status?: string }): Promise<{ data: ScanDetail[]; total: number }> {
   const { data } = await api.get('/scans', { params });
@@ -624,7 +636,7 @@ export async function deleteScan(id: number): Promise<void> {
   await api.delete(`/scans/${id}`);
 }
 
-// ── Module 8: Findings ───────────────────────────────────────
+// Module 8: Findings
 
 export async function getScanFindings(scanId: number, params?: { status?: string; severity?: string }): Promise<{ data: Finding[]; total: number }> {
   const { data } = await api.get(`/scans/${scanId}/findings`, { params: { ...params, limit: 10000 } });
@@ -665,7 +677,7 @@ export async function bulkUpdateFindings(payload: {
   return data;
 }
 
-// ── Module 8: Result Import ──────────────────────────────────
+// Module 8: Result Import
 
 export async function importResults(scanId: number, file: File): Promise<ImportResultsResponse> {
   const formData = new FormData();
@@ -774,7 +786,7 @@ export async function smartImport(
   return data;
 }
 
-// ── Unknown Benchmark Import (AI reverse engineering) ────────
+// Unknown Benchmark Import (AI reverse engineering)
 
 export interface UnknownImportPlatformDetection {
   platform: string;
@@ -839,7 +851,7 @@ export async function confirmUnknownImport(payload: {
   return data;
 }
 
-// ── Module 11: Report Generation ─────────────────────────────
+// Module 11: Report Generation
 
 export async function generateReport(payload: ReportGenerateRequest): Promise<Blob> {
   const { data } = await api.post('/reports/generate', payload, {
@@ -853,7 +865,7 @@ export async function generateAISummary(payload: AISummaryRequest): Promise<AISu
   return data;
 }
 
-// ── Report Builder ───────────────────────────────────────────
+// Report Builder
 
 export async function getBuilderFindings(scanIds: number[]): Promise<BuilderFindingsResponse> {
   const { data } = await api.post('/reports/builder/findings', { scan_ids: scanIds });
@@ -881,7 +893,7 @@ export async function getGroupSummary(payload: GroupSummaryRequest): Promise<Gro
   return data;
 }
 
-// ── Module 12: Post-Mission AI Analysis ──────────────────────
+// Module 12: Post-Mission AI Analysis
 
 export async function runMissionAnalysis(missionId: number, payload: AnalysisRequest): Promise<MissionAnalysisResult> {
   const { data } = await api.post(`/missions/${missionId}/analyze`, payload);
@@ -907,7 +919,7 @@ export async function getComparableMissions(clientId: number): Promise<Comparabl
   return data.data;
 }
 
-// ── Target Connection & Readiness ────────────────────────────
+// Target Connection & Readiness
 
 export async function testTargetConnection(targetId: number): Promise<ConnectionTestResult> {
   const { data } = await api.post(`/targets/${targetId}/test-connection`);
@@ -942,7 +954,7 @@ export async function getTargetLastScan(targetId: number): Promise<ScanDetail | 
   }
 }
 
-// ── Scan Batch Operations ────────────────────────────────────
+// Scan Batch Operations
 
 export async function startScanBatch(payload: ScanBatchRequest): Promise<ScanBatchResponse> {
   const { data } = await api.post('/scans/batch', payload);
@@ -958,7 +970,7 @@ export async function cancelScanBatch(batchId: number): Promise<void> {
   await api.post(`/scans/batch/${batchId}/cancel`);
 }
 
-// ── Enhanced Discovery (with mission context) ────────────────
+// Enhanced Discovery (with mission context)
 
 export async function discoverNetworkEnhanced(subnet: string, missionId?: number, scanProfile?: string): Promise<{ hosts: DiscoveredHostEnriched[]; total_scanned: number; engine?: string }> {
   const payload: Record<string, unknown> = { subnet };
@@ -978,7 +990,7 @@ export async function getAgentStatus(): Promise<{ engine: string; available: boo
   return data;
 }
 
-// ── Database Backup & Restore ────────────────────────────────
+// Database Backup & Restore
 
 export async function createBackup(): Promise<Blob> {
   const { data } = await api.post('/settings/backup', null, {
@@ -996,7 +1008,7 @@ export async function restoreBackup(file: File): Promise<{ message: string; tabl
   return data;
 }
 
-// ── Saved Reports ────────────────────────────────────────────
+// Saved Reports
 
 export async function getSavedReports(missionId?: number): Promise<SavedReport[]> {
   const params = missionId ? { mission_id: missionId } : {};
@@ -1013,7 +1025,7 @@ export async function deleteSavedReport(id: number): Promise<void> {
   await api.delete(`/saved-reports/${id}`);
 }
 
-// ── AD Discovery ─────────────────────────────────────────────
+// AD Discovery
 
 export async function adTestConnection(payload: {
   client_id: number;
@@ -1075,7 +1087,7 @@ export async function adGenerateWinRMScript(clientId: number, targetHosts: strin
   return data;
 }
 
-// ── AuditForge Connect ──────────────────────────────────────────
+// AuditForge Connect
 
 export async function createConnectSession(payload: {
   client_id: number;
@@ -1142,7 +1154,7 @@ export function getUsbScriptUrl(code: string, platform: 'windows' | 'linux'): st
   return `/api/connect/portal/${code}/usb-script/${platform}`;
 }
 
-// ── Forge Copilot ──────────────────────────────────────────
+// Forge Copilot
 // Types re-exported from @/types
 export type { CopilotChatResponse, CopilotPendingRule, CopilotPipelineResult, CopilotAction };
 
@@ -1185,7 +1197,7 @@ export async function copilotConfirmBatchEdit(benchmarkId: number, ruleIds: numb
   return data;
 }
 
-// ── Forge Trail ─────────────────────────────────────────────────────
+// Forge Trail
 export interface AuditLogEntry {
   id: number;
   username: string;
@@ -1215,7 +1227,7 @@ export async function exportTrailLogs(missionId: number, format: 'csv' | 'json' 
   return data;
 }
 
-// ── Forge Sentinel — Schedules ──────────────────────────────────────
+// Forge Sentinel — Schedules
 
 export async function getSchedules(missionId?: number): Promise<any[]> {
   const { data } = await api.get('/schedules', { params: missionId ? { mission_id: missionId } : {} });
@@ -1266,7 +1278,7 @@ export async function testScheduleAlerts(scheduleId: number): Promise<any> {
   return data;
 }
 
-// ── Forge Sentinel — Notifications ──────────────────────────────────
+// Forge Sentinel — Notifications
 
 export async function getNotifications(skip = 0, limit = 50): Promise<any> {
   const { data } = await api.get('/notifications', { params: { skip, limit } });
@@ -1290,7 +1302,7 @@ export async function dismissNotification(notificationId: number): Promise<void>
   await api.delete(`/notifications/${notificationId}`);
 }
 
-// ── Forge Resolve ────────────────────────────────────────────────────
+// Forge Resolve
 
 export async function createResolveSession(missionId: number, targetId: number, scanIds: number[]) {
   const { data } = await api.post('/resolve/sessions', {
@@ -1370,7 +1382,7 @@ export async function deleteResolveSession(sessionId: number) {
   return data;
 }
 
-// ── Config Audit ──────────────────────────────────────────────────
+// Config Audit
 
 export async function uploadConfig(targetId: number, rawConfig: string): Promise<ConfigSnapshot> {
   const { data } = await api.post(`/targets/${targetId}/configs/upload`, { raw_config: rawConfig });
@@ -1416,7 +1428,7 @@ export async function deleteConfigSnapshot(snapshotId: number): Promise<void> {
   await api.delete(`/configs/${snapshotId}`);
 }
 
-// ── Topology ────────────────────────────────────────────────────
+// Topology
 
 export async function getTopology(missionId: number): Promise<{ mission_id: number; graph: TopologyGraph; last_rebuilt_at: string | null; has_user_layout: boolean }> {
   const { data } = await api.get(`/missions/${missionId}/topology`);

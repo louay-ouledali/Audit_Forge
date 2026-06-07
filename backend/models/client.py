@@ -19,7 +19,7 @@ class Client(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    # ── Active Directory credentials ─────────────────────────
+    # Active Directory credentials
     ad_domain = Column(String, nullable=True)          # e.g. "corp.example.com"
     ad_dc_host = Column(String, nullable=True)         # DC hostname/IP
     ad_username = Column(String, nullable=True)        # DOMAIN\user or user@domain

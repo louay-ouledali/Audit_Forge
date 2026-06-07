@@ -511,7 +511,7 @@ def _fix_compliance_testing_command(cmd: str) -> str:
     return cmd
 
 
-# ── Patterns that indicate an enforcement/write command rather than an audit/read ──
+# Patterns that indicate an enforcement/write command rather than an audit/read
 _ENFORCEMENT_PATTERNS = [
     re.compile(r'\bSet-ItemProperty\b', re.IGNORECASE),
     re.compile(r'\bNew-ItemProperty\b', re.IGNORECASE),
@@ -537,7 +537,7 @@ _ENFORCEMENT_PATTERNS = [
     re.compile(r'\bsystemctl\s+(?:enable|disable|stop|start|mask)\b'),
 ]
 
-# ── Patterns that indicate syntactically broken PowerShell ──
+# Patterns that indicate syntactically broken PowerShell
 _BAD_SYNTAX_PATTERNS = [
     re.compile(r'\s&&\s'),         # Bash operator in PowerShell
     re.compile(r'^\s*\|\s'),       # Leading pipe with nothing before it
@@ -559,7 +559,7 @@ def _sanitize_command(cmd: str) -> str:
 
     original = cmd
 
-    # ── 1. Reject enforcement commands ──
+    # 1. Reject enforcement commands
     for pat in _ENFORCEMENT_PATTERNS:
         if pat.search(cmd):
             # Try to find and extract a read-only part before the write
@@ -574,24 +574,24 @@ def _sanitize_command(cmd: str) -> str:
                 logger.warning("Rejected enforcement-only command: %s", cmd[:80])
                 return ""
 
-    # ── 2. Fix bash && operator → PowerShell semicolons ──
+    # 2. Fix bash && operator → PowerShell semicolons
     cmd = re.sub(r'\s*&&\s*', '; ', cmd)
 
-    # ── 3. Strip trailing Write-Host / echo statements ──
+    # 3. Strip trailing Write-Host / echo statements
     cmd = re.sub(r'\s*;\s*Write-Host\s+.*$', '', cmd, flags=re.IGNORECASE)
     cmd = re.sub(r'\s*;\s*echo\s+["\'](?:PASS|FAIL|Compliant|Non-Compliant)["\'].*$', '', cmd, flags=re.IGNORECASE)
 
-    # ── 4. Strip enclosing try/catch blocks ──
+    # 4. Strip enclosing try/catch blocks
     try_match = re.match(r'^\s*try\s*\{(.+)\}\s*catch\s*\{.*\}\s*$', cmd, re.DOTALL | re.IGNORECASE)
     if try_match:
         inner = try_match.group(1).strip()
         if inner:
             cmd = inner
 
-    # ── 5. Trim excessive whitespace and newlines ──
+    # 5. Trim excessive whitespace and newlines
     cmd = re.sub(r'\s+', ' ', cmd).strip()
 
-    # ── 6. Detect LLM garbage in grep/awk patterns ──
+    # 6. Detect LLM garbage in grep/awk patterns
     # The LLM sometimes dumps remediation prose into the regex pattern,
     # producing commands like:  grep -E 'hostbasedauthentication\n\nhostbased...- IF - Match set'
     # Detect multi-line literals (\n), long prose, or dangerous regex fragments.
@@ -617,7 +617,7 @@ def _sanitize_command(cmd: str) -> str:
                           len(pattern_text), cmd[:100])
             return ""
 
-    # ── 7. Reject echo/Write-Output stub commands ──
+    # 7. Reject echo/Write-Output stub commands
     cmd_lower = cmd.lower().strip()
     _STUB_KEYWORDS = ("manual", "not-auditable", "not auditable", "physical inspection",
                       "requires manual", "cannot be automated", "manual verification")

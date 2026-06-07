@@ -31,7 +31,7 @@ from backend.schemas.preloaded import (  # noqa: E402
 )
 
 
-# ─── helpers ─────────────────────────────────────────────────────────────────
+# helpers
 
 def _safe_json_loads(value: str | None) -> list | dict | None:
     """Parse a JSON text column, returning *None* on failure / empty."""
@@ -48,7 +48,7 @@ def _build_rule_dict(rule: Rule) -> dict:
     cmd = rule.commands  # uselist=False → single object or None
 
     d: dict = {
-        # ── Identity ──
+        # Identity
         "section_number": rule.section_number,
         "title": rule.title,
         "description": rule.description,
@@ -68,7 +68,7 @@ def _build_rule_dict(rule: Rule) -> dict:
             for t in (rule.tags or [])
         ],
 
-        # ── Semantic metadata (from pre-loaded fields) ──
+        # Semantic metadata (from pre-loaded fields)
         "narrative_group": rule.narrative_group,
         "security_themes": _safe_json_loads(rule.security_themes_json) or [],
         "attack_chain_tags": _safe_json_loads(rule.attack_chain_tags_json) or [],
@@ -80,17 +80,17 @@ def _build_rule_dict(rule: Rule) -> dict:
 
     if cmd:
         d.update({
-            # ── Audit command ──
+            # Audit command
             "audit_command": cmd.audit_command,
             "expected_output_expression": cmd.expected_output_regex,  # DB name differs
             "expected_output_description": cmd.expected_output_description,
             "remediation_command": cmd.remediation_command,
             "remediation_description": cmd.remediation_description,
-            # ── Baked intelligence ──
+            # Baked intelligence
             "empty_output_interpretation": cmd.empty_output_interpretation,
             "output_value_map": _safe_json_loads(cmd.output_value_map_json),
             "fp_conditions": _safe_json_loads(cmd.fp_conditions_json) or [],
-            # ── Remediation metadata ──
+            # Remediation metadata
             "remediation_gpo_path": cmd.remediation_gpo_path,
             "remediation_risk": cmd.remediation_risk,
             "safe_to_automate": cmd.safe_to_automate or False,
@@ -115,7 +115,7 @@ def _build_rule_dict(rule: Rule) -> dict:
     return d
 
 
-# ─── main ────────────────────────────────────────────────────────────────────
+# main
 
 def export_benchmark(benchmark_id: int, output_path: Path, *, pretty: bool = True) -> None:
     """Export *benchmark_id* to a ``.auditforge.json`` file at *output_path*."""
@@ -184,7 +184,7 @@ def export_benchmark(benchmark_id: int, output_path: Path, *, pretty: bool = Tru
             "rules": [_build_rule_dict(r) for r in rules],
         }
 
-        # ── Validate the pack before writing ─────────────────────────────
+        # Validate the pack before writing
         try:
             PreloadedBenchmarkPack.model_validate(pack_dict)
             print("  Schema:   VALID")
@@ -192,7 +192,7 @@ def export_benchmark(benchmark_id: int, output_path: Path, *, pretty: bool = Tru
             print(f"  Schema:   INVALID — {exc}")
             print("[WARN] Writing file anyway (fix issues with enrich_benchmark.py)")
 
-        # ── Write ────────────────────────────────────────────────────────
+        # Write
         output_path.parent.mkdir(parents=True, exist_ok=True)
         indent = 2 if pretty else None
         output_path.write_text(
@@ -206,7 +206,7 @@ def export_benchmark(benchmark_id: int, output_path: Path, *, pretty: bool = Tru
         db.close()
 
 
-# ─── CLI ─────────────────────────────────────────────────────────────────────
+# CLI
 
 def main() -> None:
     parser = argparse.ArgumentParser(

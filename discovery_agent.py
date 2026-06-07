@@ -32,7 +32,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from typing import Any
 
-# ── Ensure the project root is on sys.path so imports work ───
+# Ensure the project root is on sys.path so imports work
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)

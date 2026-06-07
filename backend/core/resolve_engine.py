@@ -36,9 +36,11 @@ from backend.core.trail import log_action
 from backend.utils.encryption import decrypt_value
 from backend.config import settings
 
+from backend.frozen_paths import TEMPLATE_DIR
+
 logger = logging.getLogger("auditforge.resolve")
 
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+TEMPLATES_DIR = TEMPLATE_DIR
 
 # Patterns indicating privileged commands
 _PRIVILEGE_PATTERNS = [
@@ -54,7 +56,7 @@ _PRIVILEGE_PATTERNS = [
 _PRIVILEGE_RE = re.compile("|".join(_PRIVILEGE_PATTERNS), re.IGNORECASE)
 
 
-# ── Build Remediation Items ──────────────────────────────────────────
+# Build Remediation Items
 
 def build_remediation_items(
     scan_ids: list[int],
@@ -126,7 +128,7 @@ def build_remediation_items(
     return items
 
 
-# ── Script Generation (Air-Gapped) ──────────────────────────────────
+# Script Generation (Air-Gapped)
 
 def _get_jinja_env():
     from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -221,7 +223,7 @@ def generate_remediation_script(
     return buf.getvalue(), zip_filename
 
 
-# ── Network Live Execution ───────────────────────────────────────────
+# Network Live Execution
 
 async def execute_remediation_network(
     session_id: int,
@@ -339,7 +341,7 @@ async def execute_remediation_network(
         db.commit()
 
 
-# ── WebSocket Agent Execution ────────────────────────────────────────
+# WebSocket Agent Execution
 
 async def execute_remediation_agent(
     session_id: int,
@@ -438,7 +440,7 @@ async def execute_remediation_agent(
     db.commit()
 
 
-# ── Multi-Scan Intelligence ──────────────────────────────────────────
+# Multi-Scan Intelligence
 
 def build_scan_intelligence(
     target_id: int,
@@ -658,7 +660,7 @@ Return ONLY valid JSON, no markdown."""
         }
 
 
-# ── CSV Export ────────────────────────────────────────────────────────
+# CSV Export
 
 def export_results_csv(session_id: int, db: Session) -> bytes:
     """Export remediation results as CSV."""

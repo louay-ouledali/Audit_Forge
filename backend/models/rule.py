@@ -35,12 +35,12 @@ class Rule(Base):
     severity = Column(String, default="medium")
     enabled = Column(Boolean, default=True)
 
-    # ── Smart Import provenance ──
+    # Smart Import provenance
     source = Column(String, nullable=True)                # "cis_extract", "nessus_import", "manual", null
     framework_mappings = Column(Text, nullable=True)      # JSON: {"NIST_800_53": ["AC-3"], "HIPAA": ["164.306"], ...}
     framework_ref = Column(String, nullable=True)         # Original framework reference ID (e.g. NIST "AC-2", STIG "V-253283")
 
-    # ── Pre-loaded benchmark intelligence fields ──
+    # Pre-loaded benchmark intelligence fields
     narrative_group = Column(String, nullable=True)       # Key into report_profile.narrative_groups
     security_themes_json = Column(Text, nullable=True)    # JSON array of theme strings
     attack_chain_tags_json = Column(Text, nullable=True)  # JSON array of attack chain identifiers
@@ -49,7 +49,7 @@ class Rule(Base):
     related_rules_json = Column(Text, nullable=True)      # JSON array of related section numbers
     group_with_json = Column(Text, nullable=True)         # JSON array of section numbers to co-group
 
-    # ── Forge Copilot fields ──
+    # Forge Copilot fields
     pending_review = Column(Boolean, default=False, nullable=False)
     copilot_confidence = Column(Float, nullable=True)                  # 0.0-1.0
     copilot_source_benchmark = Column(String, nullable=True)           # Name of source benchmark

@@ -191,7 +191,7 @@ def delete_mission(mission_id: int, db: Session = Depends(get_db)) -> dict:
     return {"data": None, "message": "Mission deleted"}
 
 
-# ── Mission Locking ──────────────────────────────────────────
+# Mission Locking
 
 
 @router.post("/missions/{mission_id}/lock")

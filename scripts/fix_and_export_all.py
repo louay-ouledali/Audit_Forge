@@ -31,9 +31,7 @@ from backend.models.rule_command import RuleCommand
 PRELOADED_DIR = PROJECT_ROOT / "backend" / "preloaded"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Fix 1: Strip leading 'v' from version strings
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def fix_version_strings(db) -> int:
@@ -50,9 +48,7 @@ def fix_version_strings(db) -> int:
     return count
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Fix 2: Compound expressions for "but not 0" rules
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def fix_but_not_zero(db) -> int:
@@ -75,9 +71,7 @@ def fix_but_not_zero(db) -> int:
     return count
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Fix 3: Fill missing expected_output_regex
-# ═══════════════════════════════════════════════════════════════════════════════
 
 # Map of (benchmark_id, section_number) → correct expected expression
 MISSING_EXPR_FIXES: dict[tuple[int, str], str] = {
@@ -147,9 +141,7 @@ def fix_missing_expressions(db) -> int:
     return count
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Export all benchmarks to .auditforge.json packs
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def _safe_json_loads(value: str | None) -> list | dict | None:
@@ -343,9 +335,7 @@ def write_manifest(entries: list[dict]) -> None:
     print(f"\n  manifest.json written with {len(entries)} packs")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Main
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def main():
@@ -356,7 +346,7 @@ def main():
         print("AuditForge — Fix & Export All Benchmarks")
         print("=" * 70)
 
-        # ── Phase 1: Fix data issues ─────────────────────────────────────
+        # Phase 1: Fix data issues
         print("\n1) Fixing version string v-prefix...")
         n = fix_version_strings(db)
         print(f"   Fixed {n} version strings\n")
@@ -369,16 +359,16 @@ def main():
         n = fix_missing_expressions(db)
         print(f"   Fixed {n} expressions\n")
 
-        # ── Phase 2: Export all benchmarks ───────────────────────────────
+        # Phase 2: Export all benchmarks
         print("4) Exporting all benchmarks to preloaded packs...")
         entries = export_all(db)
         print(f"\n   Exported {len(entries)} benchmarks")
 
-        # ── Phase 3: Write manifest ──────────────────────────────────────
+        # Phase 3: Write manifest
         print("\n5) Writing manifest.json...")
         write_manifest(entries)
 
-        # ── Summary ──────────────────────────────────────────────────────
+        # Summary
         print("\n" + "=" * 70)
         print("DONE — All benchmarks exported to backend/preloaded/")
         print("On next startup, sync_preloaded() will load them into any fresh DB.")

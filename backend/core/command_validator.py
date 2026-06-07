@@ -27,9 +27,7 @@ class Issue(NamedTuple):
     message: str
 
 
-# ═══════════════════════════════════════════════════════════════════
 # SQL Validator
-# ═══════════════════════════════════════════════════════════════════
 
 def validate_sql(cmd: str) -> list[Issue]:
     """Validate a SQL-transport command."""
@@ -61,9 +59,7 @@ def validate_sql(cmd: str) -> list[Issue]:
     return issues
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Shell Validator
-# ═══════════════════════════════════════════════════════════════════
 
 _STANDARD_ENV_VARS = {
     "HOME", "USER", "PATH", "SHELL", "PWD", "HOSTNAME", "LANG", "TERM",
@@ -116,9 +112,7 @@ def validate_shell(cmd: str) -> list[Issue]:
     return issues
 
 
-# ═══════════════════════════════════════════════════════════════════
 # PowerShell Validator
-# ═══════════════════════════════════════════════════════════════════
 
 def validate_powershell(cmd: str) -> list[Issue]:
     """Validate a PowerShell-transport command."""
@@ -149,9 +143,7 @@ def validate_powershell(cmd: str) -> list[Issue]:
     return issues
 
 
-# ═══════════════════════════════════════════════════════════════════
 # CLI Validator (network devices)
-# ═══════════════════════════════════════════════════════════════════
 
 def validate_cli(cmd: str) -> list[Issue]:
     """Validate a CLI-transport command (network devices)."""
@@ -175,9 +167,7 @@ def validate_cli(cmd: str) -> list[Issue]:
     return issues
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Expression Validator
-# ═══════════════════════════════════════════════════════════════════
 
 def validate_expression(expr: str, rule_title: str = "") -> list[Issue]:
     """Validate a comparison expression for correctness and semantic issues."""
@@ -224,9 +214,7 @@ def validate_expression(expr: str, rule_title: str = "") -> list[Issue]:
     return issues
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Top-level dispatcher
-# ═══════════════════════════════════════════════════════════════════
 
 def validate_command(
     cmd: str,

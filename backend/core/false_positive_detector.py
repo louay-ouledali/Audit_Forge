@@ -23,17 +23,17 @@ from difflib import SequenceMatcher
 
 logger = logging.getLogger("auditforge.fp_detector")
 
-# ── Confidence thresholds ──
+# Confidence thresholds
 HIGH_CONFIDENCE = 70     # Strong FP signal
 MEDIUM_CONFIDENCE = 45   # Moderate FP signal
 LOW_CONFIDENCE = 20      # Weak FP signal
 
-# ── Configurable near-miss settings ──
+# Configurable near-miss settings
 NEAR_MISS_NUMERIC_THRESHOLD_PCT: float = 10.0   # % deviation for numeric near-miss
 NEAR_MISS_STRING_SIMILARITY_MIN: float = 0.75    # SequenceMatcher ratio threshold
 NEAR_MISS_LIST_SUBSET_MIN_PCT: float = 70.0      # % of expected items present
 
-# ── GPO / Boolean equivalence maps ──
+# GPO / Boolean equivalence maps
 _GPO_ENABLED_VALUES = frozenset({
     "enabled", "1", "true", "yes", "on", "success", "success and failure",
     "success, failure", "allow",
@@ -130,11 +130,9 @@ def _gpo_equivalent(actual_val: str, expected_val: str) -> bool:
     return False
 
 
-# ═══════════════════════════════════════════════════════════
 #  Semantic normalisation layer (Phase 2)
-# ═══════════════════════════════════════════════════════════
 
-# ── Well-known Windows SID ↔ name mapping ──
+# Well-known Windows SID ↔ name mapping
 # Covers built-in accounts, groups, and service SIDs that frequently appear
 # in CIS benchmark actual vs expected outputs.
 _SID_TO_NAME: dict[str, str] = {
@@ -397,11 +395,9 @@ def _detect_context(actual: str, expected: str) -> str:
     return "value"
 
 
-# ═══════════════════════════════════════════════════════════
 #  Individual detection strategies
-# ═══════════════════════════════════════════════════════════
 
-# ── Error-type classification patterns ──
+# Error-type classification patterns
 _ACCESS_DENIED_PATTERNS = [
     re.compile(r"access.?denied", re.IGNORECASE),
     re.compile(r"permission.?denied", re.IGNORECASE),
@@ -466,7 +462,7 @@ def _detect_empty_output(finding: dict) -> FPSignal | None:
             category="empty_output",
         )
 
-    # ── Access denied (likely privilege issue, not real config state) ──
+    # Access denied (likely privilege issue, not real config state)
     for pattern in _ACCESS_DENIED_PATTERNS:
         if pattern.search(actual):
             return FPSignal(
@@ -475,7 +471,7 @@ def _detect_empty_output(finding: dict) -> FPSignal | None:
                 category="access_denied",
             )
 
-    # ── Timeout / connectivity (remote collection failure) ──
+    # Timeout / connectivity (remote collection failure)
     for pattern in _TIMEOUT_PATTERNS:
         if pattern.search(actual):
             return FPSignal(
@@ -484,7 +480,7 @@ def _detect_empty_output(finding: dict) -> FPSignal | None:
                 category="timeout",
             )
 
-    # ── Object / path not found (may mean feature absent, not misconfigured) ──
+    # Object / path not found (may mean feature absent, not misconfigured)
     for pattern in _NOT_FOUND_PATTERNS:
         if pattern.search(actual):
             return FPSignal(
@@ -493,7 +489,7 @@ def _detect_empty_output(finding: dict) -> FPSignal | None:
                 category="not_found",
             )
 
-    # ── Command / script execution error ──
+    # Command / script execution error
     for pattern in _COMMAND_ERROR_PATTERNS:
         if pattern.search(actual):
             return FPSignal(
@@ -520,22 +516,22 @@ def _detect_near_miss(finding: dict) -> FPSignal | None:
     if not expected_raw or not actual_raw:
         return None
 
-    # ── Mode 1: Numeric comparison (operator-based) ──
+    # Mode 1: Numeric comparison (operator-based)
     sig = _near_miss_numeric(actual_raw, expected_raw)
     if sig:
         return sig
 
-    # ── Mode 2: GPO / boolean equivalence ──
+    # Mode 2: GPO / boolean equivalence
     sig = _near_miss_gpo(actual_raw, expected_raw)
     if sig:
         return sig
 
-    # ── Mode 3: List / set comparison ──
+    # Mode 3: List / set comparison
     sig = _near_miss_list(actual_raw, expected_raw)
     if sig:
         return sig
 
-    # ── Mode 4: String similarity (fall-through) ──
+    # Mode 4: String similarity (fall-through)
     sig = _near_miss_string(actual_raw, expected_raw)
     if sig:
         return sig
@@ -842,9 +838,7 @@ def _detect_default_value_match(finding: dict) -> FPSignal | None:
     return None
 
 
-# ═══════════════════════════════════════════════════════════
 #  Semantic output comparison (Phase 2)
-# ═══════════════════════════════════════════════════════════
 
 def _detect_semantic_match(finding: dict) -> FPSignal | None:
     """Detect when actual and expected outputs are semantically equivalent
@@ -869,7 +863,7 @@ def _detect_semantic_match(finding: dict) -> FPSignal | None:
 
     context = _detect_context(actual_raw, expected_raw)
 
-    # ── Single-value comparison ──
+    # Single-value comparison
     a_norm = _semantic_normalize(actual_raw, context)
     e_norm = _semantic_normalize(expected_raw, context)
 
@@ -883,7 +877,7 @@ def _detect_semantic_match(finding: dict) -> FPSignal | None:
             category="semantic_match",
         )
 
-    # ── Multi-value semantic set comparison ──
+    # Multi-value semantic set comparison
     # Split both into items and normalize each individually
     actual_items = _split_value_list(actual_raw)
     expected_items = _split_value_list(expected_raw)
@@ -923,7 +917,7 @@ def _detect_semantic_match(finding: dict) -> FPSignal | None:
                     category="semantic_match",
                 )
 
-    # ── Cross-format fuzzy fallback ──
+    # Cross-format fuzzy fallback
     # After full semantic normalisation, try fuzzy match
     if len(a_norm) >= 6 and len(e_norm) >= 6:
         ratio = SequenceMatcher(None, a_norm, e_norm).ratio()
@@ -958,9 +952,7 @@ def _semantic_match_reason(context: str, actual: str, expected: str) -> str:
     )
 
 
-# ═══════════════════════════════════════════════════════════
 #  Cross-finding consistency check
-# ═══════════════════════════════════════════════════════════
 
 def _detect_cross_finding_inconsistency(finding: dict, all_findings: list[dict]) -> FPSignal | None:
     """Flag if the same rule passes on other targets but fails here."""
@@ -994,9 +986,7 @@ def _detect_cross_finding_inconsistency(finding: dict, all_findings: list[dict])
     return None
 
 
-# ═══════════════════════════════════════════════════════════
 #  Main analysis entry
-# ═══════════════════════════════════════════════════════════
 
 def analyze_finding(finding: dict, all_findings: list[dict] | None = None) -> FPAnalysis:
     """Run all FP detection strategies on a single finding.

@@ -21,7 +21,7 @@ def detect_config_format(raw_text: str) -> str:
     lines = raw_text.splitlines()[:500]
     text_block = "\n".join(lines)
 
-    # ── 1. XML-based formats (check first — unambiguous) ──────
+    # 1. XML-based formats (check first — unambiguous)
     stripped_start = raw_text.lstrip()
     if stripped_start.startswith("<?xml") or stripped_start.startswith("<"):
         lower = text_block.lower()
@@ -32,7 +32,7 @@ def detect_config_format(raw_text: str) -> str:
         # Could be some other XML config; fall through to other checks
         # but if it's clearly XML, mark as unknown_xml later
 
-    # ── 2. FortiOS (config ... end blocks with set statements) ─
+    # 2. FortiOS (config ... end blocks with set statements)
     forti_score = 0
     has_config_block = False
     has_set_stmt = False
@@ -54,7 +54,7 @@ def detect_config_format(raw_text: str) -> str:
     if has_config_block and has_set_stmt and has_end_stmt and forti_score >= 4:
         return "fortios"
 
-    # ── 3. Check Point Gaia (set-command style) ───────────────
+    # 3. Check Point Gaia (set-command style)
     cp_score = 0
     for line in lines:
         stripped = line.strip()
@@ -76,7 +76,7 @@ def detect_config_format(raw_text: str) -> str:
     if cp_score >= 4 and not has_config_block:
         return "checkpoint"
 
-    # ── 4. JunOS brace format ─────────────────────────────────
+    # 4. JunOS brace format
     junos_brace_score = 0
     for line in lines:
         stripped = line.rstrip()
@@ -92,7 +92,7 @@ def detect_config_format(raw_text: str) -> str:
     if junos_brace_score >= 4 and brace_count >= 5 and abs(brace_count - close_brace_count) <= 2:
         return "junos"
 
-    # ── 5. JunOS set format (no braces) ──────────────────────
+    # 5. JunOS set format (no braces)
     junos_set_score = 0
     for line in lines:
         stripped = line.strip()
@@ -101,7 +101,7 @@ def detect_config_format(raw_text: str) -> str:
     if junos_set_score >= 6:
         return "junos"
 
-    # ── 6. IOS/ASA/NX-OS (! separators, indented subcmds) ────
+    # 6. IOS/ASA/NX-OS (! separators, indented subcmds)
     ios_score = 0
     bang_lines = 0
     for line in lines:
@@ -120,7 +120,7 @@ def detect_config_format(raw_text: str) -> str:
     if ios_score >= 5 and bang_lines >= 3:
         return "ios"
 
-    # ── 7. XML fallback ───────────────────────────────────────
+    # 7. XML fallback
     if stripped_start.startswith("<?xml") or stripped_start.startswith("<"):
         return "unknown"
 

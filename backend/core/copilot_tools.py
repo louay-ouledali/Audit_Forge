@@ -25,7 +25,7 @@ from backend.models.rule_command import RuleCommand
 logger = logging.getLogger(__name__)
 
 
-# ── Search ───────────────────────────────────────────────────
+# Search
 
 def search_rules_handler(
     db: Session,
@@ -85,7 +85,7 @@ def search_rules_handler(
     ]
 
 
-# ── Create (pending review) ─────────────────────────────────
+# Create (pending review)
 
 def create_rule_handler(
     db: Session,
@@ -181,7 +181,7 @@ def create_rules_batch_handler(
     return {"created": len(created), "rules": created}
 
 
-# ── Edit ─────────────────────────────────────────────────────
+# Edit
 
 EDITABLE_FIELDS = {"severity", "title", "description", "rationale", "profile_applicability"}
 
@@ -275,7 +275,7 @@ def edit_rules_batch_handler(
     return {"applied": len(editable), "skipped_protected": len(protected_ids)}
 
 
-# ── Explain ──────────────────────────────────────────────────
+# Explain
 
 async def explain_rule_handler(
     db: Session,
@@ -318,7 +318,7 @@ async def explain_rule_handler(
     }
 
 
-# ── Coverage Gaps ────────────────────────────────────────────
+# Coverage Gaps
 
 def suggest_gaps_handler(
     db: Session,
@@ -345,7 +345,7 @@ def suggest_gaps_handler(
     }
 
 
-# ── Find Similar ─────────────────────────────────────────────
+# Find Similar
 
 def find_similar_handler(
     db: Session,
@@ -379,7 +379,7 @@ def find_similar_handler(
     ]
 
 
-# ── Get Rule Details ─────────────────────────────────────────
+# Get Rule Details
 
 def get_rule_details_handler(
     db: Session,
@@ -423,7 +423,7 @@ def get_rule_details_handler(
     return result
 
 
-# ── Count Rules ──────────────────────────────────────────────
+# Count Rules
 
 def count_rules_handler(
     db: Session,
@@ -456,7 +456,7 @@ def count_rules_handler(
     }
 
 
-# ── Generate Commands ────────────────────────────────────────
+# Generate Commands
 
 async def generate_commands_handler(
     db: Session,
@@ -517,11 +517,11 @@ async def generate_commands_handler(
         return {"error": f"Command generation failed: {str(e)}"}
 
 
-# ── Tool registry placeholder (populated at bottom of file after all handlers) ──
+# Tool registry placeholder (populated at bottom of file after all handlers)
 COPILOT_TOOLS: dict[str, dict] = {}
 
 
-# ── List Rules ───────────────────────────────────────────────
+# List Rules
 
 def list_rules_handler(
     db: Session,
@@ -562,7 +562,7 @@ def list_rules_handler(
     }
 
 
-# ── Get Benchmark Info ───────────────────────────────────────
+# Get Benchmark Info
 
 def get_benchmark_info_handler(
     db: Session,
@@ -597,7 +597,7 @@ def get_benchmark_info_handler(
     }
 
 
-# ── Import Rules from Another Benchmark ─────────────────────
+# Import Rules from Another Benchmark
 
 def import_rules_from_benchmark_handler(
     db: Session,
@@ -694,7 +694,7 @@ def import_rules_from_benchmark_handler(
     }
 
 
-# ── Background task helper ─────────────────────────────────
+# Background task helper
 
 def _run_in_background(fn, *args, **kwargs):
     """Launch a sync or async function in a background daemon thread."""
@@ -716,7 +716,7 @@ def _run_in_background(fn, *args, **kwargs):
     t.start()
 
 
-# ── Pipeline Control tools ──────────────────────────────────
+# Pipeline Control tools
 
 def get_pipeline_status_handler(
     db: Session,
@@ -842,7 +842,7 @@ def start_validation_handler(
     }
 
 
-# ── Command Management tools ───────────────────────────────
+# Command Management tools
 
 def verify_command_handler(
     db: Session,
@@ -1034,7 +1034,7 @@ def get_command_history_handler(
     }
 
 
-# ── Validation Review tools ────────────────────────────────
+# Validation Review tools
 
 def get_validation_results_handler(
     db: Session,
@@ -1140,7 +1140,7 @@ def bulk_apply_corrections_handler(
     return {"applied": applied, "errors": errors, "total_eligible": len(cmds)}
 
 
-# ── Intelligence tools ──────────────────────────────────────
+# Intelligence tools
 
 def diff_benchmarks_handler(
     db: Session,
@@ -1271,7 +1271,7 @@ def explain_phase2_behavior_handler(
     }
 
 
-# ── Safe Delete tool ──────────────────────────────────────
+# Safe Delete tool
 
 def delete_rule_handler(
     db: Session,
@@ -1302,7 +1302,7 @@ def delete_rule_handler(
     return {"deleted": True, "rule_id": rule_id, "section_number": section, "title": title}
 
 
-# ── Inspect Commands (batch — no IDs needed) ─────────────────
+# Inspect Commands (batch — no IDs needed)
 
 def inspect_commands_handler(
     db: Session,
@@ -1364,7 +1364,7 @@ def inspect_commands_handler(
     }
 
 
-# ── Deep Quality Check ──────────────────────────────────────
+# Deep Quality Check
 
 
 def deep_quality_check_handler(
@@ -1574,7 +1574,7 @@ def deep_quality_check_handler(
     }
 
 
-# ── Build tool registry (all handlers are defined above) ──────
+# Build tool registry (all handlers are defined above)
 
 COPILOT_TOOLS.update({
     "search_rules": {
@@ -1633,7 +1633,7 @@ COPILOT_TOOLS.update({
         "description": "Import rules from another benchmark into the current one (pending approval)",
         "handler": import_rules_from_benchmark_handler,
     },
-    # ── Pipeline Control ──
+    # Pipeline Control
     "get_pipeline_status": {
         "description": "Get pipeline status for all phases and enrichment/validation stats",
         "handler": get_pipeline_status_handler,
@@ -1654,7 +1654,7 @@ COPILOT_TOOLS.update({
         "description": "Start Phase 3 LLM validation of commands",
         "handler": start_validation_handler,
     },
-    # ── Command Management ──
+    # Command Management
     "verify_command": {
         "description": "Verify a single command with static checks (no live target needed)",
         "handler": verify_command_handler,
@@ -1675,7 +1675,7 @@ COPILOT_TOOLS.update({
         "description": "Get the history of previous commands for a rule",
         "handler": get_command_history_handler,
     },
-    # ── Validation Review ──
+    # Validation Review
     "get_validation_results": {
         "description": "Get Phase 3 validation corrections for the benchmark",
         "handler": get_validation_results_handler,
@@ -1692,7 +1692,7 @@ COPILOT_TOOLS.update({
         "description": "Apply all high-confidence Phase 3 corrections at once",
         "handler": bulk_apply_corrections_handler,
     },
-    # ── Intelligence ──
+    # Intelligence
     "diff_benchmarks": {
         "description": "Compare this benchmark with another to find added/removed/modified rules",
         "handler": diff_benchmarks_handler,
@@ -1705,17 +1705,17 @@ COPILOT_TOOLS.update({
         "description": "Explain how Phase 2 handles existing copilot-generated commands",
         "handler": explain_phase2_behavior_handler,
     },
-    # ── Safe Delete ──
+    # Safe Delete
     "delete_rule": {
         "description": "Delete a copilot-created or pending rule (blocked for protected/verified rules)",
         "handler": delete_rule_handler,
     },
-    # ── Inspect Commands (batch) ──
+    # Inspect Commands (batch)
     "inspect_commands": {
         "description": "Inspect rules with their full commands in a batch (no individual rule IDs needed)",
         "handler": inspect_commands_handler,
     },
-    # ── Deep Quality Analysis ──
+    # Deep Quality Analysis
     "deep_quality_check": {
         "description": "Run full quality analysis on all commands: syntax, transport match, expression logic, confidence scores",
         "handler": deep_quality_check_handler,

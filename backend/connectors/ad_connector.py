@@ -456,7 +456,7 @@ async def async_check_winrm(
     }
 
 
-# ── Benchmark Matching ──────────────────────────────────────────
+# Benchmark Matching
 
 # Map AD operatingSystem strings to our benchmark platform keys
 _OS_PATTERNS: list[tuple[str, str, str]] = [
@@ -571,7 +571,7 @@ def match_benchmark(
     return None
 
 
-# ── Remote WinRM Enablement ─────────────────────────────────────
+# Remote WinRM Enablement
 
 def generate_enable_winrm_script(targets: list[str], domain: str, username: str) -> str:
     """Generate a PowerShell script that an admin can run to enable WinRM on remote machines.

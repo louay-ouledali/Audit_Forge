@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import unicodedata
 
-# ── Character-level replacements ──
+# Character-level replacements
 _UNICODE_MAP: dict[str, str] = {
     # Smart / curly quotes → ASCII
     "\u2018": "'",   # left single quote
@@ -109,7 +109,7 @@ def normalize_unicode(text: str | None) -> str:
     return text
 
 
-# ── Smart output truncation ──
+# Smart output truncation
 
 def smart_truncate(text: str | None, max_chars: int = 400) -> dict:
     """Intelligently truncate long audit output, preserving context.

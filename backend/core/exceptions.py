@@ -17,7 +17,7 @@ class AuditForgeError(Exception):
         super().__init__(message)
 
 
-# ── Connection errors ────────────────────────────────────────
+# Connection errors
 
 
 class ConnectionFailedError(AuditForgeError):
@@ -28,7 +28,7 @@ class ConnectionTimeoutError(AuditForgeError):
     """Raised when a target connection attempt times out."""
 
 
-# ── LLM errors ───────────────────────────────────────────────
+# LLM errors
 
 
 class LLMError(AuditForgeError):
@@ -47,7 +47,7 @@ class LLMResponseError(LLMError):
     """Raised when the LLM returns an unparseable or invalid response."""
 
 
-# ── PDF / Benchmark errors ───────────────────────────────────
+# PDF / Benchmark errors
 
 
 class BenchmarkError(AuditForgeError):
@@ -66,7 +66,7 @@ class BenchmarkTooLargeError(BenchmarkError):
     """Raised when a benchmark exceeds the configured size limit."""
 
 
-# ── Scan errors ──────────────────────────────────────────────
+# Scan errors
 
 
 class ScanError(AuditForgeError):
@@ -77,7 +77,7 @@ class ScanCancelledError(ScanError):
     """Raised when a scan is cancelled by the user."""
 
 
-# ── Database errors ──────────────────────────────────────────
+# Database errors
 
 
 class BackupError(AuditForgeError):

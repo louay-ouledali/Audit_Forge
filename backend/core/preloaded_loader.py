@@ -43,16 +43,15 @@ from backend.schemas.preloaded import (
     PreloadedRule,
 )
 
+from backend.frozen_paths import PRELOADED_DIR
+
 logger = logging.getLogger("auditforge.preloaded")
 
 # Directory that houses manifest.json and all .auditforge.json packs
-PRELOADED_DIR = Path(__file__).resolve().parent.parent / "preloaded"
 MANIFEST_PATH = PRELOADED_DIR / "manifest.json"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Data structures
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 @dataclass
@@ -71,9 +70,7 @@ class PackInfo:
         return PRELOADED_DIR / self.filename
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Manifest scanning
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def compute_file_hash(path: Path) -> str:
@@ -120,9 +117,7 @@ def scan_preloaded_dir() -> list[PackInfo]:
     return packs
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Pack → DB insertion
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def _json_dumps(value: Any) -> str | None:
@@ -163,7 +158,7 @@ def _insert_rule(db: Session, benchmark_id: int, rule_data: PreloadedRule) -> Ru
     db.add(rule)
     db.flush()  # get rule.id
 
-    # ── RuleCommand ──────────────────────────────────────────────────────
+    # RuleCommand
     cmd = RuleCommand(
         rule_id=rule.id,
         audit_command=rule_data.audit_command,
@@ -191,7 +186,7 @@ def _insert_rule(db: Session, benchmark_id: int, rule_data: PreloadedRule) -> Ru
     )
     db.add(cmd)
 
-    # ── RuleTags ─────────────────────────────────────────────────────────
+    # RuleTags
     for tag in rule_data.tags:
         db.add(RuleTag(rule_id=rule.id, tag_id=tag.tag_id, source=tag.source))
 
@@ -263,9 +258,7 @@ def load_pack(pack_path: Path, db: Session, *, pack_hash: str | None = None) -> 
     return benchmark
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Pack upgrade (replace existing benchmark with updated pack)
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def upgrade_pack(
@@ -290,7 +283,7 @@ def upgrade_pack(
 
     meta = pack.benchmark
 
-    # ── Guard: skip destructive replace if user scan data references this benchmark ──
+    # Guard: skip destructive replace if user scan data references this benchmark
     from backend.models.scan import Scan
     from backend.models.finding import Finding
     scan_count = db.query(Scan).filter(Scan.benchmark_id == existing_benchmark.id).count()
@@ -346,9 +339,7 @@ def upgrade_pack(
     return existing_benchmark
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Duplicate cleanup — remove preloaded copies when a user-imported version exists
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def _cleanup_preloaded_duplicates(db: Session) -> int:
@@ -402,9 +393,7 @@ def _cleanup_preloaded_duplicates(db: Session) -> int:
     return len(dupes)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Sync engine — called at startup
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def sync_preloaded(db: Session) -> dict[str, int]:
@@ -431,7 +420,7 @@ def sync_preloaded(db: Session) -> dict[str, int]:
         logger.info("No preloaded packs to sync")
         return stats
 
-    # ── Phase 0: remove preloaded duplicates of user-imported benchmarks ─
+    # Phase 0: remove preloaded duplicates of user-imported benchmarks
     _cleanup_preloaded_duplicates(db)
 
     for pack_info in packs:

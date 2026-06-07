@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ad", tags=["ad-discovery"])
 
 
-# ── Request / Response Schemas ──────────────────────────────────
+# Request / Response Schemas
 
 
 class ADTestConnectionRequest(BaseModel):
@@ -97,7 +97,7 @@ class ADComputerResponse(BaseModel):
     matched_benchmark_name: str | None = None
 
 
-# ── Helpers ─────────────────────────────────────────────────────
+# Helpers
 
 
 def _get_client_ad_creds(
@@ -189,7 +189,7 @@ def _computer_to_response(
     }
 
 
-# ── Endpoints ───────────────────────────────────────────────────
+# Endpoints
 
 
 @router.post("/test-connection")

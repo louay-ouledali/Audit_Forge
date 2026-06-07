@@ -331,7 +331,7 @@ class ImportOrchestrator:
                 "source_tool": source_tool,
             }
 
-        # ── Multi-framework preview (STIG, NIST, ISO, XCCDF) ────
+        # Multi-framework preview (STIG, NIST, ISO, XCCDF)
         _framework_formats = {
             "stig_xccdf", "stig_ckl", "nist_json", "nist_csv", "nist_xml",
             "iso_json", "iso_csv", "xccdf",
@@ -440,7 +440,7 @@ class ImportOrchestrator:
         result = ImportResult()
         fmt = self.detect_format(content, filename)
 
-        # ── Step 1: Parse ────────────────────────────────────
+        # Step 1: Parse
         if fmt == "nessus_csv":
             findings, platform_info = parse_nessus_csv(content)
             extracted_rules = extract_rules_from_findings(findings)
@@ -491,13 +491,13 @@ class ImportOrchestrator:
                 "ISO 27001 JSON/CSV, and generic XCCDF/SCAP exports."
             )
 
-        # ── Step 1b: Enrich platform detection from content ──
+        # Step 1b: Enrich platform detection from content
         # Three-layer detection: parser info → content heuristics → AI fallback
         platform_info = enrich_platform_info(platform_info, findings, use_ai=True)
 
         result.platform_info = platform_info
 
-        # ── Step 2: Resolve client_id ────────────────────────
+        # Step 2: Resolve client_id
         if not client_id and mission_id:
             from backend.models.mission import Mission
             m = self.db.query(Mission).filter(Mission.id == mission_id).first()
@@ -507,7 +507,7 @@ class ImportOrchestrator:
         if not client_id:
             raise ValueError("client_id or mission_id is required for Smart Import.")
 
-        # ── Step 3: Resolve benchmark ────────────────────────
+        # Step 3: Resolve benchmark
         resolver_result = resolve_benchmark(
             platform_info,
             extracted_rules,
@@ -522,7 +522,7 @@ class ImportOrchestrator:
         result.rules_created = resolver_result.rules_created
         result.migration_readiness = resolver_result.migration_readiness
 
-        # ── Step 4: Resolve or create target ─────────────────
+        # Step 4: Resolve or create target
         target: Target | None = None
 
         if target_id:
@@ -542,11 +542,11 @@ class ImportOrchestrator:
         if mission_id:
             self._ensure_mission_target(mission_id, target.id)
 
-        # ── Step 4b: Store open ports from import ────────────
+        # Step 4b: Store open ports from import
         if platform_info.open_ports:
             self._upsert_discovery_cache_ports(platform_info, target)
 
-        # ── Step 5: Create scan ──────────────────────────────
+        # Step 5: Create scan
         scan = Scan(
             target_id=target.id,
             benchmark_id=benchmark.id,
@@ -559,7 +559,7 @@ class ImportOrchestrator:
         self.db.flush()
         result.scan_id = scan.id
 
-        # ── Step 6: Create findings ──────────────────────────
+        # Step 6: Create findings
         stats = self._create_findings(findings, scan.id, benchmark.id, platform_info.source_tool or "nessus")
         result.findings_created = stats["findings_created"]
         result.passed = stats["passed"]
@@ -569,7 +569,7 @@ class ImportOrchestrator:
         total_checked = result.passed + result.failed + result.errors + result.not_applicable
         result.compliance_percentage = round(result.passed / total_checked * 100, 1) if total_checked > 0 else 0.0
 
-        # ── Step 6b: Enrich severity from preloaded benchmarks ───
+        # Step 6b: Enrich severity from preloaded benchmarks
         # Phase 1 only (instant cross-benchmark matching, no LLM).
         # AI severity classification runs later via Phase 2 or manual trigger.
         enrichment = enrich_imported_benchmark(
@@ -606,11 +606,11 @@ class ImportOrchestrator:
         scan.not_applicable = result.not_applicable
         scan.compliance_percentage = result.compliance_percentage
 
-        # ── Step 7: Run FP detection ─────────────────────────
+        # Step 7: Run FP detection
         if run_fp_detection and result.failed > 0:
             result.fp_suspects = self._run_fp_detection(scan.id)
 
-        # ── Step 8: Create ImportRecord ──────────────────────
+        # Step 8: Create ImportRecord
         result.import_record_id = self._create_import_record(
             scan_id=scan.id,
             benchmark_id=benchmark.id,
@@ -639,7 +639,7 @@ class ImportOrchestrator:
 
         return result
 
-    # ── Private methods ──────────────────────────────────────────
+    # Private methods
 
     def _resolve_or_create_target(
         self,

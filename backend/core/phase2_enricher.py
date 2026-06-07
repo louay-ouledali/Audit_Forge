@@ -73,7 +73,7 @@ async def run_phase2(benchmark_id: int) -> None:
             db.delete(fc)
         db.commit()
 
-        # ── Smart cache acceleration: query cache FIRST ──
+        # Smart cache acceleration: query cache FIRST
         cache_stats = {"auto_imported": 0, "flagged": 0, "skipped": 0}
         try:
             from backend.core.command_cache_manager import (
@@ -248,7 +248,7 @@ async def run_phase2(benchmark_id: int) -> None:
             # Yield control so the frontend can poll updated progress
             await asyncio.sleep(0.05)
 
-        # ── AI severity classification ─────────────────────────
+        # AI severity classification
         # Piggyback on Phase 2 LLM work: classify rules that still have
         # the default "medium" severity (e.g. imported rules that didn't
         # match any preloaded benchmark rule by section_number).
@@ -281,7 +281,7 @@ async def run_phase2(benchmark_id: int) -> None:
         })
         db.commit()
 
-        # ── Populate command cache from this benchmark ──
+        # Populate command cache from this benchmark
         try:
             from backend.core.command_cache_manager import populate_cache_from_benchmark
             pop_stats = populate_cache_from_benchmark(db, benchmark_id)

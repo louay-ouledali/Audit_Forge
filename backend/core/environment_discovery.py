@@ -20,9 +20,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Discovery Templates per Platform
-# ═══════════════════════════════════════════════════════════════════
 
 DISCOVERY_TEMPLATES: dict[str, list[dict[str, str]]] = {
     "postgresql": [
@@ -70,9 +68,7 @@ DISCOVERY_TEMPLATES: dict[str, list[dict[str, str]]] = {
     ],
 }
 
-# ═══════════════════════════════════════════════════════════════════
 # Common default path mappings
-# ═══════════════════════════════════════════════════════════════════
 
 _DEFAULT_PATHS: dict[str, dict[str, list[str]]] = {
     "postgresql": {
@@ -109,9 +105,7 @@ _DEFAULT_PATHS: dict[str, dict[str, list[str]]] = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Core Functions
-# ═══════════════════════════════════════════════════════════════════
 
 async def discover_environment(
     primary_connector: Any,

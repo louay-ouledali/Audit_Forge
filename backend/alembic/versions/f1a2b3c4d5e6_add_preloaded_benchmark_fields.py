@@ -31,7 +31,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
 
-    # ── Benchmark table ──────────────────────────────────────
+    # Benchmark table
     bench_cols = {c["name"] for c in inspector.get_columns("benchmarks")}
     with op.batch_alter_table("benchmarks") as batch_op:
         if "source" not in bench_cols:
@@ -47,7 +47,7 @@ def upgrade() -> None:
                 sa.Column("pack_hash", sa.String(), nullable=True)
             )
 
-    # ── Rule table ───────────────────────────────────────────
+    # Rule table
     rule_cols = {c["name"] for c in inspector.get_columns("rules")}
     with op.batch_alter_table("rules") as batch_op:
         if "narrative_group" not in rule_cols:
@@ -79,7 +79,7 @@ def upgrade() -> None:
                 sa.Column("group_with_json", sa.Text(), nullable=True)
             )
 
-    # ── RuleCommand table ────────────────────────────────────
+    # RuleCommand table
     rc_cols = {c["name"] for c in inspector.get_columns("rule_commands")}
     with op.batch_alter_table("rule_commands") as batch_op:
         if "empty_output_interpretation" not in rc_cols:
@@ -113,7 +113,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # ── RuleCommand table ────────────────────────────────────
+    # RuleCommand table
     with op.batch_alter_table("rule_commands") as batch_op:
         batch_op.drop_column("requires_restart")
         batch_op.drop_column("safe_to_automate")
@@ -123,7 +123,7 @@ def downgrade() -> None:
         batch_op.drop_column("output_value_map_json")
         batch_op.drop_column("empty_output_interpretation")
 
-    # ── Rule table ───────────────────────────────────────────
+    # Rule table
     with op.batch_alter_table("rules") as batch_op:
         batch_op.drop_column("group_with_json")
         batch_op.drop_column("related_rules_json")
@@ -133,7 +133,7 @@ def downgrade() -> None:
         batch_op.drop_column("security_themes_json")
         batch_op.drop_column("narrative_group")
 
-    # ── Benchmark table ──────────────────────────────────────
+    # Benchmark table
     with op.batch_alter_table("benchmarks") as batch_op:
         batch_op.drop_column("pack_hash")
         batch_op.drop_column("preloaded_version")

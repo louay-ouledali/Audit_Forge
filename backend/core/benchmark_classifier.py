@@ -14,9 +14,7 @@ import re
 from dataclasses import dataclass, field  # UNUSED: 'field' — safe to remove
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Taxonomy definitions
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class ClassificationResult:
@@ -31,14 +29,14 @@ class ClassificationResult:
 # Each rule: (name_regex, platform_family_match, category, cat_icon, vendor, vendor_icon, product_line, product_icon)
 # First match wins. Order from most specific to least specific.
 CLASSIFICATION_RULES: list[tuple[str, str | None, str, str, str, str, str, str]] = [
-    # ── Operating Systems: Windows Desktop ──
+    # Operating Systems: Windows Desktop
     (r"Windows 11 Enterprise", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows 11 Enterprise", "laptop"),
     (r"Windows 11 Stand", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows 11 Standalone", "laptop"),
     (r"Windows 11(?! S)", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows 11", "laptop"),
     (r"Windows 10 Enterprise", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows 10 Enterprise", "laptop"),
     (r"Windows 10", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows 10", "laptop"),
 
-    # ── Operating Systems: Windows Server ──
+    # Operating Systems: Windows Server
     (r"Windows Server 2025", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows Server 2025", "server"),
     (r"Windows Server 2022", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows Server 2022", "server"),
     (r"Windows Server 2019", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows Server 2019", "server"),
@@ -46,7 +44,7 @@ CLASSIFICATION_RULES: list[tuple[str, str | None, str, str, str, str, str, str]]
     (r"Windows Server 2012", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows Server 2012", "server"),
     (r"Windows Server", None, "Operating Systems", "monitor", "Microsoft Windows", "windows", "Windows Server", "server"),
 
-    # ── Operating Systems: Linux ──
+    # Operating Systems: Linux
     (r"Red Hat Enterprise Linux|RHEL", None, "Operating Systems", "monitor", "Linux", "linux", "Red Hat Enterprise Linux", "redhat"),
     (r"Ubuntu", None, "Operating Systems", "monitor", "Linux", "linux", "Ubuntu", "ubuntu"),
     (r"Debian", None, "Operating Systems", "monitor", "Linux", "linux", "Debian", "debian"),
@@ -57,16 +55,16 @@ CLASSIFICATION_RULES: list[tuple[str, str | None, str, str, str, str, str, str]]
     (r"SUSE|SLES", None, "Operating Systems", "monitor", "Linux", "linux", "SUSE Linux", "suse"),
     (r"CentOS", None, "Operating Systems", "monitor", "Linux", "linux", "CentOS", "centos"),
 
-    # ── Operating Systems: macOS / Unix ──
+    # Operating Systems: macOS / Unix
     (r"macOS|Apple macOS", None, "Operating Systems", "monitor", "Apple", "apple", "macOS", "apple"),
     (r"FreeBSD", None, "Operating Systems", "monitor", "Unix", "unix", "FreeBSD", "freebsd"),
     (r"Solaris", None, "Operating Systems", "monitor", "Oracle", "oracle", "Oracle Solaris", "sun"),
     (r"AIX", None, "Operating Systems", "monitor", "IBM", "ibm", "IBM AIX", "ibm"),
 
-    # ── Operating Systems: VMware ──
+    # Operating Systems: VMware
     (r"VMware ESXi", None, "Operating Systems", "monitor", "VMware", "vmware", "VMware ESXi", "vmware"),
 
-    # ── Server Software: Databases ──
+    # Server Software: Databases
     (r"Microsoft SQL Server", None, "Server Software", "server", "Microsoft", "windows", "Microsoft SQL Server", "database"),
     (r"PostgreSQL", None, "Server Software", "server", "PostgreSQL", "postgresql", "PostgreSQL", "database"),
     (r"Oracle MySQL|MySQL Community|MySQL Enterprise", None, "Server Software", "server", "Oracle", "oracle", "MySQL", "database"),
@@ -79,17 +77,17 @@ CLASSIFICATION_RULES: list[tuple[str, str | None, str, str, str, str, str, str]]
     (r"YugabyteDB", None, "Server Software", "server", "YugabyteDB", "yugabyte", "YugabyteDB", "database"),
     (r"Snowflake", None, "Server Software", "server", "Snowflake", "snowflake", "Snowflake", "database"),
 
-    # ── Server Software: Web Servers ──
+    # Server Software: Web Servers
     (r"NGINX", None, "Server Software", "server", "NGINX", "nginx", "NGINX", "globe"),
     (r"Apache HTTP Server", None, "Server Software", "server", "Apache", "apache", "Apache HTTP Server", "globe"),
     (r"Apache Tomcat", None, "Server Software", "server", "Apache", "apache", "Apache Tomcat", "globe"),
     (r"Microsoft IIS", None, "Server Software", "server", "Microsoft", "windows", "Microsoft IIS", "globe"),
     (r"IBM WebSphere", None, "Server Software", "server", "IBM", "ibm", "IBM WebSphere", "globe"),
 
-    # ── Server Software: DNS ──
+    # Server Software: DNS
     (r"BIND DNS", None, "Server Software", "server", "ISC", "dns", "BIND DNS Server", "globe"),
 
-    # ── Server Software: Containers / Virtualization ──
+    # Server Software: Containers / Virtualization
     (r"Docker", None, "Server Software", "server", "Docker", "docker", "Docker", "container"),
     (r"Kubernetes Benchmark", None, "Server Software", "server", "Kubernetes", "kubernetes", "Kubernetes", "container"),
     (r"EKS", None, "Server Software", "server", "AWS", "aws", "Amazon EKS", "container"),
@@ -98,11 +96,11 @@ CLASSIFICATION_RULES: list[tuple[str, str | None, str, str, str, str, str, str]]
     (r"OpenShift", None, "Server Software", "server", "Red Hat", "redhat", "OpenShift", "container"),
     (r"VMware vSphere", None, "Server Software", "server", "VMware", "vmware", "VMware vSphere", "vmware"),
 
-    # ── Server Software: Collaboration ──
+    # Server Software: Collaboration
     (r"SharePoint", None, "Server Software", "server", "Microsoft", "windows", "Microsoft SharePoint", "collaboration"),
     (r"Exchange Server", None, "Server Software", "server", "Microsoft", "windows", "Microsoft Exchange Server", "email"),
 
-    # ── Network Devices ──
+    # Network Devices
     (r"Cisco ASA", None, "Network Devices", "network", "Cisco", "cisco", "Cisco ASA Firewall", "firewall"),
     (r"Cisco Firepower", None, "Network Devices", "network", "Cisco", "cisco", "Cisco Firepower", "firewall"),
     (r"Cisco IOS XE", None, "Network Devices", "network", "Cisco", "cisco", "Cisco IOS XE", "router"),
@@ -122,7 +120,7 @@ CLASSIFICATION_RULES: list[tuple[str, str | None, str, str, str, str, str, str]]
     (r"HPE Aruba|Aruba", None, "Network Devices", "network", "HPE Aruba", "aruba", "Aruba Switch", "switch"),
     (r"ExtremeNetworks|Extreme", None, "Network Devices", "network", "Extreme Networks", "extreme", "Extreme SLX-OS", "switch"),
 
-    # ── Cloud Providers ──
+    # Cloud Providers
     (r"Microsoft Azure", None, "Cloud Providers", "cloud", "Microsoft", "windows", "Microsoft Azure", "azure"),
     (r"Amazon Web Services|AWS Foundations", None, "Cloud Providers", "cloud", "Amazon", "aws", "AWS", "aws"),
     (r"Google Cloud|GCP", None, "Cloud Providers", "cloud", "Google", "google", "Google Cloud Platform", "gcp"),
@@ -132,23 +130,23 @@ CLASSIFICATION_RULES: list[tuple[str, str | None, str, str, str, str, str, str]]
     (r"DigitalOcean", None, "Cloud Providers", "cloud", "DigitalOcean", "digitalocean", "DigitalOcean", "digitalocean"),
     (r"Tencent Cloud", None, "Cloud Providers", "cloud", "Tencent", "tencent", "Tencent Cloud", "tencent"),
 
-    # ── Cloud Services ──
+    # Cloud Services
     (r"Microsoft 365", None, "Cloud Providers", "cloud", "Microsoft", "windows", "Microsoft 365", "m365"),
     (r"Google Workspace", None, "Cloud Providers", "cloud", "Google", "google", "Google Workspace", "google"),
     (r"Dynamics 365", None, "Cloud Providers", "cloud", "Microsoft", "windows", "Dynamics 365", "dynamics"),
 
-    # ── Desktop Software ──
+    # Desktop Software
     (r"Google Chrome", None, "Desktop Software", "app-window", "Google", "google", "Google Chrome", "chrome"),
     (r"Mozilla Firefox", None, "Desktop Software", "app-window", "Mozilla", "firefox", "Mozilla Firefox", "firefox"),
     (r"Microsoft Office", None, "Desktop Software", "app-window", "Microsoft", "windows", "Microsoft Office", "office"),
     (r"Safari", None, "Desktop Software", "app-window", "Apple", "apple", "Safari", "safari"),
     (r"Visual Studio Code", None, "Desktop Software", "app-window", "Microsoft", "windows", "VS Code", "vscode"),
 
-    # ── DevSecOps ──
+    # DevSecOps
     (r"GitHub", None, "DevSecOps", "git-branch", "GitHub", "github", "GitHub", "github"),
     (r"GitLab", None, "DevSecOps", "git-branch", "GitLab", "gitlab", "GitLab", "gitlab"),
 
-    # ── Mobile Devices ──
+    # Mobile Devices
     (r"Apple iOS|iPadOS", None, "Mobile Devices", "smartphone", "Apple", "apple", "Apple iOS/iPadOS", "apple"),
     (r"Android", None, "Mobile Devices", "smartphone", "Google", "google", "Android", "android"),
 ]

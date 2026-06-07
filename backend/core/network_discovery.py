@@ -54,24 +54,24 @@ logger = logging.getLogger("auditforge.discovery")
 # fmt: off
 PROBE_PORTS: list[tuple[int, str, str]] = [
     # (port, service_name, platform_hint)
-    # ── Windows ──
+    # Windows
     (135,   "MSRPC",        "windows"),
     (139,   "NetBIOS",      "windows"),
     (445,   "SMB",          "windows"),
     (3389,  "RDP",          "windows"),
     (5985,  "WinRM-HTTP",   "windows"),
     (5986,  "WinRM-HTTPS",  "windows"),
-    # ── Active Directory / Enterprise ──
+    # Active Directory / Enterprise
     (88,    "Kerberos",     "windows"),     # AD Domain Controller
     (389,   "LDAP",         "windows"),     # AD LDAP
     (636,   "LDAPS",        "windows"),     # AD LDAP over TLS
     (3268,  "GC",           "windows"),     # AD Global Catalog
     (3269,  "GC-SSL",       "windows"),     # AD Global Catalog over TLS
-    # ── Linux / Unix ──
+    # Linux / Unix
     (22,    "SSH",          "linux"),
     (548,   "AFP",          "macos"),       # Apple Filing Protocol (macOS)
     (2049,  "NFS",          "linux"),       # Network File System
-    # ── Web ──
+    # Web
     (80,    "HTTP",         "unknown"),
     (443,   "HTTPS",        "unknown"),
     (8080,  "HTTP-Alt",     "unknown"),
@@ -79,18 +79,18 @@ PROBE_PORTS: list[tuple[int, str, str]] = [
     (8000,  "HTTP-Dev",     "unknown"),
     (8888,  "HTTP-Alt2",    "unknown"),
     (9090,  "HTTP-Mgmt",    "unknown"),
-    # ── Network devices ──
+    # Network devices
     (23,    "Telnet",       "network"),
     (830,   "NETCONF",      "network"),
     (53,    "DNS",          "network"),
     (514,   "Syslog",       "network"),
     (8291,  "WinBox",       "network"),     # MikroTik RouterOS
-        # ── Firewalls / VPN appliances ──
+        # Firewalls / VPN appliances
         (443,   "HTTPS-Web",    "firewall"),    # pfSense, OPNsense, FortiGate web UI
         (8443,  "HTTPS-Mgmt",   "firewall"),    # pfSense, OPNsense, Fortinet web UI
         (9443,  "HTTPS-Alt-Mgmt","firewall"),   # Some firewall variants
         (8000,  "HTTP-Mgmt",    "firewall"),    # Some firewall management interfaces
-    # ── Databases ──
+    # Databases
     (1433,  "MSSQL",        "database"),
     (5432,  "PostgreSQL",   "database"),
     (1521,  "Oracle",       "database"),
@@ -98,17 +98,17 @@ PROBE_PORTS: list[tuple[int, str, str]] = [
     (6379,  "Redis",        "database"),
     (27017, "MongoDB",      "database"),
     (9200,  "Elasticsearch","database"),    # Elasticsearch REST API
-    # ── IoT / Media / VoIP ──
+    # IoT / Media / VoIP
     (631,   "IPP",          "unknown"),     # Printers (Internet Printing Protocol)
     (5060,  "SIP",          "unknown"),     # VoIP
     (5900,  "VNC",          "unknown"),     # Remote desktop
     (62078, "iphone-sync",  "mobile"),      # Apple iOS device sync
     (9100,  "RAW-Print",    "unknown"),     # HP JetDirect / network printers
-    # ── Mail ──
+    # Mail
     (25,    "SMTP",         "unknown"),
     (110,   "POP3",         "unknown"),
     (143,   "IMAP",         "unknown"),
-    # ── Other ──
+    # Other
     (21,    "FTP",          "unknown"),
     (161,   "SNMP",         "network"),     # TCP SNMP (rare, but checked)
 ]
@@ -224,9 +224,7 @@ async def _ping_host(ip: str, timeout: float = 1.5) -> bool:
         return False
 
 
-# ═══════════════════════════════════════════════════════════
 # TCP passive OS fingerprinting (p0f-style)
-# ═══════════════════════════════════════════════════════════
 
 # TTL → OS family heuristics (initial TTL before decrement)
 _TTL_MAP: list[tuple[int, str, str]] = [
@@ -392,9 +390,7 @@ def _round_to_initial_ttl(observed_ttl: int) -> int:
     return 255
 
 
-# ═══════════════════════════════════════════════════════════
 # UDP port probing — protocol-specific packets
-# ═══════════════════════════════════════════════════════════
 
 # Pre-built UDP probe packets for common services
 _UDP_PROBES: dict[int, tuple[bytes, str, str]] = {
@@ -484,9 +480,7 @@ async def _udp_probe_host(
     return results
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 0: ARP sweep — discover ALL Layer-2 hosts + MAC
-# ═══════════════════════════════════════════════════════════
 
 # Module-level cache populated by _arp_sweep before per-host scans
 _arp_cache: dict[str, str] = {}  # ip → MAC address
@@ -556,12 +550,17 @@ async def _arp_sweep(ips: list[str]) -> dict[str, str]:
             for line in output.splitlines():
                 m = re.match(
                     r"\s*(\d+\.\d+\.\d+\.\d+)\s+"
-                    r"((\w\w[:-]){5}\w\w)\s+",
+                    r"((\w\w[:-]){5}\w\w)\s+"
+                    r"(\w+)",
                     line,
                 )
                 if m:
                     ip_addr = m.group(1)
                     mac = m.group(2).upper().replace("-", ":")
+                    entry_type = (m.group(4) or "").lower()
+                    # Only accept dynamic entries — static/incomplete are not live hosts
+                    if entry_type != "dynamic":
+                        continue
                     if mac != "FF:FF:FF:FF:FF:FF" and not mac.startswith("01:00:5E"):
                         result[ip_addr] = mac
         else:
@@ -604,9 +603,7 @@ async def _arp_sweep(ips: list[str]) -> dict[str, str]:
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 9: NetBIOS Name Service query (UDP 137)
-# ═══════════════════════════════════════════════════════════
 
 async def _netbios_name_query(
     ip: str, timeout: float = 2.0
@@ -747,7 +744,7 @@ async def _reverse_dns(ip: str) -> str:
         return ""
 
 
-# ── Banner Grabbing ──────────────────────────────────────────
+# Banner Grabbing
 
 async def _grab_banner(ip: str, port: int) -> str:
     """Connect to ip:port and read a service banner.
@@ -918,139 +915,139 @@ def _enrich_ports_from_banners(
                 break
 
 
-# ── OS Version & Vendor Detection (from banners) ────────────
+# OS Version & Vendor Detection (from banners)
 
-# ── MAC OUI → Vendor Database (top 180 manufacturers) ───────
+# MAC OUI → Vendor Database (top 180 manufacturers)
 # Source: IEEE OUI registry — covers ~95% of consumer/enterprise devices
 _OUI_VENDOR: dict[str, str] = {
-    # ── TP-Link ──
+    # TP-Link
     "50:C7:BF": "TP-Link", "98:DA:C4": "TP-Link", "E8:48:B8": "TP-Link",
     "F4:F2:6D": "TP-Link", "64:70:02": "TP-Link", "B0:BE:76": "TP-Link",
     "14:CC:20": "TP-Link", "10:FE:ED": "TP-Link", "C0:06:C3": "TP-Link",
     "30:B5:C2": "TP-Link", "18:A6:F7": "TP-Link", "A8:57:4E": "TP-Link",
     "54:AF:97": "TP-Link", "C0:25:E9": "TP-Link", "78:8C:B5": "TP-Link",
     "60:32:B1": "TP-Link", "AC:15:A2": "TP-Link", "D8:07:B6": "TP-Link",
-    # ── NETGEAR ──
+    # NETGEAR
     "A0:40:A0": "NETGEAR", "E0:91:F5": "NETGEAR", "B0:7F:B9": "NETGEAR",
     "28:C6:8E": "NETGEAR", "C4:04:15": "NETGEAR", "20:E5:2A": "NETGEAR",
     "2C:B0:5D": "NETGEAR", "84:1B:5E": "NETGEAR", "CC:40:D0": "NETGEAR",
     "6C:B0:CE": "NETGEAR", "74:44:01": "NETGEAR", "4C:60:DE": "NETGEAR",
-    # ── Cisco ──
+    # Cisco
     "00:1B:D5": "Cisco", "00:26:0B": "Cisco", "00:22:55": "Cisco",
     "00:1C:57": "Cisco", "00:1E:14": "Cisco", "00:1A:2F": "Cisco",
     "00:24:C4": "Cisco", "00:25:84": "Cisco", "58:97:BD": "Cisco",
     "F0:29:29": "Cisco", "B4:14:89": "Cisco", "88:F0:31": "Cisco",
     "BC:16:65": "Cisco", "00:17:59": "Cisco", "70:81:05": "Cisco",
-    # ── Juniper ──
+    # Juniper
     "00:05:85": "Juniper", "28:C0:DA": "Juniper", "54:E0:32": "Juniper",
     "F0:1C:2D": "Juniper", "84:18:88": "Juniper", "84:B5:9C": "Juniper",
     "CC:E1:7F": "Juniper", "3C:61:04": "Juniper", "40:B4:F0": "Juniper",
-    # ── Ubiquiti ──
+    # Ubiquiti
     "04:18:D6": "Ubiquiti", "18:E8:29": "Ubiquiti", "24:5A:4C": "Ubiquiti",
     "44:D9:E7": "Ubiquiti", "68:72:51": "Ubiquiti", "78:8A:20": "Ubiquiti",
     "80:2A:A8": "Ubiquiti", "B4:FB:E4": "Ubiquiti", "DC:9F:DB": "Ubiquiti",
     "F0:9F:C2": "Ubiquiti", "FC:EC:DA": "Ubiquiti", "E0:63:DA": "Ubiquiti",
-    # ── Fortinet ──
+    # Fortinet
     "00:09:0F": "Fortinet", "70:4C:A5": "Fortinet", "08:5B:0E": "Fortinet",
     "90:6C:AC": "Fortinet", "E8:1C:BA": "Fortinet", "00:90:0B": "Fortinet",
-    # ── Palo Alto Networks ──
+    # Palo Alto Networks
     "00:86:9C": "Palo Alto", "48:0B:B2": "Palo Alto", "00:1B:17": "Palo Alto",
     "B4:0C:25": "Palo Alto",
-    # ── Check Point ──
+    # Check Point
     "00:1C:7F": "Check Point", "00:A0:8E": "Check Point",
-    # ── Arista ──
+    # Arista
     "44:4C:A8": "Arista", "00:1C:73": "Arista", "28:99:3A": "Arista",
-    # ── MikroTik ──
+    # MikroTik
     "6C:3B:6B": "MikroTik", "E4:8D:8C": "MikroTik", "48:8F:5A": "MikroTik",
     "D4:CA:6D": "MikroTik", "74:4D:28": "MikroTik", "CC:2D:E0": "MikroTik",
     "B8:69:F4": "MikroTik", "00:0C:42": "MikroTik", "64:D1:54": "MikroTik",
-    # ── D-Link ──
+    # D-Link
     "1C:7E:E5": "D-Link", "34:08:04": "D-Link", "78:54:2E": "D-Link",
     "28:10:7B": "D-Link", "84:C9:B2": "D-Link", "1C:AF:F7": "D-Link",
     "B8:A3:86": "D-Link", "00:1B:11": "D-Link", "F0:B4:D2": "D-Link",
-    # ── ASUS ──
+    # ASUS
     "04:D4:C4": "ASUS", "1C:87:2C": "ASUS", "2C:56:DC": "ASUS",
     "38:D5:47": "ASUS", "54:04:A6": "ASUS", "AC:9E:17": "ASUS",
     "F8:32:E4": "ASUS", "10:C3:7B": "ASUS", "B0:6E:BF": "ASUS",
-    # ── Linksys ──
+    # Linksys
     "14:91:82": "Linksys", "20:AA:4B": "Linksys", "C0:56:27": "Linksys",
     "E8:F7:24": "Linksys", "58:6D:8F": "Linksys", "68:7F:74": "Linksys",
-    # ── Huawei ──
+    # Huawei
     "00:E0:FC": "Huawei", "48:46:FB": "Huawei", "88:66:39": "Huawei",
     "CC:A2:23": "Huawei", "5C:7D:5E": "Huawei", "AC:E2:15": "Huawei",
     "70:7B:E8": "Huawei", "D0:7A:B5": "Huawei", "E4:68:A3": "Huawei",
-    # ── ZTE ──
+    # ZTE
     "00:19:CB": "ZTE", "54:22:F8": "ZTE", "C8:7B:23": "ZTE",
-    # ── HPE / Aruba / HP ──
+    # HPE / Aruba / HP
     "00:0B:CD": "HPE", "B0:5A:DA": "HPE", "00:1E:0B": "HPE",
     "3C:D9:2B": "HPE/Aruba", "20:4C:03": "HPE/Aruba", "00:24:6C": "HPE/Aruba",
     "24:DE:C6": "HPE/Aruba", "D8:C7:C8": "HPE/Aruba", "AC:A3:1E": "HPE/Aruba",
-    # ── Dell ──
+    # Dell
     "18:03:73": "Dell", "B0:83:FE": "Dell", "14:B3:1F": "Dell",
     "24:6E:96": "Dell", "F4:8E:38": "Dell", "34:48:ED": "Dell",
-    # ── Microsoft (Surface, Xbox, etc.) ──
+    # Microsoft (Surface, Xbox, etc.)
     "28:18:78": "Microsoft", "7C:1E:52": "Microsoft", "C8:3F:26": "Microsoft",
-    # ── Apple ──
+    # Apple
     "3C:22:FB": "Apple", "A4:83:E7": "Apple", "F0:18:98": "Apple",
     "BC:52:B7": "Apple", "AC:BC:32": "Apple", "00:03:93": "Apple",
     "DC:A9:04": "Apple", "14:7D:DA": "Apple", "F8:FF:C2": "Apple",
-    # ── Samsung (phones, tablets, smart TVs) ──
+    # Samsung (phones, tablets, smart TVs)
     "00:16:6C": "Samsung", "A0:82:1F": "Samsung", "C4:73:1E": "Samsung",
     "8C:F5:A3": "Samsung", "10:D5:42": "Samsung", "E4:7C:F9": "Samsung",
     "BC:44:86": "Samsung", "5C:49:7D": "Samsung", "CC:07:AB": "Samsung",
     "F0:25:B7": "Samsung", "94:35:0A": "Samsung", "40:4E:36": "Samsung",
     "34:14:5F": "Samsung", "A8:7C:01": "Samsung", "50:01:BB": "Samsung",
     "6C:0B:5E": "Samsung", "D0:D2:B0": "Samsung", "24:18:C6": "Samsung",
-    # ── Xiaomi / Redmi ──
+    # Xiaomi / Redmi
     "64:CC:2E": "Xiaomi", "28:6C:07": "Xiaomi", "78:11:DC": "Xiaomi",
     "F8:A4:5F": "Xiaomi", "9C:99:A0": "Xiaomi", "50:64:2B": "Xiaomi",
     "AC:C1:EE": "Xiaomi", "7C:1D:D9": "Xiaomi", "34:CE:00": "Xiaomi",
-    # ── OnePlus ──
+    # OnePlus
     "C0:EE:40": "OnePlus", "94:65:2D": "OnePlus",
-    # ── OPPO / Realme ──
+    # OPPO / Realme
     "A0:A3:B3": "OPPO", "2C:5B:E1": "OPPO", "98:F6:21": "OPPO",
-    # ── Motorola ──
+    # Motorola
     "EC:C4:0D": "Motorola", "9C:D9:17": "Motorola", "48:FC:B8": "Motorola",
-    # ── Nokia ──
+    # Nokia
     "D4:63:FE": "Nokia",
-    # ── Honor ──
+    # Honor
     "38:F7:3D": "Honor",
-    # ── Sony (phones / TVs / PlayStation) ──
+    # Sony (phones / TVs / PlayStation)
     "FC:0F:E6": "Sony", "AC:9B:0A": "Sony", "00:04:1F": "Sony",
-    # ── LG ──
+    # LG
     "88:C9:D0": "LG", "10:68:3F": "LG", "CC:FA:00": "LG",
-    # ── Intel (laptops/desktops) ──
+    # Intel (laptops/desktops)
     "DC:71:96": "Intel", "F8:63:3F": "Intel", "34:02:86": "Intel",
     "8C:8D:28": "Intel", "A4:C3:F0": "Intel",
-    # ── Realtek (on-board Ethernet) ──
+    # Realtek (on-board Ethernet)
     "00:E0:4C": "Realtek", "52:54:00": "Realtek/QEMU",
-    # ── Google ──
+    # Google
     "54:60:09": "Google", "F4:F5:D8": "Google", "A4:77:33": "Google",
-    # ── Amazon ──
+    # Amazon
     "74:C2:46": "Amazon", "A0:02:DC": "Amazon", "FC:A1:83": "Amazon",
     "84:D6:D0": "Amazon", "68:37:E9": "Amazon", "44:00:49": "Amazon",
-    # ── SonicWall ──
+    # SonicWall
     "00:06:B1": "SonicWall", "C0:EA:E4": "SonicWall",
-    # ── WatchGuard ──
+    # WatchGuard
     "00:90:7F": "WatchGuard",
-    # ── Synology ──
+    # Synology
     "00:11:32": "Synology",
-    # ── QNAP ──
+    # QNAP
     "00:08:9B": "QNAP", "24:5E:BE": "QNAP",
-    # ── Sophos ──
+    # Sophos
     "00:1A:8C": "Sophos",
-    # ── pfSense / Netgate ──
+    # pfSense / Netgate
     "00:08:A2": "Netgate",
-    # ── Ruckus ──
+    # Ruckus
     "C4:10:8A": "Ruckus", "EC:58:EA": "Ruckus", "70:DF:2F": "Ruckus",
-    # ── Meraki (Cisco) ──
+    # Meraki (Cisco)
     "00:18:0A": "Meraki", "AC:17:C8": "Meraki", "E0:55:3D": "Meraki",
-    # ── VMware ESXi ──
+    # VMware ESXi
     "00:50:56": "VMware", "00:0C:29": "VMware", "00:05:69": "VMware",
 }
 
 
-# ── Hostname → vendor heuristic patterns ────────────────────
+# Hostname → vendor heuristic patterns
 # Matches common default hostnames set by router/AP/switch manufacturers
 _HOSTNAME_VENDOR_PATTERNS: list[tuple[str, str, str]] = [
     # (regex, vendor, device_model_hint)
@@ -1107,7 +1104,7 @@ _HOSTNAME_VENDOR_PATTERNS: list[tuple[str, str, str]] = [
 ]
 
 
-# ── HTTP deep-inspection patterns (login pages, titles, etc.) ──
+# HTTP deep-inspection patterns (login pages, titles, etc.)
 _HTTP_BODY_PATTERNS: list[tuple[str, str, str, str]] = [
     # (regex, vendor, device_model_hint, os_version_hint)
     # Router web UIs
@@ -1177,7 +1174,7 @@ _HTTP_BODY_PATTERNS: list[tuple[str, str, str, str]] = [
 ]
 
 
-# ── Windows build → version mapping (NTLM + SMB) ───────────
+# Windows build → version mapping (NTLM + SMB)
 _WINDOWS_BUILDS: list[tuple[int, int, str]] = [
     # (major, build_number, friendly_name)
     # Windows 11
@@ -1329,9 +1326,7 @@ def _match_body_patterns(
     return "", "", ""
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 1: SMB/NTLM fingerprinting (Windows exact version)
-# ═══════════════════════════════════════════════════════════
 
 async def _smb_ntlm_fingerprint(
     ip: str, timeout: float = 3.0
@@ -1350,7 +1345,7 @@ async def _smb_ntlm_fingerprint(
         return result
 
     try:
-        # ── Step 1: SMB2 Negotiate Request ──
+        # Step 1: SMB2 Negotiate Request
         # Minimal SMB2_NEGOTIATE with dialect 0x0202 (SMB 2.0.2)
         smb2_negotiate = (
             b"\x00\x00\x00\x72"  # NetBIOS session: length 114
@@ -1390,7 +1385,7 @@ async def _smb_ntlm_fingerprint(
             writer.close()
             return result
 
-        # ── Step 2: SMB2 Session Setup with NTLMSSP_NEGOTIATE ──
+        # Step 2: SMB2 Session Setup with NTLMSSP_NEGOTIATE
         # Build NTLMSSP_NEGOTIATE token
         ntlmssp_negotiate = (
             b"NTLMSSP\x00"
@@ -1565,9 +1560,7 @@ async def _smb_ntlm_fingerprint(
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 2: SNMP sysDescr probe
-# ═══════════════════════════════════════════════════════════
 
 async def _snmp_sysdescr(
     ip: str, community: str = "public", timeout: float = 2.0
@@ -1737,9 +1730,7 @@ async def _snmp_sysdescr(
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 3: MAC OUI vendor lookup (via ARP table)
-# ═══════════════════════════════════════════════════════════
 
 async def _get_mac_from_arp(ip: str) -> str:
     """Get MAC address for an IP — prefers the ARP sweep cache, falls back to async live lookup."""
@@ -1797,9 +1788,7 @@ def _lookup_oui_vendor(mac: str) -> str:
     return _OUI_VENDOR.get(prefix, "")
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 4: UPnP / SSDP discovery
-# ═══════════════════════════════════════════════════════════
 
 async def _upnp_discover(ip: str, timeout: float = 2.0) -> dict[str, Any]:
     """Send SSDP M-SEARCH via multicast (+ unicast fallback) and fetch device XML.
@@ -1965,9 +1954,7 @@ async def _upnp_discover(ip: str, timeout: float = 2.0) -> dict[str, Any]:
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 5: mDNS / Bonjour probe
-# ═══════════════════════════════════════════════════════════
 
 async def _mdns_probe(ip: str, timeout: float = 2.0) -> dict[str, Any]:
     """Send mDNS query via multicast 224.0.0.251 (+ unicast fallback).
@@ -2066,9 +2053,7 @@ async def _mdns_probe(ip: str, timeout: float = 2.0) -> dict[str, Any]:
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 6: HTTP deep inspection (HTML body + headers)
-# ═══════════════════════════════════════════════════════════
 
 async def _http_deep_inspect(
     ip: str, port: int = 80, timeout: float = 3.0
@@ -2185,9 +2170,7 @@ async def _http_deep_inspect(
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 7: Hostname heuristics
-# ═══════════════════════════════════════════════════════════
 
 def _hostname_heuristics(hostname: str) -> dict[str, Any]:
     """Match hostname against known vendor patterns.
@@ -2218,9 +2201,7 @@ def _hostname_heuristics(hostname: str) -> dict[str, Any]:
     return {}
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 8: Banner-based detection (enhanced original)
-# ═══════════════════════════════════════════════════════════
 
 def _detect_from_banners(
     banners: dict[int, str], os_guess: str, hostname: str,
@@ -2292,9 +2273,7 @@ def _detect_from_banners(
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 11: RDP fingerprinting (X.224 / CredSSP / NLA)
-# ═══════════════════════════════════════════════════════════
 
 async def _rdp_fingerprint(ip: str, port: int = 3389) -> dict[str, Any]:
     """Send an X.224 Connection Request to RDP and read the response.
@@ -2385,9 +2364,7 @@ async def _rdp_fingerprint(ip: str, port: int = 3389) -> dict[str, Any]:
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Layer 12: WinRM detection (HTTP on 5985 / HTTPS on 5986)
-# ═══════════════════════════════════════════════════════════
 
 async def _winrm_detect(ip: str) -> dict[str, Any]:
     """Probe WinRM HTTP (5985) and HTTPS (5986) endpoints.
@@ -2460,9 +2437,7 @@ async def _winrm_detect(ip: str) -> dict[str, Any]:
     return result
 
 
-# ═══════════════════════════════════════════════════════════
 # Enhanced Firewall Detection (4-signal multi-layer approach)
-# ═══════════════════════════════════════════════════════════
 
 async def _detect_firewall(
     ip: str,
@@ -2493,9 +2468,7 @@ async def _detect_firewall(
     confidence_score = 0
     detection_sources = []
     
-    # ─────────────────────────────────────────────────────────────
     # Signal 1: Port combination analysis
-    # ─────────────────────────────────────────────────────────────
     has_https_ui = any(p in port_set for p in (443, 8443, 9443))
     has_ssh = 22 in port_set
     has_http = any(p in port_set for p in (80, 8000, 8080, 8888))
@@ -2522,9 +2495,7 @@ async def _detect_firewall(
         confidence_score -= 30
         detection_sources.append("disqualifier:database_ports")
     
-    # ─────────────────────────────────────────────────────────────
     # Signal 2: SSH banner analysis for firewall fingerprints
-    # ─────────────────────────────────────────────────────────────
     ssh_banner = banners.get(22, "")
     logger.debug(f"[FIREWALL_DETECT] IP={ip}, SSH Banner available: {bool(ssh_banner)}, Banner: {ssh_banner[:100] if ssh_banner else 'NONE'}")
     if ssh_banner:
@@ -2548,9 +2519,7 @@ async def _detect_firewall(
                 detection_sources.append(f"firewall_ssh_banner:{product_name}")
                 break
     
-    # ─────────────────────────────────────────────────────────────
     # Signal 3: HTTP headers/titles for firewall keywords
-    # ─────────────────────────────────────────────────────────────
     if http_result and isinstance(http_result, dict):
         vendor = (http_result.get("vendor") or "").lower()
         os_version = (http_result.get("os_version") or "").lower()
@@ -2589,9 +2558,7 @@ async def _detect_firewall(
             confidence_score += http_result.get("confidence", 0) // 2
             detection_sources.append("firewall_http_confidence")
     
-    # ─────────────────────────────────────────────────────────────
     # Final confidence calculation and device role assignment
-    # ─────────────────────────────────────────────────────────────
     
     # Threshold: >= 30 confidence = firewall
     logger.debug(f"[FIREWALL_DETECT] IP={ip}, Final confidence_score={confidence_score}, sources={detection_sources}")
@@ -2609,9 +2576,7 @@ async def _detect_firewall(
     return {}
 
 
-# ═══════════════════════════════════════════════════════════
 # Orchestrator: multi-layer fingerprinting with confidence
-# ═══════════════════════════════════════════════════════════
 
 async def _fingerprint_host(
     ip: str,
@@ -2819,7 +2784,7 @@ async def _fingerprint_host(
         except Exception:
             pass
 
-    # ── Merge: pick highest confidence for each field ──
+    # Merge: pick highest confidence for each field
     best: dict[str, Any] = {
         "os_version": "",
         "vendor": "",
@@ -2870,7 +2835,7 @@ async def _fingerprint_host(
         if not best["hostname_override"] and candidate.get("hostname"):
             best["hostname_override"] = candidate["hostname"]
 
-    # ── Multi-source confidence boosting ──────────────────────
+    # Multi-source confidence boosting
     # When independent layers agree on the same vendor or OS family,
     # boost confidence proportionally.  Each agreeing layer beyond the
     # first adds +5 pts (capped at 99).
@@ -3061,7 +3026,7 @@ def suggest_benchmarks(
     port_numbers = {p["port"] for p in open_ports}
     banners = banners or {}
 
-    # ── Database benchmarks (highest priority — port-specific) ────────────
+    # Database benchmarks (highest priority — port-specific)
     if 5432 in port_numbers:
         suggestions.append({
             "benchmark_name": "CIS PostgreSQL 16 Benchmark",
@@ -3099,7 +3064,7 @@ def suggest_benchmarks(
             "reason": "Port 9042 (Cassandra) detected",
         })
 
-    # ── Web server benchmarks (banner-based or port-based) ────────────────
+    # Web server benchmarks (banner-based or port-based)
     # Check HTTP banner for server type
     http_banner = banners.get(80, "") + banners.get(443, "") + banners.get(8080, "")
     http_banner_lower = http_banner.lower()
@@ -3122,7 +3087,7 @@ def suggest_benchmarks(
             "reason": "Tomcat detected (banner or port 8005)",
         })
 
-    # ── OS-based benchmarks ───────────────────────────────────────────────
+    # OS-based benchmarks
     if os_guess == "windows":
         # Check for server vs workstation
         if device_role == "server" or device_role == "domain_controller":
@@ -3156,7 +3121,7 @@ def suggest_benchmarks(
             "reason": "Firewall appliance detected (SSH + HTTPS)",
         })
 
-    # ── Network device benchmarks ─────────────────────────────────────────
+    # Network device benchmarks
     if device_role == "network_device":
         if 23 in port_numbers:  # Telnet suggests older Cisco
             suggestions.append({
@@ -3165,7 +3130,7 @@ def suggest_benchmarks(
                 "reason": "Network device with Telnet (Cisco-style)",
             })
 
-    # ── DNS server ────────────────────────────────────────────────────────
+    # DNS server
     if 53 in port_numbers and os_guess == "linux":
         suggestions.append({
             "benchmark_name": "CIS ISC BIND DNS Server 9.11 Benchmark",
@@ -3173,7 +3138,7 @@ def suggest_benchmarks(
             "reason": "DNS port 53 open on Linux host",
         })
 
-    # ── Dynamic matching for newly loaded packs ──────────────────────────
+    # Dynamic matching for newly loaded packs
     # Maps well-known ports to platform keywords. If a loaded benchmark name
     # contains the keyword and isn't already suggested, add it dynamically.
     _PORT_KEYWORDS = {
@@ -3210,8 +3175,7 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
     any UDP probe.
     """
     async with sem:
-        # Check ARP cache first — if the host responded to the ARP sweep,
-        # it's alive even if TCP/ICMP fail (phones, IoT, firewalled hosts)
+        # Check ARP cache — used for MAC enrichment, but NOT as sole liveness proof
         arp_alive = ip in _arp_cache
 
         # Phase 1: Quick alive check — TCP on common ports + ICMP ping in parallel
@@ -3223,7 +3187,9 @@ async def _scan_host(ip: str, sem: asyncio.Semaphore) -> DiscoveredHost | None:
         tcp_alive = any(alive_results[:-1])
         ping_alive = alive_results[-1]
 
-        if not tcp_alive and not ping_alive and not arp_alive:
+        # Host must respond to TCP or ICMP — ARP alone is not enough
+        # (Windows ARP tables contain stale/cross-interface entries)
+        if not tcp_alive and not ping_alive:
             return None  # Host appears completely down
 
         # Phase 2: Full port scan (only bother if TCP showed signs of life)
@@ -3531,51 +3497,9 @@ async def discover_network(
             _discovery_progress[discovery_id]["scanned"] = min(batch_start + len(batch), total)
             _discovery_progress[discovery_id]["found"] = len(discovered)
 
-    # Create entries for ARP-only hosts (responded to ping but had no open TCP ports)
-    for arp_ip in arp_only_ips:
-        mac = arp_results.get(arp_ip, "")
-        vendor = _lookup_oui_vendor(mac) if mac else ""
-        os_guess = "unknown"
-        device_role = "unknown"
-        detection = "arp_sweep"
-        conf = 25 if vendor else 10
-
-        # Detect locally-administered (randomized) MACs — bit 1 of first octet
-        # NOTE: Do NOT classify as "mobile" — VMs and containers commonly use
-        # randomized MACs. Keep as "unknown" and let port heuristics refine.
-        is_random_mac = False
-        if mac and not vendor:
-            try:
-                first_byte = int(mac.split(":")[0], 16)
-                if first_byte & 0x02:
-                    is_random_mac = True
-                    detection = "mac_arp"
-                    conf = 15
-            except (ValueError, IndexError):
-                pass
-
-        if vendor:
-            vendor_lower = vendor.lower()
-            if any(kw in vendor_lower for kw in ("samsung", "google", "oneplus",
-                   "xiaomi", "huawei", "oppo", "realme", "motorola", "sony",
-                   "lg", "nokia", "honor", "amazon")):
-                device_role = "mobile"
-            elif "apple" in vendor_lower:
-                os_guess = "macos"
-                device_role = "mobile"
-            elif any(kw in vendor_lower for kw in ("tp-link", "netgear", "asus",
-                     "d-link", "linksys", "cisco", "juniper", "mikrotik",
-                     "ubiquiti", "fortinet", "arista", "meraki", "sonicwall")):
-                device_role = "network_device"
-        discovered.append(DiscoveredHost(
-            ip=arp_ip,
-            mac_address=mac,
-            vendor=vendor if vendor else ("(randomized MAC)" if is_random_mac else ""),
-            os_guess=os_guess,
-            device_role=device_role,
-            detection_method=detection,
-            confidence=conf,
-        ))
+    # ARP-only hosts (no TCP/ICMP response) are no longer added — on Windows
+    # the ARP table contains stale entries from all interfaces that produce
+    # false positives.  Only hosts confirmed alive via TCP or ICMP are kept.
 
     elapsed = time.monotonic() - start_time
     final_status = "cancelled" if cancelled else "completed"

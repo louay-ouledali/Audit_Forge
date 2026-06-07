@@ -57,7 +57,7 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 logger = logging.getLogger("auditforge.api.scans")
 
 
-# ── Network Discovery ────────────────────────────────────────
+# Network Discovery
 
 
 class DiscoveryRequest(BaseModel):
@@ -210,7 +210,7 @@ async def discover_and_return(
     return {"hosts": enriched, "total_scanned": len(enriched), "engine": engine}
 
 
-# ── Discovery cache upsert ───────────────────────────────────
+# Discovery cache upsert
 
 
 def _upsert_discovery_cache(
@@ -303,7 +303,7 @@ def _upsert_discovery_cache(
         logger.warning("Failed to upsert discovery cache", exc_info=True)
 
 
-# ── Discovery enrichment helper ──────────────────────────────
+# Discovery enrichment helper
 
 
 def _enrich_discovered_hosts(
@@ -438,7 +438,7 @@ def _enrich_discovered_hosts(
     return enriched
 
 
-# ── Script generation (existing) ─────────────────────────────
+# Script generation (existing)
 
 
 @router.post("/generate-script")
@@ -522,7 +522,7 @@ def preview_script(payload: GenerateScriptRequest, db: Session = Depends(get_db)
     )
 
 
-# ── Network scan endpoints ────────────────────────────────────
+# Network scan endpoints
 
 
 def _run_scan_in_background(
@@ -743,7 +743,7 @@ def cancel_running_scan(scan_id: int, db: Session = Depends(get_db), current_use
     )
 
 
-# ── Scan CRUD ─────────────────────────────────────────────────
+# Scan CRUD
 
 
 @router.get("", response_model=None)
@@ -902,7 +902,7 @@ async def import_with_new_scan(
     return {**stats, "scan_id": scan.id}
 
 
-# ── Smart Import — Preview ───────────────────────────────────
+# Smart Import — Preview
 
 
 @router.post("/smart-import/preview")
@@ -934,7 +934,7 @@ async def smart_import_preview(
     return preview_data
 
 
-# ── Smart Import — Execute ───────────────────────────────────
+# Smart Import — Execute
 
 
 @router.post("/smart-import")
@@ -970,7 +970,7 @@ async def smart_import(
 
     filename = file.filename or ""
 
-    # ── Nessus file detection → delegate to ImportOrchestrator ──
+    # Nessus file detection → delegate to ImportOrchestrator
     content_str = raw.decode("utf-8", errors="replace").lstrip("\ufeff\ufffe")
     is_nessus = (
         filename.lower().endswith((".csv", ".html", ".htm", ".nessus", ".xml"))
@@ -1003,11 +1003,11 @@ async def smart_import(
 
         return result.to_dict()
 
-    # ── Legacy AuditForge format (ZIP / JSON) ────────────────
+    # Legacy AuditForge format (ZIP / JSON)
     system_info: dict | None = None
     result_content: str | None = None
 
-    # ── Extract from ZIP ─────────────────────────────────────
+    # Extract from ZIP
     if filename.endswith(".zip") or raw[:4] == b"PK\x03\x04":
         try:
             with zipfile.ZipFile(io.BytesIO(raw)) as zf:
@@ -1052,7 +1052,7 @@ async def smart_import(
     if not result_content:
         raise HTTPException(status_code=400, detail="No result content found in upload")
 
-    # ── Resolve benchmark ────────────────────────────────────
+    # Resolve benchmark
     benchmark: Benchmark | None = None
     if system_info:
         bm_name = system_info.get("benchmark", "")
@@ -1072,7 +1072,7 @@ async def smart_import(
     if not benchmark:
         raise HTTPException(status_code=400, detail="No benchmark found. Please upload a benchmark first.")
 
-    # ── Resolve or create target ─────────────────────────────
+    # Resolve or create target
     target: Target | None = None
     target_was_created = False
 
@@ -1152,7 +1152,7 @@ async def smart_import(
             db.add(MissionTarget(mission_id=mission_id, target_id=target.id))
             db.commit()
 
-    # ── Create scan & import ─────────────────────────────────
+    # Create scan & import
     scan = Scan(
         target_id=target.id,
         benchmark_id=benchmark.id,
@@ -1271,7 +1271,7 @@ def delete_scan(scan_id: int, db: Session = Depends(get_db)):
     return {"message": "Scan deleted", "scan_id": scan_id}
 
 
-# ── Findings for a scan ──────────────────────────────────────
+# Findings for a scan
 
 
 @router.get("/{scan_id}/findings")
@@ -1329,7 +1329,7 @@ def list_scan_findings(
     return {"data": result, "total": total}
 
 
-# ── Result import ─────────────────────────────────────────────
+# Result import
 
 
 @router.post("/{scan_id}/import-results")
@@ -1423,7 +1423,7 @@ async def _extract_result_content(file: UploadFile) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-# ── Scan Batch ("Scan All") ──────────────────────────────────
+# Scan Batch ("Scan All")
 
 # In-memory progress tracker for batch scans
 _batch_progress: dict[int, dict] = {}
@@ -1837,7 +1837,7 @@ def cancel_batch(batch_id: int, db: Session = Depends(get_db), current_user: Use
     }
 
 
-# ── Private helpers ──────────────────────────────────────────
+# Private helpers
 
 
 def _looks_like_nessus(content: str) -> bool:
@@ -1863,7 +1863,7 @@ def _looks_like_nessus(content: str) -> bool:
     return False
 
 
-# ── Phase 3: Scan Comparison ────────────────────────────────
+# Phase 3: Scan Comparison
 
 
 @router.get("/compare/{scan_a_id}/{scan_b_id}")

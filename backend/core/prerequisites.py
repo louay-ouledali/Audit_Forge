@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# ── Script filenames (served by GET /scripts/{filename}) ─────────
+# Script filenames (served by GET /scripts/{filename})
 SCRIPT_WIN_WINRM = "Enable_WinRM.ps1"
 SCRIPT_WIN_OPENSSH = "Enable_OpenSSH_Windows.ps1"
 SCRIPT_LINUX_SSH = "enable_ssh_linux.sh"
@@ -29,9 +29,7 @@ def _step(
     }
 
 
-# ═══════════════════════════════════════════════════════════════
 # WINDOWS — WinRM (primary)
-# ═══════════════════════════════════════════════════════════════
 
 _WINDOWS_WINRM: dict[str, Any] = {
     "platform": "windows",
@@ -88,9 +86,7 @@ _WINDOWS_WINRM: dict[str, Any] = {
     },
 }
 
-# ═══════════════════════════════════════════════════════════════
 # WINDOWS — SSH / OpenSSH (fallback)
-# ═══════════════════════════════════════════════════════════════
 
 _WINDOWS_SSH: dict[str, Any] = {
     "platform": "windows",
@@ -144,9 +140,7 @@ _WINDOWS_SSH: dict[str, Any] = {
     },
 }
 
-# ═══════════════════════════════════════════════════════════════
 # LINUX — SSH
-# ═══════════════════════════════════════════════════════════════
 
 _LINUX_SSH: dict[str, Any] = {
     "platform": "linux",
@@ -193,9 +187,7 @@ _LINUX_SSH: dict[str, Any] = {
     "fallback": None,
 }
 
-# ═══════════════════════════════════════════════════════════════
 # NETWORK DEVICES — per-vendor
-# ═══════════════════════════════════════════════════════════════
 
 _NETWORK_GENERIC: dict[str, Any] = {
     "platform": "network",
@@ -317,9 +309,7 @@ _NETWORK_FORTINET: dict[str, Any] = {
     ],
 }
 
-# ═══════════════════════════════════════════════════════════════
 # DATABASE
-# ═══════════════════════════════════════════════════════════════
 
 _DATABASE_GENERIC: dict[str, Any] = {
     "platform": "database",
@@ -363,9 +353,7 @@ _DATABASE_GENERIC: dict[str, Any] = {
 }
 
 
-# ═══════════════════════════════════════════════════════════════
 # Public API
-# ═══════════════════════════════════════════════════════════════
 
 # Lookup table: (platform, connection_method|None) → guide
 _GUIDES: dict[tuple[str, str | None], dict[str, Any]] = {

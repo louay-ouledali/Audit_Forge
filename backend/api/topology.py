@@ -23,7 +23,7 @@ logger = logging.getLogger("auditforge.api.topology")
 EMPTY_GRAPH: dict = {"nodes": [], "edges": []}
 
 
-# ── helpers ──────────────────────────────────────────────────────
+# helpers
 
 def _get_mission_or_404(mission_id: int, db: Session) -> Mission:
     mission = db.query(Mission).filter(Mission.id == mission_id).first()
@@ -50,7 +50,7 @@ def _empty_response(mission_id: int) -> TopologyResponse:
     )
 
 
-# ── 1. GET topology ─────────────────────────────────────────────
+# 1. GET topology
 
 @router.get("/missions/{mission_id}/topology", response_model=TopologyResponse)
 def get_topology(mission_id: int, db: Session = Depends(get_db)):
@@ -64,7 +64,7 @@ def get_topology(mission_id: int, db: Session = Depends(get_db)):
     return _to_response(topo)
 
 
-# ── 2. POST rebuild ─────────────────────────────────────────────
+# 2. POST rebuild
 
 @router.post("/missions/{mission_id}/topology/rebuild", response_model=TopologyResponse)
 def rebuild_topology(mission_id: int, db: Session = Depends(get_db)):
@@ -124,7 +124,7 @@ def rebuild_topology(mission_id: int, db: Session = Depends(get_db)):
     return _to_response(topo)
 
 
-# ── 3. PUT layout ───────────────────────────────────────────────
+# 3. PUT layout
 
 @router.put("/missions/{mission_id}/topology/layout", response_model=TopologyResponse)
 def save_layout(
@@ -146,7 +146,7 @@ def save_layout(
     return _to_response(topo)
 
 
-# ── 4. POST add manual edge ─────────────────────────────────────
+# 4. POST add manual edge
 
 @router.post("/missions/{mission_id}/topology/edges", response_model=TopologyResponse)
 def add_edge(
@@ -177,7 +177,7 @@ def add_edge(
     return _to_response(topo)
 
 
-# ── 5. DELETE remove edge ────────────────────────────────────────
+# 5. DELETE remove edge
 
 @router.delete("/missions/{mission_id}/topology/edges", response_model=TopologyResponse)
 def remove_edge(

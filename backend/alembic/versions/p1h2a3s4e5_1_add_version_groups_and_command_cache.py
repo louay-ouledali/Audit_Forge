@@ -28,7 +28,7 @@ def upgrade() -> None:
     inspector = sa_inspect(bind)
     existing_tables = inspector.get_table_names()
 
-    # ── benchmark_groups ──
+    # benchmark_groups
     if "benchmark_groups" in existing_tables:
         # Drop auto-created (empty) table so we can recreate with proper constraints
         op.drop_table("benchmark_groups")
@@ -43,7 +43,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("canonical_name", "platform", name="uq_bgr_canonical_platform"),
     )
 
-    # ── command_cache ──
+    # command_cache
     if "command_cache" in existing_tables:
         op.drop_table("command_cache")
     op.create_table(
@@ -71,7 +71,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_command_cache_platform_section", "command_cache", ["platform", "section_number"])
 
-    # ── benchmarks: new columns ──
+    # benchmarks: new columns
     bench_cols = {c["name"] for c in inspector.get_columns("benchmarks")}
     with op.batch_alter_table("benchmarks") as batch_op:
         if "group_id" not in bench_cols:
@@ -82,7 +82,7 @@ def upgrade() -> None:
         if "is_baseline" not in bench_cols:
             batch_op.add_column(sa.Column("is_baseline", sa.Boolean, server_default="0"))
 
-    # ── rules: new column ──
+    # rules: new column
     rule_cols = {c["name"] for c in inspector.get_columns("rules")}
     with op.batch_alter_table("rules") as batch_op:
         if "framework_ref" not in rule_cols:

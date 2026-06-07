@@ -308,7 +308,7 @@ def extract_rules_from_findings(findings: list[ParsedFinding]) -> list[Extracted
     return rules
 
 
-# ── Private helpers ─────────────────────────────────────────────
+# Private helpers
 
 
 def _build_field_map(fieldnames: list[str]) -> dict[str, str]:

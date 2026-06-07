@@ -132,7 +132,7 @@ class LLMManager:
         """
         config = self.get_current_config(task=task)
 
-        # ── Token budget enforcement ──
+        # Token budget enforcement
         remaining = self._check_token_budget()
         if remaining is not None and remaining <= 0:
             raise LLMResponseError(
@@ -140,7 +140,7 @@ class LLMManager:
                 detail=f"Budget remaining: {remaining}",
             )
 
-        # ── Cache lookup (skip for interactive tasks like copilot) ──
+        # Cache lookup (skip for interactive tasks like copilot)
         _no_cache_tasks = {"copilot"}
         skip_cache = task in _no_cache_tasks
         model_name = config.get("offline_model") if config["mode"] == "offline" else config.get("online_model", "")
@@ -159,7 +159,7 @@ class LLMManager:
                     result = await self._invoke_ollama(prompt, system_prompt, config, timeout, json_mode=json_mode)
                 else:
                     result = await self._invoke_online(prompt, system_prompt, config, timeout, json_mode=json_mode)
-                # ── Cache the successful response (skip for interactive tasks) ──
+                # Cache the successful response (skip for interactive tasks)
                 if not skip_cache:
                     self._cache_put(cache_key, result, task, model_name, prompt)
                 return result
@@ -373,7 +373,7 @@ class LLMManager:
                 "error": str(exc),
             }
 
-    # ── Cache helpers ──
+    # Cache helpers
 
     @staticmethod
     def _make_cache_key(
@@ -483,7 +483,7 @@ class LLMManager:
         finally:
             db.close()
 
-    # ── Token helpers ──
+    # Token helpers
 
     def _get_max_tokens(self) -> int:
         """Read llm_max_tokens from DB settings, fall back to LLM_MAX_TOKENS."""
@@ -544,7 +544,7 @@ class LLMManager:
         finally:
             db.close()
 
-    # ── Private methods ──
+    # Private methods
 
     async def _invoke_ollama(
         self,

@@ -25,7 +25,7 @@ limiter = Limiter(key_func=get_remote_address)
 logger = logging.getLogger("auditforge.api.auth")
 
 
-# ── Schemas ──────────────────────────────────────────────────────────
+# Schemas
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -42,7 +42,7 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
-# ── Endpoints ────────────────────────────────────────────────────────
+# Endpoints
 @router.post("/login", response_model=LoginResponse)
 @limiter.limit("5/minute")
 def login(request: Request, body: LoginRequest, response: Response, db: Session = Depends(get_db)):

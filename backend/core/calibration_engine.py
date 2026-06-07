@@ -188,9 +188,7 @@ def _calibrate_contains(
     return None  # contains: is usually correct
 
 
-# ═══════════════════════════════════════════════════════════════════
 # Batch Calibration (post-scan)
-# ═══════════════════════════════════════════════════════════════════
 
 def calibrate_scan_results(
     findings: list[Any],

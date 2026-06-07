@@ -33,9 +33,7 @@ from backend.models.rule_command import RuleCommand
 logger = logging.getLogger("auditforge.importers.severity_enricher")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Data classes
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class EnrichmentResult:
@@ -63,9 +61,7 @@ class EnrichmentResult:
         }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Public API
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def enrich_imported_benchmark(
     benchmark_id: int,
@@ -106,7 +102,7 @@ def enrich_imported_benchmark(
         logger.debug("Benchmark %d is curated (%s) — skipping enrichment", benchmark_id, benchmark.source)
         return result
 
-    # ── Phase 1: Cross-benchmark matching ─────────────────────────────────
+    # Phase 1: Cross-benchmark matching
     closest = _find_closest_preloaded(benchmark, db)
     if closest:
         result.preloaded_benchmark_id = closest.id
@@ -127,7 +123,7 @@ def enrich_imported_benchmark(
             benchmark_id, benchmark.name, benchmark.platform_family,
         )
 
-    # ── Phase 2: AI severity fallback ─────────────────────────────────────
+    # Phase 2: AI severity fallback
     if use_ai_fallback:
         still_medium = (
             db.query(Rule)
@@ -141,7 +137,7 @@ def enrich_imported_benchmark(
             ai_enriched = _enrich_severity_with_ai(still_medium, db)
             result.rules_enriched_by_ai = ai_enriched
 
-    # ── Count remaining unchanged rules ───────────────────────────────────
+    # Count remaining unchanged rules
     result.rules_unchanged = (
         db.query(func.count(Rule.id))
         .filter(Rule.benchmark_id == benchmark_id, Rule.severity == "medium")
@@ -149,7 +145,7 @@ def enrich_imported_benchmark(
         or 0
     )
 
-    # ── Build severity distribution ───────────────────────────────────────
+    # Build severity distribution
     severity_rows = (
         db.query(Rule.severity, func.count(Rule.id))
         .filter(Rule.benchmark_id == benchmark_id)
@@ -158,7 +154,7 @@ def enrich_imported_benchmark(
     )
     result.severity_distribution = {sev: cnt for sev, cnt in severity_rows}
 
-    # ── Phase 3: Sync Finding.severity with enriched Rule.severity ────────
+    # Phase 3: Sync Finding.severity with enriched Rule.severity
     if scan_id:
         result.findings_updated = _sync_finding_severities(scan_id, benchmark_id, db)
 
@@ -166,9 +162,7 @@ def enrich_imported_benchmark(
     return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Phase 1 — Cross-benchmark matching
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _find_closest_preloaded(
     imported: Benchmark,
@@ -438,13 +432,13 @@ def _copy_from_preloaded(
 
         changed = False
 
-        # ── Copy severity ─────────────────────────────────────
+        # Copy severity
         if imp_rule.severity in (None, "medium", ""):
             if pre_rule.severity and pre_rule.severity != "medium":
                 imp_rule.severity = pre_rule.severity
                 changed = True
 
-        # ── Copy intelligence fields ──────────────────────────
+        # Copy intelligence fields
         if not imp_rule.risk_weight or imp_rule.risk_weight == 5:
             if pre_rule.risk_weight and pre_rule.risk_weight != 5:
                 imp_rule.risk_weight = pre_rule.risk_weight
@@ -478,7 +472,7 @@ def _copy_from_preloaded(
             imp_rule.cis_controls = pre_rule.cis_controls
             changed = True
 
-        # ── Copy RuleCommand if the imported rule has none ────
+        # Copy RuleCommand if the imported rule has none
         pre_cmd = pre_rule.commands
         imp_cmd = imp_rule.commands
 
@@ -518,9 +512,7 @@ def _copy_from_preloaded(
     return rules_enriched, commands_copied
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Phase 2 — AI severity fallback
-# ═══════════════════════════════════════════════════════════════════════════════
 
 # Severity classification prompt template
 _AI_SEVERITY_SYSTEM = """You are a cybersecurity expert specializing in CIS Benchmark compliance.
@@ -641,9 +633,7 @@ def _enrich_severity_with_ai(
     return total_updated
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Phase 3 — Sync Finding.severity with enriched Rule.severity
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _sync_finding_severities(
     scan_id: int,

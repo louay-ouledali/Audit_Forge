@@ -48,7 +48,7 @@ class DiscoveryCache(Base):
         Index("ix_discovery_cache_mac_subnet", "mac_address", "subnet"),
     )
 
-    # ── Helpers ────────────────────────────────────────────
+    # Helpers
 
     @property
     def open_ports(self) -> list[dict]:

@@ -33,7 +33,7 @@ def _column_exists(table: str, column: str) -> bool:
 
 
 def upgrade() -> None:
-    # ── New table: import_records ─────────────────────────────
+    # New table: import_records
     if not _table_exists("import_records"):
         op.create_table(
             "import_records",
@@ -52,14 +52,14 @@ def upgrade() -> None:
             sa.Column("created_at", sa.DateTime, nullable=True),
         )
 
-    # ── findings: +2 columns ─────────────────────────────────
+    # findings: +2 columns
     with op.batch_alter_table("findings") as batch_op:
         if not _column_exists("findings", "import_source"):
             batch_op.add_column(sa.Column("import_source", sa.String, nullable=True))
         if not _column_exists("findings", "import_metadata"):
             batch_op.add_column(sa.Column("import_metadata", sa.Text, nullable=True))
 
-    # ── benchmarks: +4 columns ───────────────────────────────
+    # benchmarks: +4 columns
     with op.batch_alter_table("benchmarks", naming_convention={"fk": "fk_%(table_name)s_%(column_0_name)s"}) as batch_op:
         if not _column_exists("benchmarks", "is_editable"):
             batch_op.add_column(sa.Column("is_editable", sa.Boolean, nullable=True, server_default="0"))
@@ -74,7 +74,7 @@ def upgrade() -> None:
         if not _column_exists("benchmarks", "source_details"):
             batch_op.add_column(sa.Column("source_details", sa.Text, nullable=True))
 
-    # ── rules: +2 columns ───────────────────────────────────
+    # rules: +2 columns
     with op.batch_alter_table("rules") as batch_op:
         if not _column_exists("rules", "source"):
             batch_op.add_column(sa.Column("source", sa.String, nullable=True))

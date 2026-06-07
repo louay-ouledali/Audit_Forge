@@ -31,9 +31,7 @@ from backend.importers.base import ExtractedRule, PlatformInfo
 logger = logging.getLogger("auditforge.importers.unknown_parser")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Platform detection via LLM
-# ═══════════════════════════════════════════════════════════════════════════════
 
 async def detect_platform_from_content(content: str) -> dict[str, Any]:
     """Use the LLM to detect the target platform from document content.
@@ -99,9 +97,7 @@ async def detect_platform_from_content(content: str) -> dict[str, Any]:
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Rule extraction via LLM
-# ═══════════════════════════════════════════════════════════════════════════════
 
 async def extract_rules_from_unknown(
     content: str,
@@ -225,9 +221,7 @@ def _parse_llm_rule(item: dict[str, Any]) -> ExtractedRule | None:
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Build PlatformInfo from detection result
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def build_platform_info(detection: dict[str, Any]) -> PlatformInfo:
     """Convert LLM platform detection result into a PlatformInfo object."""
@@ -241,9 +235,7 @@ def build_platform_info(detection: dict[str, Any]) -> PlatformInfo:
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 #  Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
 
 def _split_into_chunks(content: str, max_chars: int = 3500) -> list[str]:
     """Split content into chunks, preferring natural section boundaries.

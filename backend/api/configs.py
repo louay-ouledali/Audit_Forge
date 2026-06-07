@@ -71,7 +71,7 @@ def _get_snapshot_or_404(snapshot_id: int, db: Session) -> ConfigSnapshot:
     return snap
 
 
-# ── Target-scoped endpoints ─────────────────────────────────────
+# Target-scoped endpoints
 
 
 @router.post(
@@ -183,7 +183,7 @@ def latest_snapshot(
     return snap
 
 
-# ── Snapshot-scoped endpoints ───────────────────────────────────
+# Snapshot-scoped endpoints
 
 
 @router.get("/configs/{snapshot_id}", response_model=ConfigSnapshotDetail)

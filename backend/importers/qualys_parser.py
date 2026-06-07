@@ -48,7 +48,7 @@ _COMPLIANCE_STATUS = {
 }
 
 
-# ── Detection ────────────────────────────────────────────────────────
+# Detection
 
 def detect_qualys_csv(content: str) -> bool:
     """Quick check whether CSV content looks like a Qualys export."""
@@ -72,7 +72,7 @@ def detect_qualys_xml(content: str) -> bool:
     return "QUALYS" in head.upper() or "<SCAN " in head or "<COMPLIANCE_" in head.upper()
 
 
-# ── CSV Parsing ──────────────────────────────────────────────────────
+# CSV Parsing
 
 def parse_qualys_csv(
     content: str,
@@ -238,7 +238,7 @@ def _parse_vm_csv(
     return findings, platform_info
 
 
-# ── XML Parsing (basic support) ─────────────────────────────────────
+# XML Parsing (basic support)
 
 def parse_qualys_xml(
     content: str,

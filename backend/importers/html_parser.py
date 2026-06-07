@@ -124,7 +124,7 @@ def _parse_findings_from_html(content: str, platform_info: PlatformInfo) -> list
     """
     findings: list[ParsedFinding] = []
 
-    # ── Step 1: locate all compliance-coloured title bars ──────
+    # Step 1: locate all compliance-coloured title bars
     # These divs use inline ``background: #COLOUR`` (no "background-color")
     bar_re = re.compile(
         r'<div\b[^>]*?\bstyle\s*=\s*"[^"]*?\bbackground(?:-color)?\s*:\s*'
@@ -144,13 +144,13 @@ def _parse_findings_from_html(content: str, platform_info: PlatformInfo) -> list
     if not bars:
         return findings
 
-    # ── Step 2: for each bar, extract the finding block ────────
+    # Step 2: for each bar, extract the finding block
     for i, (bar_start, tag_end, status) in enumerate(bars):
         # Block: from tag_end to the START of the next colour-bar
         next_start = bars[i + 1][0] if i + 1 < len(bars) else min(bar_start + 50_000, len(content))
         block = content[tag_end:next_start]
 
-        # ── Title extraction ──────────────────────────────────
+        # Title extraction
         # The title is the direct text child of the title-bar div, before the
         # nested <div id="…-toggletext"> child.
         title_end_idx = block.find("<div")
@@ -183,17 +183,17 @@ def _parse_findings_from_html(content: str, platform_info: PlatformInfo) -> list
         if re.search(r"\.audit\s+from\s+", raw_title, re.IGNORECASE):
             continue
 
-        # ── Detail section extraction ─────────────────────────
+        # Detail section extraction
         sections = _extract_sections(block)
 
-        # ── Framework references ──────────────────────────────
+        # Framework references
         framework_mappings = _parse_references_table(block)
         if framework_mappings:
             profile_level = extract_profile_level(framework_mappings)
             if profile_level and not platform_info.profile_level:
                 platform_info.profile_level = profile_level
 
-        # ── Platform detection from audit file ────────────────
+        # Platform detection from audit file
         audit_file = _clean_text(sections.get("audit_file", ""))
         if audit_file and not platform_info.platform:
             from backend.importers.platform_detector import detect_benchmark_from_name
@@ -214,7 +214,7 @@ def _parse_findings_from_html(content: str, platform_info: PlatformInfo) -> list
                 platform_info.benchmark_version = pi.benchmark_version or platform_info.benchmark_version
                 platform_info.scheme = pi.scheme or platform_info.scheme
 
-        # ── Build ParsedFinding ───────────────────────────────
+        # Build ParsedFinding
         # Split inline Rationale: / Impact: markers from the Info blob
         info_raw = _clean_text(sections.get("info", ""))
         desc, rationale, impact = _split_info_text(info_raw)
